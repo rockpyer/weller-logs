@@ -1,0 +1,10 @@
+{
+  "name": "weller-logs",
+  "version": "0.1.0",
+  "description": "Well log viewer with correlation panels (web app)",
+  "private": true,
+  "scripts": {
+    "web": "python3 -m http.server 8080 --directory app",
+    "samples": "node scripts/make-sample-las.mjs"
+  }
+}
