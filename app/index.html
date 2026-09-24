@@ -1,4 +1,7 @@
 <title>Weller Logs</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png">
+<meta name="theme-color" content="#172029">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Condensed:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
 <style>
 :root{
@@ -245,15 +248,7 @@ ul.list .meta{margin-left:auto;font:11px "IBM Plex Mono",monospace;color:var(--m
   </div>
 </div>
 
-<div id="projDlg" class="modal" hidden>
-  <div class="dlg" role="dialog" aria-labelledby="pdTitle">
-    <h3 id="pdTitle">Project</h3>
-    <p class="hint" id="pdHint"></p>
-    <textarea id="pdText" spellcheck="false"></textarea>
-    <div class="row"><input type="file" id="projFile" accept=".lasproj,.json" hidden><button id="pdOpenFile">Open .lasproj file…</button><button id="pdCopy">Copy JSON</button><a id="pdDownload" hidden></a><button id="pdDownloadBtn">Download .lasproj</button></div>
-    <div class="foot"><button id="pdClose">Close</button><button class="primary" id="pdApply">Load from text</button></div>
-  </div>
-</div>
+<input type="file" id="projFile" accept=".lasproj,.json" hidden><a id="pdDownload" hidden></a>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js"></script>
 <script>window.d3||document.write('<script src="vendor/d3.min.js"><\/script>')</script>
@@ -581,7 +576,7 @@ $('wdRemove').onclick=()=>{ S.wells=S.wells.filter(w=>w!==wellEditing); S.panel=
 
 /* ---------- Tops CSV, PNG export ---------- */
 let hostedDownloads=null; (async()=>{ try{ if(window.claude?.use) hostedDownloads=await window.claude.use('downloads'); }catch(e){} })();
-async function downloadBlob(name,blob){ if(D){ const p=await D.saveBytes(name,new Uint8Array(await blob.arrayBuffer())); if(p) $('stNote').textContent='Saved '+p; return; }
+async function downloadBlob(name,blob){
   if(hostedDownloads){ try{ await hostedDownloads.save({filename:name,data:blob}); $('stNote').textContent='Saved '+name; }catch(err){ $('stNote').textContent=err.code==='declined'?'Save cancelled':'Save failed: '+(err.message||err.code); } return; }
   const a=$('pdDownload'); a.href=URL.createObjectURL(blob); a.download=name; a.click(); }
 function topsCSV(){ const L=['well,api,top,md_ft']; for(const w of S.wells) for(const t of w.tops) L.push([w.name,w.api||'',t.name,t.md].map(v=>/[",]/.test(String(v))?`"${String(v).replace(/"/g,'""')}"`:v).join(',')); return L.join('\n')+'\n'; }
@@ -638,12 +633,17 @@ $('zoomIn').onclick=()=>zoom(1.5); $('zoomOut').onclick=()=>zoom(1/1.5);
 $('logScroll').addEventListener('wheel',e=>{ if(!(e.ctrlKey||e.metaKey)) return; e.preventDefault(); const r=$('logScroll').getBoundingClientRect(); const yIn=e.clientY-r.top; const sc=$('logScroll'); const depthAt=S.view.top+(sc.scrollTop+yIn-10)/S.view.pxPerFt; S.view.pxPerFt=Math.min(20,Math.max(0.02,S.view.pxPerFt*(e.deltaY<0?1.2:1/1.2))); render(); sc.scrollTop=(depthAt-S.view.top)*S.view.pxPerFt+10-yIn; },{passive:false});
 $('btnPick').onclick=()=>{ if(!$('topName').value.trim()){ $('topName').focus(); return; } S.picking=!S.picking; $('btnPick').classList.toggle('primary',S.picking); render(); };
 
+/* ---------- Browser cache of opened LAS text (IndexedDB), so a session resumes without re-picking files ---------- */
+const lasCache={ db:null,
+  open(){ return this.db||(this.db=new Promise((res,rej)=>{ try{ const r=indexedDB.open('weller',1); r.onupgradeneeded=()=>r.result.createObjectStore('las'); r.onsuccess=()=>res(r.result); r.onerror=()=>rej(r.error); }catch(e){ rej(e); } })); },
+  async put(name,text){ try{ const db=await this.open(); db.transaction('las','readwrite').objectStore('las').put({text,at:Date.now()},name); }catch(e){} },
+  async get(name){ try{ const db=await this.open(); return await new Promise((res,rej)=>{ const r=db.transaction('las').objectStore('las').get(name); r.onsuccess=()=>res(r.result?.text||null); r.onerror=()=>rej(r.error); }); }catch(e){ return null; } } };
+
 /* ---------- Files ---------- */
-const D=window.weller; // desktop bridge (Electron); undefined in a browser
-$('btnOpen').onclick=async()=>{ if(D){ addLASFiles(await D.openLAS()); } else $('lasFile').click(); };
+$('btnOpen').onclick=async()=>{ if(window.showOpenFilePicker){ try{ const hs=await showOpenFilePicker({multiple:true,types:[{description:'LAS well logs',accept:{'text/plain':['.las','.LAS','.txt']}}]}); const files=[]; for(const h of hs){ const f=await h.getFile(); files.push({name:f.name,text:await f.text()}); } addLASFiles(files); }catch(e){} } else $('lasFile').click(); };
 $('lasFile').onchange=async e=>{ const files=[]; for(const f of e.target.files) files.push({name:f.name,text:await f.text()}); addLASFiles(files); e.target.value=''; };
 function addLASFiles(files){ let first=null; const notes=[];
-  for(const f of files){ try{ if(f.error) throw new Error(f.error); const p=parseLAS(f.text); if(!p.curves.length||!p.rows) throw new Error('no curve data found'); const w=normalizeWell(p,f.name); w.path=f.path; S.wells.push(w); first=first||w.id;
+  for(const f of files){ try{ if(f.error) throw new Error(f.error); const p=parseLAS(f.text); if(!p.curves.length||!p.rows) throw new Error('no curve data found'); const w=normalizeWell(p,f.name); S.wells.push(w); first=first||w.id; lasCache.put(f.name,f.text);
       if(!Number.isFinite(w.location.lat)) notes.push(`${w.name}: no LATI/LONG in header, not on map`); if(w.elevation.kb===undefined) notes.push(`${w.name}: no KB elevation, TVDSS unavailable`); const conv=w.curves.filter(c=>c.note).map(c=>c.mnemonic+' '+c.note); if(conv.length) notes.push(`${w.name}: ${conv.join(', ')}`); if(w.notes?.length) notes.push(`${w.name}: ${w.notes.join(', ')}`);
     }catch(err){ notes.push(`${f.name}: could not read (${err.message})`); } }
   if(first){ S.selected=first; if(S.mode==='corr') S.panel.push(first); fitView(); } $('stNote').textContent=notes.join(' · '); }
@@ -651,37 +651,31 @@ $('btnRaster').onclick=()=>{ $('stNote').textContent='Phase 2: PDF/TIFF opens wi
 
 /* ---------- Project save / load / autosave ---------- */
 function projectJSON(){ return { version:1, app:'weller-logs', savedAt:new Date().toISOString(), mode:S.mode, selected:S.selected, panel:S.panel, datum:S.datum, view:S.view, tracks:S.tracks,
-  projectPath:S.projectPath, wells:S.wells.map(w=>({id:w.id,name:w.name,api:w.api,field:w.field,preset:w.preset,fileName:w.fileName,path:w.path,relPath:w.relPath,location:w.location,elevation:w.elevation,depthUnit:w.depthUnit,tops:w.tops,curveList:w.curves.map(c=>c.mnemonic)})) }; }
-async function loadProject(p,projectPath){ if(!p||p.app!=='weller-logs') throw new Error('not a Weller Logs project'); const missing=[]; S.projectPath=projectPath||p.projectPath;
-  // Desktop: read referenced LAS files from disk (relative to the project file first, then the absolute path).
-  const fromDisk={}; if(D){ const need=p.wells.filter(r=>!r.preset&&(r.relPath||r.path)&&!S.wells.some(w=>w.fileName===r.fileName&&w.curves));
-    if(need.length){ let got=await D.readFiles(need.map(r=>r.relPath||r.path),S.projectPath); got=await Promise.all(got.map(async(f,i)=>f.error&&need[i].path&&need[i].path!==f.path?(await D.readFiles([need[i].path]))[0]:f));
-      got.forEach((f,i)=>{ if(f.error) return; try{ const w=normalizeWell(parseLAS(f.text),f.name); w.path=f.path; fromDisk[need[i].fileName]=w; }catch(e){} }); } }
+  wells:S.wells.map(w=>({id:w.id,name:w.name,api:w.api,field:w.field,preset:w.preset,fileName:w.fileName,location:w.location,elevation:w.elevation,depthUnit:w.depthUnit,tops:w.tops,curveList:w.curves.map(c=>c.mnemonic)})) }; }
+async function loadProject(p){ if(!p||p.app!=='weller-logs') throw new Error('not a Weller Logs project'); const missing=[];
+  const fromCache={}; for(const r of p.wells){ if(r.preset||S.wells.some(w=>w.fileName===r.fileName)) continue; const text=await lasCache.get(r.fileName); if(text){ try{ fromCache[r.fileName]=normalizeWell(parseLAS(text),r.fileName); }catch(e){} } }
   S.wells=p.wells.map(ref=>{ if(ref.preset){ const cfg=WellerSynth.PRESET_WELLS.find(c=>c.id===ref.preset); const w={...WellerSynth.makeWell(cfg),preset:cfg.id}; w.tops=ref.tops; w.elevation=ref.elevation; return w; }
-    const live=S.wells.find(w=>w.fileName===ref.fileName)||fromDisk[ref.fileName]; if(live){ Object.assign(live,{tops:ref.tops,elevation:ref.elevation,location:ref.location,name:ref.name,api:ref.api,field:ref.field,id:ref.id,relPath:ref.relPath}); return live; } missing.push(ref.fileName||ref.name); return null; }).filter(Boolean);
+    const live=S.wells.find(w=>w.fileName===ref.fileName)||fromCache[ref.fileName]; if(live){ Object.assign(live,{tops:ref.tops,elevation:ref.elevation,location:ref.location,name:ref.name,api:ref.api,field:ref.field,id:ref.id}); return live; } missing.push(ref.fileName||ref.name); return null; }).filter(Boolean);
   S.tracks=p.tracks; S.view=p.view; S.datum=p.datum||'MD'; S.panel=(p.panel||[]).filter(id=>wellById(id)); S.selected=wellById(p.selected)?p.selected:(S.wells[0]?.id||null);
-  setMode(p.mode||'single'); $('stNote').textContent=missing.length?`Re-open these LAS files to restore them: ${missing.join(', ')}${D?'':' (the desktop app stores paths and does this for you)'}`:'Project loaded'+(S.projectPath?' from '+S.projectPath:''); }
+  setMode(p.mode||'single'); $('stNote').textContent=missing.length?`Re-open these LAS files to restore them: ${missing.join(', ')}`:'Project loaded'; }
 function autosave(){ try{ localStorage.setItem('weller.session',JSON.stringify(projectJSON())); }catch(e){} }
-async function saveProjectDesktop(as){ if(S.projectPath){ for(const w of S.wells) if(w.path) w.relPath=await D.relativePath(S.projectPath,w.path); }
-  const p=await D.saveProject(JSON.stringify(projectJSON(),null,1),as?null:S.projectPath,(wellById(S.selected)?.name||'project').replace(/\s+/g,'-')); if(p){ if(!S.projectPath){ S.projectPath=p; for(const w of S.wells) if(w.path) w.relPath=await D.relativePath(p,w.path); await D.saveProject(JSON.stringify(projectJSON(),null,1),p); } $('stNote').textContent='Saved '+p; } }
-$('btnSave').onclick=()=>{ if(D) return saveProjectDesktop(false); $('pdTitle').textContent='Save project'; $('pdHint').textContent='This is the .lasproj content. In the desktop app this goes straight to a file dialog. Wells opened from disk are stored as file references; synthetic demo wells regenerate.'; $('pdText').value=JSON.stringify(projectJSON(),null,1); $('projDlg').hidden=false; };
-$('btnLoad').onclick=async()=>{ if(D){ const r=await D.openProject(); if(r){ try{ await loadProject(JSON.parse(r.text),r.path); }catch(err){ $('stNote').textContent='Could not load: '+err.message; } } return; } $('pdTitle').textContent='Load project'; $('pdHint').textContent='Open a .lasproj file or paste its JSON below.'; $('pdText').value=''; $('projDlg').hidden=false; };
-$('pdClose').onclick=()=>{ $('projDlg').hidden=true; };
-$('pdCopy').onclick=async()=>{ try{ await navigator.clipboard.writeText($('pdText').value); $('pdCopy').textContent='Copied'; }catch(e){ $('pdText').select(); $('pdCopy').textContent='Select + copy'; } setTimeout(()=>$('pdCopy').textContent='Copy JSON',1500); };
-$('pdDownloadBtn').onclick=()=>{ downloadBlob((wellById(S.selected)?.name||'project').replace(/\s+/g,'-')+'.lasproj.json',new Blob([$('pdText').value],{type:'application/json'})); };
-$('pdOpenFile').onclick=()=>$('projFile').click();
-$('projFile').onchange=async e=>{ const f=e.target.files[0]; if(f){ $('pdText').value=await f.text(); } e.target.value=''; };
-$('pdApply').onclick=async()=>{ try{ await loadProject(JSON.parse($('pdText').value)); $('projDlg').hidden=true; }catch(err){ $('pdHint').textContent='Could not load: '+err.message; } };
+const projName=()=>(wellById(S.selected)?.name||'project').replace(/\s+/g,'-')+'.lasproj';
+async function saveProject(as){ const text=JSON.stringify(projectJSON(),null,1);
+  if(window.showSaveFilePicker){ try{ if(as||!S.fileHandle) S.fileHandle=await showSaveFilePicker({suggestedName:projName(),types:[{description:'Weller Logs project',accept:{'application/json':['.lasproj']}}]});
+      const w=await S.fileHandle.createWritable(); await w.write(text); await w.close(); $('stNote').textContent='Saved '+S.fileHandle.name; }catch(e){ if(e.name!=='AbortError') $('stNote').textContent='Save failed: '+e.message; } return; }
+  downloadBlob(projName(),new Blob([text],{type:'application/json'})); }
+async function openProjectFile(){ if(window.showOpenFilePicker){ try{ const [h]=await showOpenFilePicker({types:[{description:'Weller Logs project',accept:{'application/json':['.lasproj','.json']}}]}); S.fileHandle=h; const f=await h.getFile(); await loadProject(JSON.parse(await f.text())); }catch(e){ if(e.name!=='AbortError') $('stNote').textContent='Could not load: '+e.message; } } else $('projFile').click(); }
+$('btnSave').onclick=()=>saveProject(false);
+$('btnLoad').onclick=openProjectFile;
+$('projFile').onchange=async e=>{ const f=e.target.files[0]; if(f){ try{ await loadProject(JSON.parse(await f.text())); }catch(err){ $('stNote').textContent='Could not load: '+err.message; } } e.target.value=''; };
+document.addEventListener('keydown',e=>{ if(!(e.metaKey||e.ctrlKey)) return; const k=e.key.toLowerCase(); if(k==='o'){ e.preventDefault(); $('btnOpen').click(); } else if(k==='s'){ e.preventDefault(); saveProject(e.shiftKey); } else if(k==='e'){ e.preventDefault(); $('btnPng').click(); } });
 
 /* ---------- Boot: resume-last-session prompt ---------- */
 loadPresets();
 let saved=null; try{ saved=JSON.parse(localStorage.getItem('weller.session')||'null'); }catch(e){}
-let lastDesktop=null;
-(async()=>{ if(D){ lastDesktop=await D.lastSession(); if(lastDesktop){ $('resume').firstElementChild.innerHTML=`Reopen <b>${lastDesktop.name}</b> (saved ${new Date(lastDesktop.mtime).toLocaleString()})?`; $('resume').hidden=false; } }
-  else if(saved&&saved.savedAt){ $('resumeWhen').textContent=new Date(saved.savedAt).toLocaleString(); $('resume').hidden=false; } })();
-$('btnResume').onclick=async()=>{ $('resume').hidden=true; try{ if(lastDesktop){ const r=await D.readProject(lastDesktop.path); if(r.error) throw new Error(r.error); await loadProject(JSON.parse(r.text),r.path); } else await loadProject(saved); }catch(e){ $('stNote').textContent='Saved session could not be restored: '+e.message; } };
+if(saved&&saved.savedAt){ $('resumeWhen').textContent=new Date(saved.savedAt).toLocaleString(); $('resume').hidden=false; }
+$('btnResume').onclick=async()=>{ $('resume').hidden=true; try{ await loadProject(saved); }catch(e){ $('stNote').textContent='Saved session could not be restored: '+e.message; } };
 $('btnFresh').onclick=()=>{ $('resume').hidden=true; };
-if(D) D.onMenu(async(cmd,arg)=>{ if(cmd==='open-las') $('btnOpen').click(); else if(cmd==='open-project') $('btnLoad').click(); else if(cmd==='save-project') saveProjectDesktop(false); else if(cmd==='save-project-as') saveProjectDesktop(true); else if(cmd==='export-png') $('btnPng').click();
-  else if(cmd==='open-project-path'){ const r=await D.readProject(arg); if(!r.error) await loadProject(JSON.parse(r.text),r.path); else $('stNote').textContent=r.error; } });
+if('serviceWorker' in navigator&&/^https?:/.test(location.protocol)&&!/claude\.ai|claudeusercontent/.test(location.host)) navigator.serviceWorker.register('sw.js').catch(()=>{});
 fitView();
 </script>

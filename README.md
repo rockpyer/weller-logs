@@ -1,31 +1,32 @@
 # Weller Logs
 
-Well-log viewer with correlation panels, aimed at Southern California work.
+Web-based well-log viewer with correlation panels, aimed at Southern California work.
 Opens LAS files (wireline and mud logs), renders tracks on sensible default scales
 (log-scale resistivity, reversed neutron/sonic, gas and drilling curves, stacked cuttings
 percentages), correlates tops across wells, exports PNG, and saves everything as a
-`.lasproj` file. Runs as a web page (Firefox, Brave, Chrome) or as a Mac/Windows/Linux
-desktop app.
+`.lasproj` file. Runs in Firefox, Brave, and Chrome; installable as an offline web app.
 
 Plan and design notes: [docs/PLAN.md](docs/PLAN.md).
 
-## Run in a browser
+## Use it
 
-```
-npm run web            # serves mockup/ on http://localhost:8080
-```
-Or open `mockup/index.html` from any static server. Downloads (project, PNG, CSV) work
-from a real browser tab; they are blocked inside the hosted claude.ai preview.
+**Hosted (after the PR merges):** https://rockpyer.github.io/weller-logs/ — GitHub Pages deploys
+`app/` on every push to `main` (workflow in `.github/workflows/pages.yml`). The first run needs
+Pages enabled once: repo **Settings → Pages → Source: GitHub Actions**.
 
-## Run as a desktop app (macOS first)
+**One-click open:** in Brave or Chrome, use the address-bar *Install* icon (or menu → *Install
+Weller Logs*). It lands in the Dock/Applications like an app and works offline. In Firefox,
+bookmark it or drag the URL to the Dock. Reopening shows "Resume last session?" and restores your
+wells from the browser's cache, no file picking needed.
 
+**Locally:**
 ```
-npm install
-npm start              # launches the Electron app
-npm run dist           # builds dist/Weller Logs.dmg (run on a Mac)
+npm run web            # serves app/ on http://localhost:8080
 ```
-The installed app registers `.lasproj` files, keeps a recent-projects list, and asks
-"Reopen last project?" on launch. Cmd+O opens LAS, Cmd+S saves, Cmd+E exports PNG.
+
+Files: Brave/Chrome save straight back to your `.lasproj` (Cmd+S) via the File System Access
+API. Firefox downloads a copy instead. Cmd+O opens LAS, Cmd+E exports PNG. Everything runs in
+the browser; no data leaves your machine.
 
 ## Using it
 
@@ -48,9 +49,10 @@ Sample LAS files in `samples/` are synthetic. Regenerate with `npm run samples`.
 
 ```
 docs/PLAN.md         architecture, phases, default scales, pitfalls, open questions
-mockup/index.html    the app (single file, D3 from cdnjs with a vendored fallback)
-mockup/synth.js      synthetic well generator shared with the sample script
-desktop/             Electron main process and preload bridge
+app/index.html       the app (single file, D3 from cdnjs with a vendored fallback)
+app/sw.js            service worker: offline shell cache
+app/synth.js         synthetic well generator shared with the sample script
+.github/workflows/   GitHub Pages deploy
 samples/*.las        synthetic LAS 2.0 files
 scripts/             utilities
 ```

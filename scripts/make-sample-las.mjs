@@ -1,6 +1,6 @@
 // Writes samples/*.las from the synthetic generator. Run: node scripts/make-sample-las.mjs
 import { writeFileSync, mkdirSync } from 'node:fs';
-import '../mockup/synth.js';
+import '../app/synth.js';
 const { makeWell, PRESET_WELLS, toLAS } = globalThis.WellerSynth;
 mkdirSync('samples', { recursive: true });
 for (const cfg of PRESET_WELLS) {

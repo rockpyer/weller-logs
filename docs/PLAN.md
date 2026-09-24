@@ -8,7 +8,7 @@ scales, correlates across wells, and saves the whole session as one project file
 
 | Concern | Choice | Why |
 |---|---|---|
-| Shell | **Electron** + electron-builder (macOS first) | One-click desktop app, native file dialogs, "reopen last project" prompt, `.lasproj` file association. The core is a plain web page, so it also runs in Firefox/Brave/Chrome. |
+| Shell | **Web app on GitHub Pages**, installable PWA | No install, works in Firefox/Brave/Chrome, offline via service worker. Brave/Chrome can pin it to the Dock and save straight to `.lasproj` (File System Access API); Firefox downloads copies. Opened LAS text is cached in IndexedDB so "Resume last session" needs no file picking. Electron was tried and dropped: not needed. |
 | UI | Plain HTML + D3, one file for now | The app is ~1,500 lines. Splitting into Vite modules happens when the raster and survey code lands, not before. |
 | LAS parsing | Our own parser (LAS 1.2/2.0, wrapped) | Real SoCal files break `las-js` assumptions: free-text ELEV and LOC fields, `-9999` in addition to `-999.25`, mixed-case mnemonics, positive west longitudes. The parser handles those with notes shown to the user. |
 | Track rendering | Our D3 renderer now; **@equinor/videx-wellog** stays an option | videx-wellog is excellent for a single well, but the correlation panel needs datum shifts, cross-column polygons and gradient fills it does not provide. The current renderer does all of that in ~300 lines. Revisit if per-track zoom or huge curve counts become a problem. |
@@ -17,7 +17,7 @@ scales, correlates across wells, and saves the whole session as one project file
 | Map | **MapLibre GL** + OSM/USGS raster tiles, **proj4js** for CRS | SoCal wells come in NAD27, NAD83, CA State Plane Zone 5/6 (feet). proj4 handles all of it. |
 | Raster logs | **pdf.js** (PDF) + **UTIF** (TIFF) | Render page to canvas, user picks depth tie points, we stretch to the depth scale. |
 | Project file | `.lasproj` = JSON (optionally zipped with embedded LAS/raster copies) | Human-readable, diffable, easy to recover. |
-| Session memory | Electron `userData` + recent-projects list | App start prompts "Reopen *last.lasproj*?" |
+| Session memory | localStorage autosave + IndexedDB LAS cache | App start prompts "Resume last session?" |
 
 Links: [las-js](https://www.npmjs.com/package/las-js) · [videx-wellog](https://github.com/equinor/videx-wellog) · [esv-intersection](https://github.com/equinor/esv-intersection) · [pdf.js](https://mozilla.github.io/pdf.js/) · [UTIF](https://github.com/photopea/UTIF.js) · [MapLibre](https://maplibre.org/) · [proj4js](http://proj4js.org/) · [Electron](https://www.electronjs.org/)
 
@@ -59,8 +59,8 @@ Project { version, wells: WellRef[], tracks: TrackConfig[], panels: Panel[],
 **Phase 1 — single well (done in the mockup, now the app).**
 Open LAS → parse → alias curves → auto-build tracks (GR/SP/CAL, Resistivity log, Porosity, Drilling,
 Gas, Cuttings %) → zoom/pan/depth window → edit tracks, scales, colors, fills → tops (pick, CSV)
-→ save/load `.lasproj` → PNG export → Electron shell with "reopen last project" prompt.
-Remaining for phase 1: a Mac build signed for distribution, and a test pass on more real LAS files.
+→ save/load `.lasproj` → PNG export → hosted on GitHub Pages with resume-last-session.
+Remaining for phase 1: enable Pages once after merge, and a test pass on more real LAS files.
 
 **Phase 2 — correlation panel.**
 Open several wells → side-by-side with shared depth or hung on a datum (sea level, a top,
@@ -115,14 +115,14 @@ Everything is adjustable; these are the defaults. Resistivity is always log scal
 
 ## 5. Session and desktop behavior
 
-- App launch → if a last project exists: "Reopen `<name>.lasproj`?" (Yes / Open another / New).
-- Autosave a recovery copy every 60 s to `userData/recovery/`.
-- Project stores relative paths to LAS/raster files plus an optional embedded copy so a `.lasproj` can travel alone.
-- Desktop shortcut created by the installer (NSIS on Windows, DMG on macOS, AppImage/deb on Linux).
+- App launch → if an autosaved session exists: "Resume last session?" (Resume / Start fresh).
+- Autosave to localStorage on every render; opened LAS text cached in IndexedDB by file name.
+- Project stores LAS file names; on load, wells come from the cache, else the user is asked to re-open them.
+- "Desktop shortcut" = PWA install in Brave/Chrome, bookmark in Firefox.
 
 ## 6. Answers so far
 
-- macOS first; the web build must work in Firefox and Brave, others will use Chromium.
+- Web app, not a Mac app. Must work in Firefox and Brave; others will use Chromium.
 - Headers may lack elevation and coordinates: entered per well in Well settings, stored in the project.
 - Mud logs arrive as LAS when possible (Petrolog iLog export verified), otherwise PDF (phase 2 raster).
 - Tops CSV import exists (`well,top,md`); no preload list yet.

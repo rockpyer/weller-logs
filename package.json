@@ -1,29 +1,10 @@
 {
   "name": "weller-logs",
   "version": "0.1.0",
-  "description": "Well log viewer with correlation panels",
-  "main": "desktop/main.cjs",
+  "description": "Well log viewer with correlation panels (web app)",
   "private": true,
   "scripts": {
-    "start": "electron .",
-    "web": "python3 -m http.server 8080 --directory mockup",
-    "samples": "node scripts/make-sample-las.mjs",
-    "dist": "electron-builder --mac",
-    "dist:all": "electron-builder --mac --win --linux"
-  },
-  "devDependencies": {
-    "electron": "^33.0.0",
-    "electron-builder": "^25.1.8"
-  },
-  "build": {
-    "appId": "com.weller.logs",
-    "productName": "Weller Logs",
-    "files": ["desktop/**", "mockup/**", "!mockup/**/*.png"],
-    "directories": { "output": "dist" },
-    "fileAssociations": [{ "ext": "lasproj", "name": "Weller Logs project", "role": "Editor" }],
-    "mac": { "category": "public.app-category.productivity", "target": ["dmg", "zip"] },
-    "win": { "target": ["nsis"] },
-    "nsis": { "createDesktopShortcut": "always", "oneClick": false },
-    "linux": { "target": ["AppImage"] }
+    "web": "python3 -m http.server 8080 --directory app",
+    "samples": "node scripts/make-sample-las.mjs"
   }
 }
