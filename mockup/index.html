@@ -1,0 +1,559 @@
+<title>Weller Logs</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Condensed:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+:root{
+  --ground:#EDF0F3; --panel:#FFFFFF; --paper:#FFFFFF; --ink:#172029; --muted:#5C6975; --line:#D5DBE2;
+  --grid:#DCE2E8; --grid-strong:#B7C0CA; --accent:#B4541E; --accent-ink:#FFFFFF; --focus:#2B6CB0;
+  --sand:#E9D8A6; --shale:#B9C6D1; --gas:#E4572E; --pico:#D7E3EE; --repetto:#F3E6C6; --puente:#DCD5E6;
+  --gr:#2E7D32; --sp:#1F5FA8; --cal:#6B7680; --rdeep:#C62828; --rmed:#1565C0; --rshal:#2E7D32;
+  --rhob:#C62828; --nphi:#1565C0; --dt:#6A1B9A; --rop:#172029; --wob:#1565C0; --tg:#172029; --c1:#C62828; --c2:#EF6C00;
+  --shadow:0 1px 2px rgba(23,32,41,.08);
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){ :root:not([data-theme="light"]){
+  --ground:#12161B; --panel:#1B2128; --paper:#1F262E; --ink:#E4E9EE; --muted:#93A0AD; --line:#2E3740;
+  --grid:#2A323B; --grid-strong:#3F4A56; --accent:#E07A3E; --accent-ink:#12161B; --focus:#6AA6E8;
+  --sand:#6E5F2E; --shale:#3E4B57; --gas:#F0704E; --pico:#26333F; --repetto:#3E3624; --puente:#342E42;
+  --gr:#5FBF66; --sp:#6AA6E8; --cal:#9AA6B2; --rdeep:#F06767; --rmed:#6AA6E8; --rshal:#5FBF66;
+  --rhob:#F06767; --nphi:#6AA6E8; --dt:#C084E8; --rop:#E4E9EE; --wob:#6AA6E8; --tg:#E4E9EE; --c1:#F06767; --c2:#F7A04A;
+  --shadow:0 1px 2px rgba(0,0,0,.4);
+  color-scheme:dark;
+}}
+:root[data-theme="dark"]{
+  --ground:#12161B; --panel:#1B2128; --paper:#1F262E; --ink:#E4E9EE; --muted:#93A0AD; --line:#2E3740;
+  --grid:#2A323B; --grid-strong:#3F4A56; --accent:#E07A3E; --accent-ink:#12161B; --focus:#6AA6E8;
+  --sand:#6E5F2E; --shale:#3E4B57; --gas:#F0704E; --pico:#26333F; --repetto:#3E3624; --puente:#342E42;
+  --gr:#5FBF66; --sp:#6AA6E8; --cal:#9AA6B2; --rdeep:#F06767; --rmed:#6AA6E8; --rshal:#5FBF66;
+  --rhob:#F06767; --nphi:#6AA6E8; --dt:#C084E8; --rop:#E4E9EE; --wob:#6AA6E8; --tg:#E4E9EE; --c1:#F06767; --c2:#F7A04A;
+  --shadow:0 1px 2px rgba(0,0,0,.4);
+  color-scheme:dark;
+}
+html,body{height:100%}
+body{margin:0;background:var(--ground);color:var(--ink);font:14px/1.45 "IBM Plex Sans",system-ui,sans-serif}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+button,select,input{font:inherit;color:inherit}
+button{background:var(--panel);border:1px solid var(--line);border-radius:4px;padding:5px 10px;cursor:pointer}
+button:hover{border-color:var(--muted)}
+button:focus-visible,select:focus-visible,input:focus-visible{outline:2px solid var(--focus);outline-offset:1px}
+button.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+button.small{padding:2px 7px;font-size:12px}
+select,input[type=text],input[type=number]{background:var(--panel);border:1px solid var(--line);border-radius:4px;padding:4px 6px}
+input[type=number]{width:5.5em;font-family:"IBM Plex Mono",monospace;font-variant-numeric:tabular-nums}
+input[type=color]{width:28px;height:24px;padding:0;border:1px solid var(--line);background:none}
+#app{height:100%;display:flex;flex-direction:column;padding-inline:0}
+.topbar{display:flex;align-items:center;gap:14px;padding:6px 16px;background:var(--panel);border-bottom:1px solid var(--line);flex-wrap:wrap}
+.brand{font:600 18px "IBM Plex Sans Condensed",sans-serif;letter-spacing:.02em;display:flex;align-items:center;gap:8px}
+.brand small{font:500 11px "IBM Plex Mono",monospace;color:var(--muted);letter-spacing:.06em}
+.tabs{display:flex;border:1px solid var(--line);border-radius:4px;overflow:hidden}
+.tabs button{border:0;border-radius:0;background:transparent}
+.tabs button[aria-selected=true]{background:var(--ink);color:var(--panel)}
+.actions{margin-left:auto;display:flex;gap:6px;flex-wrap:wrap}
+.banner{display:flex;gap:10px;align-items:center;padding:8px 16px;background:var(--accent);color:var(--accent-ink);flex-wrap:wrap}
+.banner button{background:var(--accent-ink);color:var(--accent);border-color:transparent}
+.shell{flex:1;display:flex;min-height:0}
+.side{width:300px;flex:none;overflow:auto;border-right:1px solid var(--line);background:var(--panel);padding:10px 12px;display:flex;flex-direction:column;gap:14px}
+.side h2{font:600 11px "IBM Plex Sans Condensed",sans-serif;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);margin:0 0 6px;display:flex;justify-content:space-between;align-items:center}
+.hint{color:var(--muted);font-size:12px;margin:4px 0 0}
+#map{width:100%;aspect-ratio:4/3;max-width:100%;background:var(--ground);border:1px solid var(--line);border-radius:4px;display:block}
+#map text{font:11px "IBM Plex Mono",monospace;fill:var(--ink)}
+#map .coast{fill:none;stroke:var(--grid-strong);stroke-width:1.2}
+#map .sea{fill:var(--pico);opacity:.5}
+#map .well{fill:var(--panel);stroke:var(--ink);stroke-width:1.4;cursor:pointer}
+#map .well.in{fill:var(--accent);stroke:var(--accent)}
+#map .well.sel{stroke:var(--focus);stroke-width:2.5}
+#map .section{stroke:var(--accent);stroke-width:1.6;stroke-dasharray:5 3;fill:none}
+#map .lbl{fill:var(--muted)}
+ul.list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:2px}
+ul.list li{display:flex;align-items:center;gap:8px;padding:5px 6px;border-radius:4px;cursor:pointer}
+ul.list li:hover{background:var(--ground)}
+ul.list li.sel{background:var(--ground);box-shadow:inset 3px 0 0 var(--focus)}
+ul.list .dot{width:10px;height:10px;border-radius:50%;border:1.5px solid var(--ink);flex:none}
+ul.list .dot.in{background:var(--accent);border-color:var(--accent)}
+ul.list .meta{margin-left:auto;font:11px "IBM Plex Mono",monospace;color:var(--muted);white-space:nowrap}
+.trackrow{display:flex;align-items:center;gap:8px;padding:4px 6px;border-radius:4px}
+.trackrow:hover{background:var(--ground)}
+.trackrow .sw{display:flex;gap:2px}
+.trackrow .sw i{display:block;width:10px;height:3px;border-radius:2px}
+.trackrow .nm{flex:1;font-size:13px}
+.tops td{padding:2px 4px;font:12px "IBM Plex Mono",monospace;font-variant-numeric:tabular-nums}
+.tops{border-collapse:collapse;width:100%}
+.main{flex:1;display:flex;flex-direction:column;min-width:0;min-height:0}
+.viewbar{display:flex;align-items:center;gap:10px;padding:6px 12px;border-bottom:1px solid var(--line);background:var(--panel);flex-wrap:wrap;font-size:13px}
+.viewbar .well{font:600 15px "IBM Plex Sans Condensed",sans-serif}
+.viewbar label{display:flex;align-items:center;gap:5px;color:var(--muted)}
+.viewbar .sp{flex:1}
+.logscroll{flex:1;overflow:auto;position:relative;background:var(--ground)}
+#logPanel{display:flex;gap:18px;padding:10px 12px 40px;align-items:flex-start;position:relative;min-width:max-content}
+.column{display:flex;flex-direction:column;background:var(--paper);box-shadow:var(--shadow);border:1px solid var(--line)}
+.colhead{position:sticky;top:0;z-index:3;background:var(--paper);border-bottom:1px solid var(--line);padding:6px 8px;font:600 14px "IBM Plex Sans Condensed",sans-serif;display:flex;justify-content:space-between;gap:8px;align-items:baseline}
+.colhead small{font:400 11px "IBM Plex Mono",monospace;color:var(--muted)}
+.tracks{display:flex}
+.track{display:flex;flex-direction:column;border-right:1px solid var(--line)}
+.track:last-child{border-right:0}
+.thead{position:sticky;top:33px;z-index:2;background:var(--paper);border-bottom:1px solid var(--line);padding:4px 4px 3px;min-height:30px}
+.thead .tn{font:600 11px "IBM Plex Sans Condensed",sans-serif;text-transform:uppercase;letter-spacing:.06em;display:flex;justify-content:space-between;align-items:center;color:var(--muted)}
+.thead .tn button{padding:0 4px;border:0;background:none;color:var(--muted);font-size:13px;line-height:1}
+.scale{font:10px "IBM Plex Mono",monospace;font-variant-numeric:tabular-nums;display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:4px;margin-top:2px}
+.scale .r{text-align:right}
+.scale .c{text-align:center;font-weight:500}
+.scale .bar{grid-column:1/4;height:0;border-top:2px solid currentColor;margin-top:1px}
+.scale .bar.dash{border-top-style:dashed}
+.track svg{display:block}
+.track svg text{font:10px "IBM Plex Mono",monospace;fill:var(--muted)}
+.track svg .grid{stroke:var(--grid);stroke-width:1}
+.track svg .grid.s{stroke:var(--grid-strong)}
+.track svg .top{stroke:var(--ink);stroke-width:1.2}
+.track svg .toplbl{font:600 10px "IBM Plex Sans Condensed",sans-serif;fill:var(--ink)}
+.track svg .depth{fill:var(--ink);font-size:11px}
+.track svg.pick{cursor:crosshair}
+#overlay{position:absolute;inset:0;pointer-events:none;overflow:visible}
+#overlay .corr{stroke:var(--ink);stroke-width:1.2;stroke-dasharray:4 3;fill:none}
+#overlay .fm{opacity:.55}
+#overlay text{font:600 11px "IBM Plex Sans Condensed",sans-serif;fill:var(--ink)}
+#cursor{position:absolute;left:0;right:0;height:0;border-top:1px solid var(--accent);pointer-events:none;display:none}
+.status{display:flex;gap:18px;padding:4px 16px;border-top:1px solid var(--line);background:var(--panel);font:12px "IBM Plex Mono",monospace;font-variant-numeric:tabular-nums;color:var(--muted);flex-wrap:wrap;min-height:26px}
+.status b{color:var(--ink);font-weight:500}
+.modal{position:fixed;inset:0;background:rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center;z-index:20;padding:16px}
+.dlg{background:var(--panel);border-radius:6px;box-shadow:0 10px 40px rgba(0,0,0,.3);width:min(720px,100%);max-height:90vh;overflow:auto;padding:16px 18px;display:flex;flex-direction:column;gap:12px}
+.dlg h3{margin:0;font:600 18px "IBM Plex Sans Condensed",sans-serif}
+.dlg .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.dlg table{border-collapse:collapse;width:100%}
+.dlg th{text-align:left;font:600 11px "IBM Plex Sans Condensed",sans-serif;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);padding:4px}
+.dlg td{padding:3px 4px;border-top:1px solid var(--line)}
+.dlg textarea{width:100%;min-height:200px;font:12px "IBM Plex Mono",monospace;background:var(--ground);color:var(--ink);border:1px solid var(--line);border-radius:4px;padding:8px}
+.dlg .foot{display:flex;gap:8px;justify-content:flex-end}
+.pill{display:inline-block;padding:1px 7px;border-radius:10px;font:500 11px "IBM Plex Mono",monospace;background:var(--ground);color:var(--muted)}
+.pill.on{background:var(--accent);color:var(--accent-ink)}
+@media (max-width:760px){
+  .shell{flex-direction:column}
+  .side{width:auto;border-right:0;border-bottom:1px solid var(--line);max-height:45vh}
+}
+@media (prefers-reduced-motion:no-preference){ .banner{animation:drop .25s ease-out} @keyframes drop{from{transform:translateY(-6px);opacity:0}} }
+</style>
+
+<div id="app">
+  <header class="topbar">
+    <div class="brand">Weller Logs <small>MOCKUP · v0.1</small></div>
+    <div class="tabs" role="tablist">
+      <button id="tabSingle" role="tab" aria-selected="true">Single well</button>
+      <button id="tabCorr" role="tab" aria-selected="false">Correlation panel</button>
+    </div>
+    <div class="actions">
+      <input type="file" id="lasFile" accept=".las,.LAS,.txt" multiple hidden>
+      <button id="btnOpen">Open LAS…</button>
+      <button id="btnRaster" title="Phase 2: open a scanned PDF/TIFF log and stretch it to depth">Open PDF/TIFF… <span class="pill">phase 2</span></button>
+      <button id="btnSave">Save project</button>
+      <button id="btnLoad">Load project</button>
+    </div>
+  </header>
+  <div id="resume" class="banner" hidden>
+    <span>A previous session was autosaved <b id="resumeWhen"></b>. Reopen it?</span>
+    <button id="btnResume">Resume last session</button>
+    <button id="btnFresh">Start fresh</button>
+  </div>
+  <div class="shell">
+    <aside class="side">
+      <section>
+        <h2>Map <span class="pill" id="crsPill">NAD27 · lat/lon</span></h2>
+        <svg id="map" viewBox="0 0 280 210" role="img" aria-label="Well location map"></svg>
+        <p class="hint" id="mapHint">Click a well to view it. Coastline is approximate.</p>
+      </section>
+      <section>
+        <h2>Wells <span class="pill" id="wellCount"></span></h2>
+        <ul class="list" id="wellList"></ul>
+        <p class="hint">Synthetic LA Basin wells are loaded as examples. Open your own LAS to replace them.</p>
+      </section>
+      <section>
+        <h2>Tracks <button class="small" id="btnAddTrack">+ track</button></h2>
+        <div id="trackList"></div>
+      </section>
+      <section>
+        <h2>Tops <span id="topsWell" class="pill"></span></h2>
+        <table class="tops" id="topsTable"></table>
+        <div class="row" style="display:flex;gap:6px;margin-top:6px">
+          <input type="text" id="topName" placeholder="Top name" list="topNames" style="flex:1;min-width:0">
+          <datalist id="topNames"></datalist>
+          <button class="small" id="btnPick">Pick on log</button>
+        </div>
+        <p class="hint">Choose a name, press Pick, then click the depth on any track.</p>
+      </section>
+    </aside>
+    <main class="main">
+      <div class="viewbar">
+        <span class="well" id="vbWell"></span>
+        <label id="datumWrap" hidden>Hang on
+          <select id="datum">
+            <option value="MD">Measured depth</option>
+            <option value="TVDSS">Sea level (TVDSS)</option>
+          </select>
+        </label>
+        <label>Top <input type="number" id="winTop" step="50"></label>
+        <label>Bottom <input type="number" id="winBot" step="50"></label>
+        <button class="small" id="btnFit">Fit</button>
+        <span class="sp"></span>
+        <label>Scale <span id="scaleLbl" style="font-family:'IBM Plex Mono',monospace"></span></label>
+        <button class="small" id="zoomOut">−</button>
+        <button class="small" id="zoomIn">+</button>
+      </div>
+      <div class="logscroll" id="logScroll">
+        <div id="logPanel"><svg id="overlay"></svg><div id="cursor"></div></div>
+      </div>
+    </main>
+  </div>
+  <footer class="status">
+    <span id="stFile"></span>
+    <span id="stCursor"></span>
+    <span id="stVals" style="flex:1"></span>
+    <span id="stNote"></span>
+  </footer>
+</div>
+
+<div id="trackDlg" class="modal" hidden>
+  <div class="dlg" role="dialog" aria-labelledby="tdTitle">
+    <h3 id="tdTitle">Edit track</h3>
+    <div class="row">
+      <label>Name <input type="text" id="tdName"></label>
+      <label>Width <input type="number" id="tdWidth" min="60" max="600" step="10"></label>
+    </div>
+    <table>
+      <thead><tr><th>Curve</th><th>Left</th><th>Right</th><th>Log</th><th>Color</th><th>Dash</th><th></th></tr></thead>
+      <tbody id="tdCurves"></tbody>
+    </table>
+    <div class="row"><button class="small" id="tdAddCurve">+ curve</button><span class="hint">Reversed scales (left &gt; right) are fine: that is how NPHI and DT are read.</span></div>
+    <div class="foot"><button id="tdDelete">Delete track</button><span style="flex:1"></span><button id="tdCancel">Cancel</button><button class="primary" id="tdSave">Apply</button></div>
+  </div>
+</div>
+
+<div id="projDlg" class="modal" hidden>
+  <div class="dlg" role="dialog" aria-labelledby="pdTitle">
+    <h3 id="pdTitle">Project</h3>
+    <p class="hint" id="pdHint"></p>
+    <textarea id="pdText" spellcheck="false"></textarea>
+    <div class="row"><input type="file" id="projFile" accept=".lasproj,.json" hidden><button id="pdOpenFile">Open .lasproj file…</button><button id="pdCopy">Copy JSON</button><a id="pdDownload" hidden></a><button id="pdDownloadBtn">Download .lasproj</button></div>
+    <div class="foot"><button id="pdClose">Close</button><button class="primary" id="pdApply">Load from text</button></div>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js"></script>
+<script src="synth.js"></script>
+<script>
+/* ---------- LAS parsing (LAS 1.2 / 2.0, wrapped or not) ---------- */
+function parseLAS(text){
+  const lines=text.split(/\r?\n/); let sec=''; const H={version:{},well:{},curves:[],params:{},other:[]}; const rows=[];
+  const NULLS=new Set([-999.25,-999,-9999,-999.99,-99999,1e30]);
+  let wrap=false, nullv=-999.25, buf=[];
+  const parseHead=l=>{ // MNEM.UNIT  DATA : DESC
+    const i=l.indexOf('.'); if(i<0) return null; const mnem=l.slice(0,i).trim();
+    const rest=l.slice(i+1); const m=rest.match(/^(\S*)\s+(.*?)\s*(?::\s*(.*))?$/); if(!m) return null;
+    return {mnem,unit:m[1],value:(m[2]||'').trim(),desc:(m[3]||'').trim()};
+  };
+  for(const raw of lines){
+    const l=raw.trim(); if(!l||l.startsWith('#')) continue;
+    if(l[0]==='~'){ sec=l[1].toUpperCase(); continue; }
+    if(sec==='A'){ const toks=l.split(/\s+/).map(Number); if(toks.some(isNaN)) continue;
+      if(wrap){ buf.push(...toks); if(buf.length>=H.curves.length){ rows.push(buf.slice(0,H.curves.length)); buf=[]; } } else rows.push(toks); continue; }
+    const h=parseHead(l); if(!h) { if(sec==='O') H.other.push(l); continue; }
+    if(sec==='V'){ H.version[h.mnem]=h.value; if(h.mnem==='WRAP') wrap=/yes/i.test(h.value); }
+    else if(sec==='W'){ H.well[h.mnem.toUpperCase()]=h; if(h.mnem.toUpperCase()==='NULL') nullv=parseFloat(h.value)||nullv; }
+    else if(sec==='C'){ H.curves.push({mnemonic:h.mnem,unit:h.unit,description:h.desc}); }
+    else if(sec==='P'){ H.params[h.mnem.toUpperCase()]=h; }
+  }
+  NULLS.add(nullv);
+  const n=rows.length; const curves=H.curves.map((c,j)=>{ const a=new Float64Array(n); let nulls=0; for(let i=0;i<n;i++){ let v=rows[i][j]; if(v===undefined||NULLS.has(v)||Math.abs(v-nullv)<1e-6){v=NaN;nulls++;} a[i]=v; } return {...c,data:a,nulls}; });
+  return {header:H,curves,wrap,nullv,rows:n};
+}
+function normalizeWell(p,fileName){
+  const W=p.header.well; const g=k=>W[k]?.value; const num=k=>{const v=parseFloat(g(k));return Number.isFinite(v)?v:undefined;};
+  const dep=p.curves[0]; const depthUnit=/m/i.test(dep.unit)&&!/ft|f$/i.test(dep.unit)?'m':'ft';
+  // Unit normalization for known curves.
+  for(const c of p.curves){ const m=c.mnemonic.toUpperCase(), u=(c.unit||'').toUpperCase();
+    if(/^(NPHI|TNPH|NPOR|PHIN|CNC|HNPO)/.test(m)){ const med=d3.median(c.data.filter(Number.isFinite)); if(/PU|%/.test(u)||(med>1.5)){ c.data=c.data.map(v=>v/100); c.unit='V/V'; c.note='converted from pu'; } }
+    if(/^(DT|DTC|DTCO|AC)$/.test(m)&&/US\/M|USEC\/M/.test(u)){ c.data=c.data.map(v=>v/3.28084); c.unit='US/F'; c.note='converted from us/m'; }
+  }
+  const tops=Object.values(p.header.params).filter(h=>/^TOP_/.test(h.mnem.toUpperCase())).map(h=>({name:h.mnem.slice(4).replace(/_/g,' ').replace(/\w\S*/g,s=>s[0]+s.slice(1).toLowerCase()),md:parseFloat(h.value),source:'import'})).filter(t=>Number.isFinite(t.md));
+  const kb=num('EKB')??num('KB')??num('ELEV')??num('EDF')??num('DF');
+  return { id:'u'+Math.random().toString(36).slice(2,8), name:g('WELL')||fileName.replace(/\.las$/i,''), api:g('API')||g('UWI')||'', fileName,
+    location:{lat:num('LATI')??num('LAT'),lon:num('LONG')??num('LON'),crs:g('GDAT')||'unknown'}, elevation:{kb,gl:num('EGL')??num('GL'),unit:depthUnit},
+    depthUnit, curves:p.curves, tops, wrap:p.wrap, nullv:p.nullv, rows:p.rows };
+}
+
+/* ---------- Curve aliases and default track presets ---------- */
+const A={
+  GR:['GR','GRC','SGR','CGR','ECGR','HSGR','GAMMA','GRD','GRS','GRR'], SP:['SP','SPR','SPC'], CAL:['CALI','CAL','HCAL','CALX','CALS'],
+  RD:['ILD','LLD','RT','AT90','AHT90','RLA5','RD','RESD','RILD','AF90','M2R9'], RM:['ILM','AT60','AHT60','RLA3','RM','RILM','AF60','M2R6'],
+  RS:['SFL','SFLU','MSFL','LLS','AT10','AHT10','RXO','RS','RLA1','SN','AF10','M2R1'],
+  RHOB:['RHOB','RHOZ','DEN','ZDEN','DENS'], NPHI:['NPHI','TNPH','NPOR','PHIN','CNC','HNPO','NPHI_LS'], DT:['DT','DTC','DTCO','AC','DT4P'], PE:['PE','PEF','PEFZ'],
+  ROP:['ROP','ROPA','ROP_AVG'], WOB:['WOB','WOBA'], RPM:['RPM'], TG:['TG','TGAS','GAS','TOTGAS','GASU'], C1:['C1','CH4','METH','METHANE'], C2:['C2','C2H6','ETH'], C3:['C3','C3H8','PROP'],
+};
+const cssVar=n=>getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+function defaultTracks(){ return [
+  {id:'t1',name:'GR / SP / Cal',width:190,panel:true,curves:[
+    {label:'GR',aliases:A.GR,min:0,max:150,unit:'GAPI',color:'var(--gr)',fill:'left',fillColor:'var(--sand)'},
+    {label:'SP',aliases:A.SP,min:-160,max:40,unit:'mV',color:'var(--sp)'},
+    {label:'CAL',aliases:A.CAL,min:6,max:16,unit:'in',color:'var(--cal)',dash:'3 3'}]},
+  {id:'t2',name:'Resistivity',width:190,panel:true,curves:[
+    {label:'Deep',aliases:A.RD,min:0.2,max:2000,log:true,unit:'Ω·m',color:'var(--rdeep)'},
+    {label:'Med',aliases:A.RM,min:0.2,max:2000,log:true,unit:'Ω·m',color:'var(--rmed)'},
+    {label:'Shal',aliases:A.RS,min:0.2,max:2000,log:true,unit:'Ω·m',color:'var(--rshal)',dash:'4 2'}]},
+  {id:'t3',name:'Porosity',width:190,crossover:['RHOB','NPHI'],curves:[
+    {label:'RHOB',aliases:A.RHOB,min:1.95,max:2.95,unit:'g/cc',color:'var(--rhob)'},
+    {label:'NPHI',aliases:A.NPHI,min:0.45,max:-0.15,unit:'v/v',color:'var(--nphi)',dash:'5 3'},
+    {label:'DT',aliases:A.DT,min:140,max:40,unit:'µs/ft',color:'var(--dt)'}]},
+  {id:'t4',name:'Drilling',width:130,curves:[
+    {label:'ROP',aliases:A.ROP,min:0,max:300,unit:'ft/hr',color:'var(--rop)'},
+    {label:'WOB',aliases:A.WOB,min:0,max:50,unit:'klb',color:'var(--wob)',dash:'3 3'}]},
+  {id:'t5',name:'Gas',width:150,curves:[
+    {label:'TG',aliases:A.TG,min:1,max:10000,log:true,unit:'units',color:'var(--tg)'},
+    {label:'C1',aliases:A.C1,min:1,max:100000,log:true,unit:'ppm',color:'var(--c1)',fill:'left',fillColor:'var(--gas)',fillOpacity:.18},
+    {label:'C2',aliases:A.C2,min:1,max:100000,log:true,unit:'ppm',color:'var(--c2)',dash:'4 2'}]},
+  {id:'t6',name:'Lith',width:70,type:'lith',panel:true,curves:[{label:'GR',aliases:A.GR,min:20,max:130}]},
+];}
+const norm=s=>s.toUpperCase().replace(/[:_-]\d+$/,'');
+function resolveCurve(well,cfg){ for(const a of cfg.aliases){ const c=well.curves.find(c=>norm(c.mnemonic)===a.toUpperCase()); if(c) return c; } return null; }
+
+/* ---------- State ---------- */
+const S={ mode:'single', wells:[], selected:null, panel:[], tracks:defaultTracks(), view:{top:0,bottom:6000,pxPerFt:0.35}, datum:'MD', picking:false };
+const $=id=>document.getElementById(id);
+function loadPresets(){ S.wells=WellerSynth.PRESET_WELLS.map(c=>({...WellerSynth.makeWell(c),preset:c.id})); S.selected=S.wells[0].id; S.panel=['w1','w2','w4']; }
+const wellById=id=>S.wells.find(w=>w.id===id);
+const depthOf=w=>w.curves[0].data;
+function wellRange(w){ const d=depthOf(w); return [d[0],d[d.length-1]]; }
+function offsetOf(w){ // plotted depth = md - offset
+  if(S.mode==='single'||S.datum==='MD') return 0;
+  if(S.datum==='TVDSS') return w.elevation.kb??0; // vertical-well assumption until surveys exist (phase 3)
+  const t=w.tops.find(t=>t.name===S.datum); return t?t.md:NaN;
+}
+
+/* ---------- Rendering ---------- */
+function fmtDepth(v){ return Math.round(v).toLocaleString(); }
+function tickInterval(px){ for(const i of [10,20,25,50,100,200,250,500,1000,2000]) if(i*px>=44) return i; return 5000; }
+function render(){
+  const panel=$('logPanel'); panel.querySelectorAll('.column').forEach(c=>c.remove()); const ov=$('overlay'); ov.innerHTML=''; ov.setAttribute('width',0); ov.setAttribute('height',0);
+  const wells=S.mode==='single'?[wellById(S.selected)].filter(Boolean):S.panel.map(wellById).filter(Boolean);
+  $('datumWrap').hidden=S.mode==='single';
+  $('vbWell').textContent=S.mode==='single'?(wells[0]?.name||'No well'):`Section A–A′ · ${wells.length} wells`;
+  $('scaleLbl').textContent=`${(100*S.view.pxPerFt).toFixed(0)} px / 100 ft`;
+  const {top,bottom,pxPerFt}=S.view; const H=Math.max(10,(bottom-top)*pxPerFt); const y=d3.scaleLinear([top,bottom],[0,H]);
+  const tickI=tickInterval(pxPerFt), minorI=tickI/5;
+  const cols=[];
+  for(const w of wells){
+    const off=offsetOf(w); const dep=depthOf(w); const noDatum=Number.isNaN(off); const o=noDatum?0:off;
+    const col=document.createElement('div'); col.className='column'; col.dataset.well=w.id;
+    const head=document.createElement('div'); head.className='colhead';
+    head.innerHTML=`<span>${w.name}${w.synthetic?' <small>synthetic</small>':''}</span><small>${w.api||''}${noDatum?' · no '+S.datum+' top, shown in MD':''}</small>`;
+    col.appendChild(head);
+    const tr=document.createElement('div'); tr.className='tracks';
+    // depth track
+    tr.appendChild(depthTrack(w,y,H,tickI,minorI,o));
+    for(const t of S.tracks.filter(t=>S.mode==='single'||t.panel)) tr.appendChild(logTrack(w,t,y,H,tickI,minorI,o,dep));
+    col.appendChild(tr); panel.insertBefore(col,ov); cols.push({w,el:col,o});
+  }
+  if(S.mode==='corr') drawCorrelations(cols,y);
+  renderSidebar();
+  autosave();
+}
+function depthTrack(w,y,H,tickI,minorI,o){
+  const div=document.createElement('div'); div.className='track'; div.style.width='64px';
+  const lbl=S.mode==='single'||S.datum==='MD'?'MD ft':S.datum==='TVDSS'?'TVDSS ft':'ft rel. '+S.datum;
+  div.innerHTML=`<div class="thead"><div class="tn">Depth</div><div class="scale" style="color:var(--muted)"><span></span><span class="c">${lbl}</span><span></span></div></div>`;
+  const svg=d3.create('svg').attr('width',64).attr('height',H);
+  const [t,b]=S.view.top!==undefined?[S.view.top,S.view.bottom]:[0,0];
+  const start=Math.ceil(t/minorI)*minorI;
+  for(let v=start;v<=b;v+=minorI){ const major=Math.abs(v/tickI-Math.round(v/tickI))<1e-6; svg.append('line').attr('x1',major?40:52).attr('x2',64).attr('y1',y(v)).attr('y2',y(v)).attr('class','grid'+(major?' s':''));
+    if(major) svg.append('text').attr('x',38).attr('y',y(v)+3.5).attr('text-anchor','end').attr('class','depth').text(fmtDepth(v)); }
+  for(const tp of w.tops){ const yy=y(tp.md-o); if(yy<0||yy>H) continue; svg.append('line').attr('x1',0).attr('x2',64).attr('y1',yy).attr('y2',yy).attr('class','top'); }
+  div.appendChild(svg.node()); return div;
+}
+function scaleFor(c,width){ return c.log?d3.scaleLog([c.min,c.max],[0,width]).clamp(true):d3.scaleLinear([c.min,c.max],[0,width]).clamp(true); }
+function logTrack(w,t,y,H,tickI,minorI,o,dep){
+  const width=t.width||190; const div=document.createElement('div'); div.className='track'; div.style.width=width+'px';
+  const head=document.createElement('div'); head.className='thead';
+  head.innerHTML=`<div class="tn"><span>${t.name}</span><button title="Edit track" data-edit="${t.id}">⚙</button></div>`;
+  const resolved=t.curves.map(c=>({cfg:c,curve:resolveCurve(w,c)}));
+  if(t.type!=='lith') for(const {cfg,curve} of resolved){ const s=document.createElement('div'); s.className='scale'; s.style.color=cfg.color; s.style.opacity=curve?1:.35;
+    s.innerHTML=`<span>${cfg.min}</span><span class="c">${curve?curve.mnemonic:cfg.label+' (none)'}${cfg.unit?' '+cfg.unit:''}</span><span class="r">${cfg.max}</span><span class="bar${cfg.dash?' dash':''}"></span>`; head.appendChild(s); }
+  else head.innerHTML+=`<div class="scale" style="color:var(--muted)"><span>sand</span><span class="c">Vsh</span><span class="r">shale</span></div>`;
+  div.appendChild(head);
+  const svg=d3.create('svg').attr('width',width).attr('height',H).classed('pick',S.picking);
+  const [top,bot]=[S.view.top,S.view.bottom];
+  // horizontal grid
+  for(let v=Math.ceil(top/minorI)*minorI;v<=bot;v+=minorI){ const major=Math.abs(v/tickI-Math.round(v/tickI))<1e-6; svg.append('line').attr('x1',0).attr('x2',width).attr('y1',y(v)).attr('y2',y(v)).attr('class','grid'+(major?' s':'')); }
+  // vertical grid
+  const first=t.curves[0];
+  if(t.type!=='lith'){ if(first.log){ const dec=Math.round(Math.log10(first.max/first.min)); const sx=scaleFor(first,width);
+      for(let d=0;d<=dec;d++){ const base=first.min*10**d; for(let m=1;m<10;m++){ const v=base*m; if(v>first.max*1.0001) break; svg.append('line').attr('x1',sx(v)).attr('x2',sx(v)).attr('y1',0).attr('y2',H).attr('class','grid'+(m===1?' s':'')); } } }
+    else for(let i=0;i<=10;i++){ const x=width*i/10; svg.append('line').attr('x1',x).attr('x2',x).attr('y1',0).attr('y2',H).attr('class','grid'+(i%5===0?' s':'')); } }
+  // sample stride: ~2 samples per px
+  const step=dep.length>1?Math.abs(dep[1]-dep[0]):1; const stride=Math.max(1,Math.floor(1/(S.view.pxPerFt*step)/2));
+  const i0=Math.max(0,d3.bisectLeft(dep,top+o)-1), i1=Math.min(dep.length-1,d3.bisectRight(dep,bot+o)+1);
+  const idx=d3.range(i0,i1+1,stride);
+  if(t.type==='lith'){ const c=resolved[0].curve; if(c){ const s=first; const g=svg.append('g'); let run=null;
+      const flush=(kind,a,b)=>g.append('rect').attr('x',0).attr('width',width).attr('y',y(dep[a]-o)).attr('height',Math.max(.5,y(dep[b]-o)-y(dep[a]-o))).attr('fill',kind==='sand'?'var(--sand)':kind==='shale'?'var(--shale)':'var(--paper)');
+      for(const i of idx){ const v=c.data[i]; const vsh=Number.isFinite(v)?Math.min(1,Math.max(0,(v-s.min)/(s.max-s.min))):NaN; const kind=Number.isNaN(vsh)?'gap':vsh<0.4?'sand':vsh>0.6?'shale':'silt';
+        if(!run||run.kind!==kind){ if(run) flush(run.kind,run.a,i); run={kind,a:i}; } }
+      if(run) flush(run.kind,run.a,i1); } }
+  else {
+    // crossover shading (gas)
+    if(t.crossover){ const ra=resolved.find(r=>r.cfg.label===t.crossover[0]), rb=resolved.find(r=>r.cfg.label===t.crossover[1]);
+      if(ra?.curve&&rb?.curve){ const sa=scaleFor(ra.cfg,width), sb=scaleFor(rb.cfg,width);
+        const area=d3.area().defined(i=>Number.isFinite(ra.curve.data[i])&&Number.isFinite(rb.curve.data[i])&&sa(ra.curve.data[i])<sb(rb.curve.data[i]))
+          .x0(i=>sa(ra.curve.data[i])).x1(i=>sb(rb.curve.data[i])).y(i=>y(dep[i]-o));
+        svg.append('path').attr('d',area(idx)).attr('fill','var(--gas)').attr('opacity',.45); } }
+    for(const {cfg,curve} of resolved){ if(!curve) continue; const sx=scaleFor(cfg,width); const ok=i=>Number.isFinite(curve.data[i])&&!(cfg.log&&curve.data[i]<=0);
+      if(cfg.fill){ const area=d3.area().defined(ok).x0(cfg.fill==='left'?0:width).x1(i=>sx(curve.data[i])).y(i=>y(dep[i]-o)); svg.append('path').attr('d',area(idx)).attr('fill',cfg.fillColor||cfg.color).attr('opacity',cfg.fillOpacity??.35); }
+      const line=d3.line().defined(ok).x(i=>sx(curve.data[i])).y(i=>y(dep[i]-o));
+      svg.append('path').attr('d',line(idx)).attr('fill','none').attr('stroke',cfg.color).attr('stroke-width',1.2).attr('stroke-dasharray',cfg.dash||null); }
+  }
+  // tops
+  for(const tp of w.tops){ const yy=y(tp.md-o); if(yy<0||yy>H) continue; svg.append('line').attr('x1',0).attr('x2',width).attr('y1',yy).attr('y2',yy).attr('class','top');
+    if(t===S.tracks.filter(t=>S.mode==='single'||t.panel)[0]) svg.append('text').attr('x',3).attr('y',yy-3).attr('class','toplbl').text(tp.name); }
+  const node=svg.node();
+  node.addEventListener('mousemove',e=>{ const r=node.getBoundingClientRect(); const d=y.invert(e.clientY-r.top)+o; showCursor(e.clientY-$('logPanel').getBoundingClientRect().top,d,w,resolved,dep); });
+  node.addEventListener('mouseleave',()=>{ $('cursor').style.display='none'; });
+  node.addEventListener('click',e=>{ if(!S.picking) return; const r=node.getBoundingClientRect(); const md=Math.round((y.invert(e.clientY-r.top)+o)*2)/2; placeTop(w,md); });
+  div.appendChild(node); return div;
+}
+function showCursor(yPx,md,w,resolved,dep){ const c=$('cursor'); c.style.display='block'; c.style.top=(yPx)+'px';
+  const i=Math.min(dep.length-1,Math.max(0,d3.bisectCenter(dep,md)));
+  $('stCursor').innerHTML=`<b>${w.name}</b> MD ${md.toFixed(1)} ft`;
+  $('stVals').innerHTML=resolved.filter(r=>r.curve).map(r=>{const v=r.curve.data[i];return `${r.curve.mnemonic} <b>${Number.isFinite(v)?(r.cfg.log?v.toPrecision(3):v.toFixed(2)):'null'}</b>`;}).join(' · '); }
+function drawCorrelations(cols,y){
+  const ov=d3.select('#overlay'); const panelR=$('logPanel').getBoundingClientRect();
+  const fmColor={Pico:'var(--pico)',Repetto:'var(--repetto)',Puente:'var(--puente)'};
+  const names=[...new Set(cols.flatMap(c=>c.w.tops.map(t=>t.name)))];
+  const geo=cols.map(c=>{ const r=c.el.getBoundingClientRect(); const trk=c.el.querySelector('.tracks').getBoundingClientRect(); return {l:r.left-panelR.left,r:r.right-panelR.left,y0:trk.top-panelR.top,c}; });
+  ov.attr('width',panelR.width).attr('height',panelR.height);
+  for(let i=0;i<geo.length-1;i++){ const a=geo[i],b=geo[i+1];
+    const ya=n=>{const t=a.c.w.tops.find(t=>t.name===n); return t?a.y0+y(t.md-a.c.o):null;}, yb=n=>{const t=b.c.w.tops.find(t=>t.name===n); return t?b.y0+y(t.md-b.c.o):null;};
+    const shared=names.filter(n=>ya(n)!==null&&yb(n)!==null).sort((p,q)=>ya(p)-ya(q));
+    shared.forEach((n,k)=>{ const nx=shared[k+1]; const bottomA=nx?ya(nx):a.y0+y(S.view.bottom), bottomB=nx?yb(nx):b.y0+y(S.view.bottom);
+      ov.append('polygon').attr('class','fm').attr('fill',fmColor[n]||'var(--grid)').attr('points',`${a.r},${ya(n)} ${b.l},${yb(n)} ${b.l},${bottomB} ${a.r},${bottomA}`);
+      ov.append('line').attr('class','corr').attr('x1',a.r).attr('y1',ya(n)).attr('x2',b.l).attr('y2',yb(n));
+      ov.append('text').attr('x',(a.r+b.l)/2).attr('y',(ya(n)+yb(n))/2-4).attr('text-anchor','middle').text(n); });
+  }
+}
+function placeTop(w,md){ const name=$('topName').value.trim(); if(!name) return; const ex=w.tops.find(t=>t.name===name); if(ex) ex.md=md; else w.tops.push({name,md,source:'user'}); S.picking=false; $('btnPick').classList.remove('primary'); $('stNote').textContent=`${name} set at ${md} ft in ${w.name}`; render(); }
+
+/* ---------- Sidebar: map, wells, tracks, tops ---------- */
+const COAST=[[-118.81,34.00],[-118.68,34.03],[-118.50,34.01],[-118.46,33.97],[-118.42,33.92],[-118.41,33.88],[-118.39,33.84],[-118.41,33.74],[-118.29,33.71],[-118.19,33.76],[-118.11,33.74],[-118.00,33.66],[-117.90,33.60]];
+function renderMap(){
+  const svg=d3.select('#map'); svg.selectAll('*').remove(); const W=280,Hh=210;
+  const pts=S.wells.filter(w=>Number.isFinite(w.location.lat)&&Number.isFinite(w.location.lon));
+  const lons=[...COAST.map(p=>p[0]),...pts.map(w=>w.location.lon)], lats=[...COAST.map(p=>p[1]),...pts.map(w=>w.location.lat)];
+  const x=d3.scaleLinear([d3.min(lons)-.03,d3.max(lons)+.03],[8,W-8]); const ky=Math.cos(33.85*Math.PI/180);
+  const yr=(x.range()[1]-x.range()[0])/(x.domain()[1]-x.domain()[0])*ky; const cy=(d3.min(lats)+d3.max(lats))/2; const y=v=>Hh/2-(v-cy)*yr;
+  const line=d3.line().x(p=>x(p[0])).y(p=>y(p[1]));
+  svg.append('path').attr('class','sea').attr('d',line(COAST)+`L${x(COAST[COAST.length-1][0])},${Hh}L0,${Hh}L0,${y(COAST[0][1])}Z`);
+  svg.append('path').attr('class','coast').attr('d',line(COAST));
+  svg.append('text').attr('class','lbl').attr('x',14).attr('y',Hh-10).text('Santa Monica Bay / San Pedro Bay');
+  const inPanel=S.mode==='corr'?S.panel.map(wellById).filter(Boolean):[];
+  if(inPanel.length>1){ svg.append('path').attr('class','section').attr('d',line(inPanel.map(w=>[w.location.lon,w.location.lat])));
+    const f=inPanel[0],l=inPanel[inPanel.length-1]; svg.append('text').attr('x',x(f.location.lon)-14).attr('y',y(f.location.lat)-8).text('A'); svg.append('text').attr('x',x(l.location.lon)+8).attr('y',y(l.location.lat)-8).text('A′'); }
+  const g=svg.selectAll('g.w').data(pts).join('g').attr('class','w').attr('transform',w=>`translate(${x(w.location.lon)},${y(w.location.lat)})`).style('cursor','pointer').on('click',(e,w)=>clickWell(w.id));
+  g.append('circle').attr('r',5).attr('class',w=>'well'+(S.panel.includes(w.id)&&S.mode==='corr'?' in':'')+(w.id===S.selected?' sel':''));
+  g.append('text').attr('x',7).attr('y',(w,i)=>i%2?13:-6).text(w=>w.name);
+  // scale bar: 5 km
+  const km5=5/(111.32*ky); svg.append('line').attr('x1',W-14-x(km5)+x(0)).attr('x2',W-14).attr('y1',Hh-14).attr('y2',Hh-14).attr('stroke','var(--ink)').attr('stroke-width',2);
+  svg.append('text').attr('x',W-14).attr('y',Hh-18).attr('text-anchor','end').text('5 km');
+  $('mapHint').textContent=S.mode==='corr'?'Click wells to add or remove them from section A–A′ (order = click order).':'Click a well to view it. Coastline is approximate.';
+}
+function clickWell(id){ if(S.mode==='corr'){ const i=S.panel.indexOf(id); if(i>=0) S.panel.splice(i,1); else S.panel.push(id); } else S.selected=id; render(); }
+function renderSidebar(){
+  renderMap();
+  $('wellCount').textContent=S.wells.length;
+  const ul=$('wellList'); ul.innerHTML='';
+  for(const w of S.wells){ const li=document.createElement('li'); li.className=w.id===S.selected?'sel':''; const [a,b]=wellRange(w);
+    li.innerHTML=`<span class="dot${S.mode==='corr'&&S.panel.includes(w.id)?' in':''}"></span><span>${w.name}</span><span class="meta">${w.curves.length-1} crv · ${fmtDepth(b)} ${w.depthUnit}</span>`;
+    li.onclick=()=>clickWell(w.id); ul.appendChild(li); }
+  const tl=$('trackList'); tl.innerHTML='';
+  S.tracks.forEach((t,i)=>{ const d=document.createElement('div'); d.className='trackrow'; d.innerHTML=`<span class="sw">${t.curves.map(c=>`<i style="background:${c.color||'var(--muted)'}"></i>`).join('')}</span><span class="nm">${t.name}</span><label title="Show in correlation panel" style="display:${S.mode==='corr'?'inline':'none'};font-size:11px;color:var(--muted)"><input type="checkbox" data-panel="${i}"${t.panel?' checked':''}> panel</label><button class="small" data-up="${i}" title="Move left">◂</button><button class="small" data-dn="${i}" title="Move right">▸</button><button class="small" data-edit="${t.id}">⚙</button>`; tl.appendChild(d); });
+  const w=S.mode==='single'?wellById(S.selected):wellById(S.panel[S.panel.length-1]||S.selected);
+  $('topsWell').textContent=w?w.name:''; const tt=$('topsTable'); tt.innerHTML='';
+  if(w){ for(const t of [...w.tops].sort((a,b)=>a.md-b.md)){ const tr=document.createElement('tr'); tr.innerHTML=`<td>${t.name}</td><td style="text-align:right">${t.md.toFixed(1)}</td><td><button class="small" data-deltop="${t.name}">×</button></td>`; tt.appendChild(tr); } }
+  const names=[...new Set([...S.wells.flatMap(w=>w.tops.map(t=>t.name)),'Pico','Repetto','Puente'])];
+  $('topNames').innerHTML=names.map(n=>`<option value="${n}">`).join('');
+  const dsel=$('datum'); const cur=S.datum; dsel.innerHTML=`<option value="MD">Measured depth</option><option value="TVDSS">Sea level (TVDSS)</option>`+names.map(n=>`<option value="${n}">Flatten on ${n}</option>`).join(''); dsel.value=names.includes(cur)||cur==='MD'||cur==='TVDSS'?cur:'MD';
+  $('winTop').value=S.view.top; $('winBot').value=S.view.bottom;
+  const sw=wellById(S.selected); if(sw) $('stFile').innerHTML=`<b>${sw.fileName||sw.name+'.las (synthetic)'}</b> · ${sw.rows||depthOf(sw).length} rows · KB ${sw.elevation.kb??'?'} ft · null ${sw.nullv??-999.25}${sw.wrap?' · wrapped':''}`;
+}
+
+/* ---------- Track editor ---------- */
+let editing=null;
+function openTrackDlg(id){ const t=S.tracks.find(t=>t.id===id); if(!t) return; editing=JSON.parse(JSON.stringify(t)); $('tdName').value=editing.name; $('tdWidth').value=editing.width||190; drawTdCurves(); $('trackDlg').hidden=false; }
+function drawTdCurves(){ const w=wellById(S.selected)||S.wells[0]; const tb=$('tdCurves'); tb.innerHTML='';
+  const toHex=c=>c.startsWith('var(')?cssVarHex(c.slice(4,-1)):c;
+  editing.curves.forEach((c,i)=>{ const tr=document.createElement('tr'); const cur=resolveCurve(w,c);
+    tr.innerHTML=`<td><select data-i="${i}" class="tdm">${w.curves.slice(1).map(x=>`<option value="${x.mnemonic}"${cur&&cur.mnemonic===x.mnemonic?' selected':''}>${x.mnemonic} (${x.unit})</option>`).join('')}${cur?'':`<option selected value="">${c.label} (not in well)</option>`}</select></td>
+      <td><input type="number" class="tdmin" data-i="${i}" value="${c.min}" step="any"></td><td><input type="number" class="tdmax" data-i="${i}" value="${c.max}" step="any"></td>
+      <td><input type="checkbox" class="tdlog" data-i="${i}"${c.log?' checked':''}></td><td><input type="color" class="tdcol" data-i="${i}" value="${toHex(c.color||'#333333')}"></td>
+      <td><input type="checkbox" class="tddash" data-i="${i}"${c.dash?' checked':''}></td><td><button class="small tdrm" data-i="${i}">×</button></td>`; tb.appendChild(tr); }); }
+function cssVarHex(name){ const v=cssVar(name); if(/^#/.test(v)) return v; const m=v.match(/\d+/g); return m?'#'+m.slice(0,3).map(n=>(+n).toString(16).padStart(2,'0')).join(''):'#333333'; }
+function readTd(){ editing.name=$('tdName').value; editing.width=+$('tdWidth').value||190;
+  document.querySelectorAll('#tdCurves tr').forEach((tr,i)=>{ const c=editing.curves[i]; const m=tr.querySelector('.tdm').value; if(m) { c.aliases=[m]; c.label=m; }
+    c.min=+tr.querySelector('.tdmin').value; c.max=+tr.querySelector('.tdmax').value; c.log=tr.querySelector('.tdlog').checked; c.color=tr.querySelector('.tdcol').value; c.dash=tr.querySelector('.tddash').checked?'4 3':undefined; }); }
+document.addEventListener('change',e=>{ if(e.target.dataset.panel!==undefined){ S.tracks[+e.target.dataset.panel].panel=e.target.checked; render(); } });
+document.addEventListener('click',e=>{
+  const b=e.target.closest('button'); if(!b) return;
+  if(b.dataset.edit) openTrackDlg(b.dataset.edit);
+  if(b.dataset.up!==undefined){ const i=+b.dataset.up; if(i>0){ [S.tracks[i-1],S.tracks[i]]=[S.tracks[i],S.tracks[i-1]]; render(); } }
+  if(b.dataset.dn!==undefined){ const i=+b.dataset.dn; if(i<S.tracks.length-1){ [S.tracks[i+1],S.tracks[i]]=[S.tracks[i],S.tracks[i+1]]; render(); } }
+  if(b.dataset.deltop){ const w=S.mode==='single'?wellById(S.selected):wellById(S.panel[S.panel.length-1]||S.selected); w.tops=w.tops.filter(t=>t.name!==b.dataset.deltop); render(); }
+  if(b.classList.contains('tdrm')){ readTd(); editing.curves.splice(+b.dataset.i,1); drawTdCurves(); }
+});
+$('tdAddCurve').onclick=()=>{ readTd(); const w=wellById(S.selected)||S.wells[0]; const c=w.curves[1]; editing.curves.push({label:c.mnemonic,aliases:[c.mnemonic],min:0,max:100,color:'#333333'}); drawTdCurves(); };
+$('tdSave').onclick=()=>{ readTd(); const i=S.tracks.findIndex(t=>t.id===editing.id); if(i>=0) S.tracks[i]=editing; else S.tracks.push(editing); $('trackDlg').hidden=true; render(); };
+$('tdCancel').onclick=()=>{ $('trackDlg').hidden=true; };
+$('tdDelete').onclick=()=>{ S.tracks=S.tracks.filter(t=>t.id!==editing.id); $('trackDlg').hidden=true; render(); };
+$('btnAddTrack').onclick=()=>{ editing={id:'t'+Date.now().toString(36),name:'New track',width:160,curves:[]}; $('tdName').value=editing.name; $('tdWidth').value=160; drawTdCurves(); $('trackDlg').hidden=false; };
+
+/* ---------- View controls ---------- */
+$('tabSingle').onclick=()=>setMode('single'); $('tabCorr').onclick=()=>setMode('corr');
+function setMode(m){ S.mode=m; $('tabSingle').setAttribute('aria-selected',m==='single'); $('tabCorr').setAttribute('aria-selected',m==='corr'); if(m==='corr'&&S.panel.length===0) S.panel=[S.selected]; render(); }
+$('datum').onchange=e=>{ S.datum=e.target.value; fitView(); };
+$('winTop').onchange=e=>{ S.view.top=+e.target.value; render(); }; $('winBot').onchange=e=>{ S.view.bottom=+e.target.value; render(); };
+$('btnFit').onclick=fitView;
+function fitView(){ const wells=S.mode==='single'?[wellById(S.selected)]:S.panel.map(wellById); let lo=Infinity,hi=-Infinity;
+  for(const w of wells.filter(Boolean)){ const o=offsetOf(w); const oo=Number.isNaN(o)?0:o; const [a,b]=wellRange(w); lo=Math.min(lo,a-oo); hi=Math.max(hi,b-oo); }
+  if(!Number.isFinite(lo)) {lo=0;hi=1000;} S.view.top=Math.floor(lo/100)*100; S.view.bottom=Math.ceil(hi/100)*100;
+  const vh=$('logScroll').clientHeight-80; S.view.pxPerFt=Math.max(0.05,vh/(S.view.bottom-S.view.top)*2); render(); }
+function zoom(f,anchorPx){ const sc=$('logScroll'); const before=(anchorPx??sc.scrollTop+sc.clientHeight/2); const depthAt=S.view.top+before/S.view.pxPerFt; S.view.pxPerFt=Math.min(20,Math.max(0.02,S.view.pxPerFt*f)); render(); sc.scrollTop=(depthAt-S.view.top)*S.view.pxPerFt-(anchorPx??sc.clientHeight/2)+(anchorPx?0:0); }
+$('zoomIn').onclick=()=>zoom(1.5); $('zoomOut').onclick=()=>zoom(1/1.5);
+$('logScroll').addEventListener('wheel',e=>{ if(!(e.ctrlKey||e.metaKey)) return; e.preventDefault(); const r=$('logScroll').getBoundingClientRect(); const yIn=e.clientY-r.top; const sc=$('logScroll'); const depthAt=S.view.top+(sc.scrollTop+yIn-10)/S.view.pxPerFt; S.view.pxPerFt=Math.min(20,Math.max(0.02,S.view.pxPerFt*(e.deltaY<0?1.2:1/1.2))); render(); sc.scrollTop=(depthAt-S.view.top)*S.view.pxPerFt+10-yIn; },{passive:false});
+$('btnPick').onclick=()=>{ if(!$('topName').value.trim()){ $('topName').focus(); return; } S.picking=!S.picking; $('btnPick').classList.toggle('primary',S.picking); render(); };
+
+/* ---------- Files ---------- */
+$('btnOpen').onclick=()=>$('lasFile').click();
+$('lasFile').onchange=async e=>{ const files=[...e.target.files]; let first=null; const notes=[];
+  for(const f of files){ try{ const p=parseLAS(await f.text()); if(!p.curves.length||!p.rows) throw new Error('no curve data found'); const w=normalizeWell(p,f.name); S.wells.push(w); first=first||w.id;
+      if(!Number.isFinite(w.location.lat)) notes.push(`${w.name}: no LATI/LONG in header, not on map`); if(w.elevation.kb===undefined) notes.push(`${w.name}: no KB elevation, TVDSS unavailable`); const conv=w.curves.filter(c=>c.note).map(c=>c.mnemonic+' '+c.note); if(conv.length) notes.push(`${w.name}: ${conv.join(', ')}`);
+    }catch(err){ notes.push(`${f.name}: could not read (${err.message})`); } }
+  if(first){ S.selected=first; if(S.mode==='corr') S.panel.push(first); fitView(); } $('stNote').textContent=notes.join(' · '); e.target.value=''; };
+$('btnRaster').onclick=()=>{ $('stNote').textContent='Phase 2: PDF/TIFF opens with pdf.js/UTIF, you click two known depths on the image, and it becomes a stretched raster track.'; };
+
+/* ---------- Project save / load / autosave ---------- */
+function projectJSON(){ return { version:1, app:'weller-logs', savedAt:new Date().toISOString(), mode:S.mode, selected:S.selected, panel:S.panel, datum:S.datum, view:S.view, tracks:S.tracks,
+  wells:S.wells.map(w=>({id:w.id,name:w.name,api:w.api,preset:w.preset,fileName:w.fileName,location:w.location,elevation:w.elevation,depthUnit:w.depthUnit,tops:w.tops,curveList:w.curves.map(c=>c.mnemonic)})) }; }
+function loadProject(p){ if(!p||p.app!=='weller-logs') throw new Error('not a Weller Logs project'); const missing=[];
+  S.wells=p.wells.map(ref=>{ if(ref.preset){ const cfg=WellerSynth.PRESET_WELLS.find(c=>c.id===ref.preset); const w={...WellerSynth.makeWell(cfg),preset:cfg.id}; w.tops=ref.tops; w.elevation=ref.elevation; return w; }
+    const live=S.wells.find(w=>w.fileName===ref.fileName); if(live){ live.tops=ref.tops; live.elevation=ref.elevation; live.id=ref.id; return live; } missing.push(ref.fileName||ref.name); return null; }).filter(Boolean);
+  S.tracks=p.tracks; S.view=p.view; S.datum=p.datum||'MD'; S.panel=(p.panel||[]).filter(id=>wellById(id)); S.selected=wellById(p.selected)?p.selected:(S.wells[0]?.id||null);
+  setMode(p.mode||'single'); $('stNote').textContent=missing.length?`Re-open these LAS files to restore them: ${missing.join(', ')} (the desktop app stores relative paths and does this for you)`:'Project loaded'; }
+function autosave(){ try{ localStorage.setItem('weller.session',JSON.stringify(projectJSON())); }catch(e){} }
+$('btnSave').onclick=()=>{ $('pdTitle').textContent='Save project'; $('pdHint').textContent='This is the .lasproj content. In the desktop app this goes straight to a file dialog. Wells opened from disk are stored as file references; synthetic demo wells regenerate.'; $('pdText').value=JSON.stringify(projectJSON(),null,1); $('projDlg').hidden=false; };
+$('btnLoad').onclick=()=>{ $('pdTitle').textContent='Load project'; $('pdHint').textContent='Open a .lasproj file or paste its JSON below.'; $('pdText').value=''; $('projDlg').hidden=false; };
+$('pdClose').onclick=()=>{ $('projDlg').hidden=true; };
+$('pdCopy').onclick=async()=>{ try{ await navigator.clipboard.writeText($('pdText').value); $('pdCopy').textContent='Copied'; }catch(e){ $('pdText').select(); $('pdCopy').textContent='Select + copy'; } setTimeout(()=>$('pdCopy').textContent='Copy JSON',1500); };
+$('pdDownloadBtn').onclick=()=>{ const a=$('pdDownload'); a.href=URL.createObjectURL(new Blob([$('pdText').value],{type:'application/json'})); a.download=(wellById(S.selected)?.name||'project').replace(/\s+/g,'-')+'.lasproj'; a.click(); $('stNote').textContent='Download started (blocked inside the hosted preview; works when run locally).'; };
+$('pdOpenFile').onclick=()=>$('projFile').click();
+$('projFile').onchange=async e=>{ const f=e.target.files[0]; if(f){ $('pdText').value=await f.text(); } e.target.value=''; };
+$('pdApply').onclick=()=>{ try{ loadProject(JSON.parse($('pdText').value)); $('projDlg').hidden=true; }catch(err){ $('pdHint').textContent='Could not load: '+err.message; } };
+
+/* ---------- Boot: resume-last-session prompt ---------- */
+loadPresets();
+let saved=null; try{ saved=JSON.parse(localStorage.getItem('weller.session')||'null'); }catch(e){}
+if(saved&&saved.savedAt){ $('resumeWhen').textContent=new Date(saved.savedAt).toLocaleString(); $('resume').hidden=false; }
+$('btnResume').onclick=()=>{ try{ loadProject(saved); }catch(e){ $('stNote').textContent='Saved session could not be restored: '+e.message; } $('resume').hidden=true; };
+$('btnFresh').onclick=()=>{ $('resume').hidden=true; };
+fitView();
+</script>
