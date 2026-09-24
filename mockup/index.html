@@ -580,7 +580,10 @@ $('wdCancel').onclick=()=>{ $('wellDlg').hidden=true; };
 $('wdRemove').onclick=()=>{ S.wells=S.wells.filter(w=>w!==wellEditing); S.panel=S.panel.filter(id=>wellById(id)); if(!wellById(S.selected)) S.selected=S.wells[0]?.id||null; $('wellDlg').hidden=true; render(); };
 
 /* ---------- Tops CSV, PNG export ---------- */
-async function downloadBlob(name,blob){ if(D){ const p=await D.saveBytes(name,new Uint8Array(await blob.arrayBuffer())); if(p) $('stNote').textContent='Saved '+p; return; } const a=$('pdDownload'); a.href=URL.createObjectURL(blob); a.download=name; a.click(); }
+let hostedDownloads=null; (async()=>{ try{ if(window.claude?.use) hostedDownloads=await window.claude.use('downloads'); }catch(e){} })();
+async function downloadBlob(name,blob){ if(D){ const p=await D.saveBytes(name,new Uint8Array(await blob.arrayBuffer())); if(p) $('stNote').textContent='Saved '+p; return; }
+  if(hostedDownloads){ try{ await hostedDownloads.save({filename:name,data:blob}); $('stNote').textContent='Saved '+name; }catch(err){ $('stNote').textContent=err.code==='declined'?'Save cancelled':'Save failed: '+(err.message||err.code); } return; }
+  const a=$('pdDownload'); a.href=URL.createObjectURL(blob); a.download=name; a.click(); }
 function topsCSV(){ const L=['well,api,top,md_ft']; for(const w of S.wells) for(const t of w.tops) L.push([w.name,w.api||'',t.name,t.md].map(v=>/[",]/.test(String(v))?`"${String(v).replace(/"/g,'""')}"`:v).join(',')); return L.join('\n')+'\n'; }
 function importTopsCSV(text){ const rows=d3.csvParse(text); const cols=rows.columns.map(c=>c.toLowerCase().trim()); const find=re=>rows.columns[cols.findIndex(c=>re.test(c))];
   const cw=find(/^(well|well[_ ]?name|name|wellname)$/), ca=find(/api|uwi/), ct=find(/^(top|formation|surface|marker|pick)/), cm=find(/^(md|depth|md_ft|top_md|measured)/);
@@ -591,7 +594,7 @@ function importTopsCSV(text){ const rows=d3.csvParse(text); const cols=rows.colu
   return `${n} tops imported${miss.size?'; no matching well for: '+[...miss].join(', '):''}`; }
 $('btnTopsImport').onclick=()=>$('topsFile').click();
 $('topsFile').onchange=async e=>{ const f=e.target.files[0]; if(f){ try{ $('stNote').textContent=importTopsCSV(await f.text()); render(); }catch(err){ $('stNote').textContent='Tops CSV: '+err.message; } } e.target.value=''; };
-$('btnTopsExport').onclick=()=>{ downloadBlob('tops.csv',new Blob([topsCSV()],{type:'text/csv'})); if(!D) $('stNote').textContent='tops.csv download started (blocked inside the hosted preview; works locally).'; };
+$('btnTopsExport').onclick=()=>{ downloadBlob('tops.csv',new Blob([topsCSV()],{type:'text/csv'})); };
 function svgToImage(svgEl){ const clone=svgEl.cloneNode(true); const vars=['--grid','--grid-strong','--ink','--muted','--paper','--sand','--shale','--gas','--pico','--repetto','--puente','--gr','--sp','--cal','--rdeep','--rmed','--rshal','--rhob','--nphi','--dt','--rop','--wob','--tg','--c1','--c2'];
   const st=document.createElementNS('http://www.w3.org/2000/svg','style'); st.textContent=`.grid{stroke:${cssVar('--grid')};stroke-width:1}.grid.s{stroke:${cssVar('--grid-strong')}}.top{stroke:${cssVar('--ink')};stroke-width:1.2}text{font:10px "IBM Plex Mono",monospace;fill:${cssVar('--muted')}}.depth{fill:${cssVar('--ink')};font-size:11px}.toplbl{font:600 10px "IBM Plex Sans Condensed",sans-serif;fill:${cssVar('--ink')}}.corr{stroke:${cssVar('--ink')};stroke-width:1.2;stroke-dasharray:4 3;fill:none}.fm{opacity:.55}`;
   clone.insertBefore(st,clone.firstChild); clone.setAttribute('xmlns','http://www.w3.org/2000/svg');
@@ -616,7 +619,7 @@ async function exportPNG(){ const panel=$('logPanel'); const pr=panel.getBoundin
   const ov=$('overlay'); if(ov.childNodes.length){ const img=await svgToImage(ov); ctx.drawImage(img,0,0); }
   return cv; }
 $('btnPng').onclick=async()=>{ $('stNote').textContent='Rendering PNG…'; $('cursor').style.display='none';
-  try{ const cv=await exportPNG(); cv.toBlob(b=>{ downloadBlob(($('vbWell').textContent||'panel').replace(/[^\w-]+/g,'_')+'.png',b); if(!D) $('stNote').textContent=`PNG ${cv.width}×${cv.height} download started (blocked inside the hosted preview; works locally and in the desktop app).`; },'image/png'); }
+  try{ const cv=await exportPNG(); cv.toBlob(b=>{ downloadBlob(($('vbWell').textContent||'panel').replace(/[^\w-]+/g,'_')+'.png',b); },'image/png'); }
   catch(err){ $('stNote').textContent='PNG export failed: '+err.message; } };
 
 /* ---------- View controls ---------- */
@@ -665,7 +668,7 @@ $('btnSave').onclick=()=>{ if(D) return saveProjectDesktop(false); $('pdTitle').
 $('btnLoad').onclick=async()=>{ if(D){ const r=await D.openProject(); if(r){ try{ await loadProject(JSON.parse(r.text),r.path); }catch(err){ $('stNote').textContent='Could not load: '+err.message; } } return; } $('pdTitle').textContent='Load project'; $('pdHint').textContent='Open a .lasproj file or paste its JSON below.'; $('pdText').value=''; $('projDlg').hidden=false; };
 $('pdClose').onclick=()=>{ $('projDlg').hidden=true; };
 $('pdCopy').onclick=async()=>{ try{ await navigator.clipboard.writeText($('pdText').value); $('pdCopy').textContent='Copied'; }catch(e){ $('pdText').select(); $('pdCopy').textContent='Select + copy'; } setTimeout(()=>$('pdCopy').textContent='Copy JSON',1500); };
-$('pdDownloadBtn').onclick=()=>{ const a=$('pdDownload'); a.href=URL.createObjectURL(new Blob([$('pdText').value],{type:'application/json'})); a.download=(wellById(S.selected)?.name||'project').replace(/\s+/g,'-')+'.lasproj'; a.click(); $('stNote').textContent='Download started (blocked inside the hosted preview; works when run locally).'; };
+$('pdDownloadBtn').onclick=()=>{ downloadBlob((wellById(S.selected)?.name||'project').replace(/\s+/g,'-')+'.lasproj.json',new Blob([$('pdText').value],{type:'application/json'})); };
 $('pdOpenFile').onclick=()=>$('projFile').click();
 $('projFile').onchange=async e=>{ const f=e.target.files[0]; if(f){ $('pdText').value=await f.text(); } e.target.value=''; };
 $('pdApply').onclick=async()=>{ try{ await loadProject(JSON.parse($('pdText').value)); $('projDlg').hidden=true; }catch(err){ $('pdHint').textContent='Could not load: '+err.message; } };
