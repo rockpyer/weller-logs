@@ -8,10 +8,10 @@ scales, correlates across wells, and saves the whole session as one project file
 
 | Concern | Choice | Why |
 |---|---|---|
-| Shell | **Electron** + electron-builder | One-click desktop shortcut, native file dialogs, "reopen last session" prompt, no Rust toolchain needed. Core stays a plain web app, so it also runs in a browser. Tauri is the lighter alternative if install size matters. |
-| UI | **React + TypeScript + Vite** | Boring and well-supported. Zustand for state. |
-| LAS parsing | **las-js** (LAS 2.0) with our own fallback parser | `las-js` is maintained and zero-dep. Old CalGEM/DOGGR-era files are often LAS 1.2, wrapped, or have malformed headers; our fallback handles that. `wellio` is an older LAS-to-JSON converter with no advantage over las-js. |
-| Track rendering | **@equinor/videx-wellog** | Production log-track component from Equinor (MIT). Scale tracks, log-scale resistivity, area fills, zoom/pan, headers. Avoids writing a track renderer from scratch. |
+| Shell | **Electron** + electron-builder (macOS first) | One-click desktop app, native file dialogs, "reopen last project" prompt, `.lasproj` file association. The core is a plain web page, so it also runs in Firefox/Brave/Chrome. |
+| UI | Plain HTML + D3, one file for now | The app is ~1,500 lines. Splitting into Vite modules happens when the raster and survey code lands, not before. |
+| LAS parsing | Our own parser (LAS 1.2/2.0, wrapped) | Real SoCal files break `las-js` assumptions: free-text ELEV and LOC fields, `-9999` in addition to `-999.25`, mixed-case mnemonics, positive west longitudes. The parser handles those with notes shown to the user. |
+| Track rendering | Our D3 renderer now; **@equinor/videx-wellog** stays an option | videx-wellog is excellent for a single well, but the correlation panel needs datum shifts, cross-column polygons and gradient fills it does not provide. The current renderer does all of that in ~300 lines. Revisit if per-track zoom or huge curve counts become a problem. |
 | Cross-section / trajectory | **@equinor/esv-intersection** (phase 3) | Vertical-section view of deviated wells with surfaces and logs along the path. Same family as videx. |
 | 3D (later) | three.js or @webviz/subsurface-viewer | Only once trajectories and surfaces exist. |
 | Map | **MapLibre GL** + OSM/USGS raster tiles, **proj4js** for CRS | SoCal wells come in NAD27, NAD83, CA State Plane Zone 5/6 (feet). proj4 handles all of it. |
@@ -56,10 +56,11 @@ Project { version, wells: WellRef[], tracks: TrackConfig[], panels: Panel[],
 
 ## 2. Phases
 
-**Phase 1 — single well (the current ask).**
-Open LAS → parse → alias curves → auto-build tracks (GR/SP/CAL, Resistivity log, Porosity, Mud log)
-→ zoom/pan/depth window → edit tracks, scales, colors → tops → save/load `.lasproj`
-→ Electron shell with desktop shortcut and "reopen last session" prompt.
+**Phase 1 — single well (done in the mockup, now the app).**
+Open LAS → parse → alias curves → auto-build tracks (GR/SP/CAL, Resistivity log, Porosity, Drilling,
+Gas, Cuttings %) → zoom/pan/depth window → edit tracks, scales, colors, fills → tops (pick, CSV)
+→ save/load `.lasproj` → PNG export → Electron shell with "reopen last project" prompt.
+Remaining for phase 1: a Mac build signed for distribution, and a test pass on more real LAS files.
 
 **Phase 2 — correlation panel.**
 Open several wells → side-by-side with shared depth or hung on a datum (sea level, a top,
@@ -119,7 +120,15 @@ Everything is adjustable; these are the defaults. Resistivity is always log scal
 - Project stores relative paths to LAS/raster files plus an optional embedded copy so a `.lasproj` can travel alone.
 - Desktop shortcut created by the installer (NSIS on Windows, DMG on macOS, AppImage/deb on Linux).
 
-## 6. Open questions
+## 6. Answers so far
+
+- macOS first; the web build must work in Firefox and Brave, others will use Chromium.
+- Headers may lack elevation and coordinates: entered per well in Well settings, stored in the project.
+- Mud logs arrive as LAS when possible (Petrolog iLog export verified), otherwise PDF (phase 2 raster).
+- Tops CSV import exists (`well,top,md`); no preload list yet.
+- PNG is the export format.
+
+## 7. Open questions
 
 1. Windows, macOS, or both for the first installer?
 2. Do your LAS files carry elevation and coordinates, or will you enter them? Do you have directional surveys?
