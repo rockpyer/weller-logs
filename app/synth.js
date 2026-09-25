@@ -46,6 +46,7 @@
     const C = {};
     const names = ['GR', 'SP', 'CALI', 'ILD', 'ILM', 'SFL', 'RHOB', 'NPHI', 'DT', 'ROP', 'WOB', 'TG', 'C1', 'C2'];
     names.forEach(k => C[k] = new Float64Array(n));
+    const PHI = new Float64Array(n), VSH = new Float64Array(n);
     let bi = 0, wob = 18 + rnd() * 8;
     for (let i = 0; i < n; i++) {
       const z = depth[i];
@@ -58,6 +59,7 @@
       const gas = b.gas;
       const phi = Math.max(0.05, (0.36 - 0.03 * z / 1000) * (1 - 0.65 * vsh));
       const sw = gas ? 0.25 + rnd() * 0.1 : 1;
+      PHI[i] = phi; VSH[i] = vsh;
       const hot = b.fm === 'Puente' ? 18 : 0;
       C.GR[i] = 18 + 112 * vsh + hot + gauss() * 4;
       C.SP[i] = 8 - 85 * (1 - vsh) + gauss() * 2;
@@ -102,8 +104,29 @@
     [[0.31, 0.315], [0.72, 0.722]].forEach(([a, b]) => {
       for (let i = Math.floor(n * a); i < Math.floor(n * b); i++) { C.RHOB[i] = NaN; C.NPHI[i] = NaN; C.DT[i] = NaN; }
     });
+    // Conventional core: two cored intervals in the Repetto, one plug per foot.
+    // Core porosity is true porosity (no shale neutron effect); perm from a phi-k transform with scatter.
+    const points = [];
+    const pm = [], pphi = [], pk = [], pgd = [];
+    const repTop = topsMD.Repetto, repBase = topsMD.Puente;
+    for (let c = 0; c < 2; c++) {
+      const c0 = Math.round(repTop + (0.15 + 0.45 * c + rnd() * 0.2) * (repBase - repTop));
+      for (let z = c0; z < c0 + 30 + Math.round(rnd() * 25); z += 1) {
+        const i = Math.round((z - start) / step); if (i < 0 || i >= n) continue;
+        const phi = Math.max(0.02, PHI[i] + gauss() * 0.015);
+        pm.push(z + 0.3); pphi.push(+phi.toFixed(4));
+        pk.push(+(10 ** (-1.2 + 13 * phi - 2.2 * VSH[i] + gauss() * 0.35)).toPrecision(3));
+        pgd.push(+(2.655 + 0.04 * VSH[i] + gauss() * 0.01).toFixed(3));
+      }
+    }
+    if (pm.length) {
+      const md = Float64Array.from(pm);
+      points.push({ mnemonic: 'CORE_PHI', unit: 'V/V', description: 'Core porosity (helium)', md, data: Float64Array.from(pphi) });
+      points.push({ mnemonic: 'CORE_K', unit: 'MD', description: 'Core permeability (air)', md, data: Float64Array.from(pk) });
+      points.push({ mnemonic: 'GRAIN_DEN', unit: 'G/C3', description: 'Grain density', md, data: Float64Array.from(pgd) });
+    }
     return {
-      id: cfg.id, name: cfg.name, api: cfg.api, synthetic: true,
+      id: cfg.id, name: cfg.name, api: cfg.api, synthetic: true, points,
       location: { lat: cfg.lat, lon: cfg.lon, crs: 'EPSG:4267 (NAD27)' },
       elevation: { kb: cfg.kb, gl: cfg.kb - 12, unit: 'ft' },
       depthUnit: 'ft', curves,
@@ -154,5 +177,12 @@
     return L.join('\n') + '\n';
   }
 
-  root.WellerSynth = { makeWell, PRESET_WELLS, toLAS, FORMATIONS };
+  function pointsCSV(wells) {
+    const L = ['well,md_ft,core_phi (v/v),core_k (mD),grain_den (g/cc)'];
+    for (const w of wells) { const p = w.points; if (!p.length) continue;
+      for (let i = 0; i < p[0].md.length; i++) L.push([w.name, p[0].md[i], p[0].data[i], p[1].data[i], p[2].data[i]].join(',')); }
+    return L.join('\n') + '\n';
+  }
+
+  root.WellerSynth = { makeWell, PRESET_WELLS, toLAS, pointsCSV, FORMATIONS };
 })(typeof globalThis !== 'undefined' ? globalThis : this);
