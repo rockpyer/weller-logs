@@ -157,18 +157,15 @@ function restorePoints(w, list) {
 /* ---------- Sidebar section ---------- */
 function renderPointList() {
   const box = $('pointList'); const names = pointSeriesNames(); $('pointCount').textContent = names.length || '';
-  if (!names.length) { box.innerHTML = '<p class="hint">Open a CSV with md plus value columns (core, XRD, pressures, shows). Columns: well, md, then one per measurement.</p>'; return; }
-  box.innerHTML = '';
-  for (const m of names) {
+  if (!names.length) { setHTML(box, '<p class="hint">Open a CSV with md plus value columns (core, XRD, pressures, shows). Columns: well, md, then one per measurement.</p>'); return; }
+  setHTML(box, names.map(m => {
     const wells = S.wells.filter(w => w.curves.some(c => c.sparse && c.mnemonic === m));
     const n = d3.sum(wells, w => w.curves.find(c => c.sparse && c.mnemonic === m).md.length);
     const t = pointTrackOf(m); const hidden = (S.hiddenPoints || []).includes(m);
     const cfg = t?.curves.find(c => c.pointSeries === m);
     const opts = S.tracks.filter(x => !x.type).map(x => `<option value="${x.id}"${t === x ? ' selected' : ''}>${x.name}</option>`).join('');
-    const row = document.createElement('div'); row.className = 'trackrow';
-    row.innerHTML = `<span class="sw"><i class="dotsw" style="background:${cfg?.color || 'var(--muted)'}"></i></span><span class="nm" title="${n} samples in ${wells.map(w => w.name).join(', ')}">${m} <small class="hint">${n}</small></span>
-      <select data-ptmove="${m}" aria-label="Track for ${m}">${opts}<option value="new:${m}">New track</option><option value="hidden"${hidden ? ' selected' : ''}>Hidden</option></select>`;
-    box.appendChild(row);
-  }
+    return `<div class="trackrow"><span class="sw"><i class="dotsw" style="background:${cfg?.color || 'var(--muted)'}"></i></span><span class="nm" title="${n} samples in ${wells.map(w => w.name).join(', ')}">${m} <small class="hint">${n}</small></span>
+      <select data-ptmove="${m}" aria-label="Track for ${m}">${opts}<option value="new:${m}">New track</option><option value="hidden"${hidden ? ' selected' : ''}>Hidden</option></select></div>`;
+  }).join(''));
 }
 document.addEventListener('change', e => { const m = e.target.dataset?.ptmove; if (m) { movePointSeries(m, e.target.value); render(); } });

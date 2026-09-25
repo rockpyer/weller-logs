@@ -68,7 +68,7 @@ const LITH=[
 const cssVar=n=>getComputedStyle(document.documentElement).getPropertyValue(n).trim();
 function defaultTracks(){ return [
   {id:'t1',name:'GR / SP / Cal',width:190,panel:true,curves:[
-    {label:'GR',aliases:A.GR,min:0,max:150,unit:'GAPI',color:'var(--gr)',fill:'left',fillStyle:'gradient',fillColor:'#F2DC8A',fillColor2:'#7A8A6A',fillOpacity:.45},
+    {label:'GR',aliases:A.GR,min:0,max:150,unit:'GAPI',color:'var(--gr)',fill:'left',fillStyle:'gradient',fillColor:'#F2D16B',fillColor2:'#6B7A5E',fillOpacity:.75},
     {label:'SP',aliases:A.SP,min:-160,max:40,unit:'mV',color:'var(--sp)'},
     {label:'CAL',aliases:A.CAL,min:6,max:16,unit:'in',color:'var(--cal)',dash:'3 3'}]},
   {id:'t2',name:'Resistivity',width:190,panel:true,curves:[
@@ -84,7 +84,7 @@ function defaultTracks(){ return [
     {label:'WOB',aliases:A.WOB,min:0,max:50,unit:'klb',color:'var(--wob)',dash:'3 3'}]},
   {id:'t5',name:'Gas',width:150,curves:[
     {label:'TG',aliases:A.TG,min:1,max:10000,log:true,unit:'units',color:'var(--tg)'},
-    {label:'C1',aliases:A.C1,min:1,max:100000,log:true,unit:'ppm',color:'var(--c1)',fill:'left',fillStyle:'gradient',fillColor:'#FCE8D5',fillColor2:'#E4572E',fillOpacity:.6},
+    {label:'C1',aliases:A.C1,min:1,max:100000,log:true,unit:'ppm',color:'var(--c1)',fill:'left',fillStyle:'gradient',fillColor:'#FCE8D5',fillColor2:'#E4572E',fillOpacity:.75},
     {label:'C2',aliases:A.C2,min:1,max:100000,log:true,unit:'ppm',color:'var(--c2)',dash:'4 2'}]},
   {id:'t6',name:'Lith',width:70,type:'lith',panel:true,curves:[{label:'GR',aliases:A.GR,min:20,max:130}]},
   {id:'t7',name:'Cuttings %',width:110,type:'lithpct',curves:LITH.map(l=>({...l,min:0,max:100,unit:'%'}))},
@@ -151,6 +151,7 @@ function depthTrack(w,y,H,tickI,minorI,o){
   for(const tp of w.tops){ const yy=y(tp.md-o); if(yy<0||yy>H) continue; svg.append('line').attr('x1',0).attr('x2',64).attr('y1',yy).attr('y2',yy).attr('class','top'); }
   div.appendChild(svg.node()); return div;
 }
+const fillHex=c=>c&&c.startsWith('var(')?cssVarHex(c.slice(4,-1)):c;
 function scaleFor(c,width){ return c.log?d3.scaleLog([c.min,c.max],[0,width]).clamp(true):d3.scaleLinear([c.min,c.max],[0,width]).clamp(true); }
 function logTrack(w,t,y,H,tickI,minorI,o,dep){
   const width=t.width||190; const div=document.createElement('div'); div.className='track'; div.style.width=width+'px';
@@ -193,8 +194,11 @@ function logTrack(w,t,y,H,tickI,minorI,o,dep){
         svg.append('path').attr('d',area(idx)).attr('fill','var(--gas)').attr('opacity',.45); } }
     for(const {cfg,curve} of resolved){ if(!curve) continue; const sx=scaleFor(cfg,width); if(curve.sparse){ drawPoints(svg,cfg,curve,sx,y,o,top,bot); continue; } const ok=i=>Number.isFinite(curve.data[i])&&!(cfg.log&&curve.data[i]<=0);
       if(cfg.fill&&cfg.fill!=='none'){ let fillRef=cfg.fillColor||cfg.color;
-        if(cfg.fillStyle==='gradient'){ const gid='g'+t.id+'_'+cfg.label.replace(/\W/g,'')+'_'+w.id; const gr=svg.append('defs').append('linearGradient').attr('id',gid).attr('gradientUnits','userSpaceOnUse').attr('x1',0).attr('x2',width).attr('y1',0).attr('y2',0);
-          gr.append('stop').attr('offset','0%').attr('stop-color',cfg.fillColor||cfg.color); gr.append('stop').attr('offset','100%').attr('stop-color',cfg.fillColor2||cfg.color); fillRef=`url(#${gid})`; }
+        if(cfg.fillStyle==='gradient'){ // color each depth by its value: left-scale color to right-scale color
+          const gid='g'+t.id+'_'+cfg.label.replace(/\W/g,'')+'_'+w.id, mix=d3.interpolateRgb(fillHex(cfg.fillColor||cfg.color),fillHex(cfg.fillColor2||cfg.color));
+          const gr=svg.append('defs').append('linearGradient').attr('id',gid).attr('gradientUnits','userSpaceOnUse').attr('x1',0).attr('x2',0).attr('y1',0).attr('y2',H);
+          for(const i of idx){ if(!ok(i)) continue; const yy=y(dep[i]-o); if(yy<0||yy>H) continue; gr.append('stop').attr('offset',(yy/H).toFixed(5)).attr('stop-color',mix(sx(curve.data[i])/width)); }
+          fillRef=`url(#${gid})`; }
         const area=d3.area().defined(ok).x0(cfg.fill==='left'?0:width).x1(i=>sx(curve.data[i])).y(i=>y(dep[i]-o)); svg.append('path').attr('d',area(idx)).attr('fill',fillRef).attr('opacity',cfg.fillOpacity??.35); }
       const line=d3.line().defined(ok).x(i=>sx(curve.data[i])).y(i=>y(dep[i]-o));
       svg.append('path').attr('d',line(idx)).attr('fill','none').attr('stroke',cfg.color).attr('stroke-width',1.2).attr('stroke-dasharray',cfg.dash||null); }
@@ -231,25 +235,44 @@ function placeTop(w,md){ const name=$('topName').value.trim(); if(!name) return;
 
 /* ---------- Sidebar: map, wells, tracks, tops ---------- */
 function clickWell(id){ if(S.mode==='corr'){ const i=S.panel.indexOf(id); if(i>=0) S.panel.splice(i,1); else S.panel.push(id); } else S.selected=id; render(); }
+// Rebuild a list only when its markup changed, so a click in progress never loses its target.
+function setHTML(el,html){ if(el._html!==html){ el.innerHTML=html; el._html=html; } }
 function renderSidebar(){
   renderMap();
   $('wellCount').textContent=S.wells.length;
-  const ul=$('wellList'); ul.innerHTML='';
-  for(const w of S.wells){ const li=document.createElement('li'); li.className=w.id===S.selected?'sel':''; const [a,b]=wellRange(w);
-    li.innerHTML=`<span class="dot${S.mode==='corr'&&S.panel.includes(w.id)?' in':''}"></span><span>${w.name}</span><span class="meta">${w.curves.filter(c=>!c.sparse).length-1} crv${w.curves.some(c=>c.sparse)?' · pts':''} · ${fmtDepth(b)} ${w.depthUnit}</span><button class="small" data-wellset="${w.id}" title="Well settings">⚙</button>`;
-    li.onclick=e=>{ if(!e.target.closest('button')) clickWell(w.id); }; ul.appendChild(li); }
-  const tl=$('trackList'); tl.innerHTML='';
-  S.tracks.forEach((t,i)=>{ const d=document.createElement('div'); d.className='trackrow'; d.innerHTML=`<span class="sw">${t.curves.slice(0,4).map(c=>`<i style="background:${c.color||'var(--muted)'}"></i>`).join('')}</span><span class="nm">${t.name}</span><label title="Show in correlation panel" style="display:${S.mode==='corr'?'inline':'none'};font-size:11px;color:var(--muted)"><input type="checkbox" data-panel="${i}"${t.panel?' checked':''}> panel</label><button class="small" data-up="${i}" title="Move left">◂</button><button class="small" data-dn="${i}" title="Move right">▸</button><button class="small" data-edit="${t.id}">⚙</button>`; tl.appendChild(d); });
+  setHTML($('wellList'),S.wells.map(w=>{ const [a,b]=wellRange(w); return `<li data-well="${w.id}" class="${w.id===S.selected?'sel':''}"><span class="dot${S.mode==='corr'&&S.panel.includes(w.id)?' in':''}"></span><span>${w.name}</span><span class="meta">${w.curves.filter(c=>!c.sparse).length-1} crv${w.curves.some(c=>c.sparse)?' · pts':''} · ${fmtDepth(b)} ${w.depthUnit}</span><button class="small" data-wellset="${w.id}" title="Well settings">⚙</button></li>`; }).join(''));
+  setHTML($('trackList'),S.tracks.map((t,i)=>`<div class="trackrow"><span class="sw">${t.curves.slice(0,4).map(c=>`<i style="background:${c.color||'var(--muted)'}"></i>`).join('')}</span><span class="nm">${t.name}</span><label title="Show in correlation panel" style="display:${S.mode==='corr'?'inline':'none'};font-size:11px;color:var(--muted)"><input type="checkbox" data-panel="${i}"${t.panel?' checked':''}> panel</label><button class="small" data-up="${i}" title="Move left">◂</button><button class="small" data-dn="${i}" title="Move right">▸</button><button class="small" data-edit="${t.id}">⚙</button></div>`).join(''));
   renderPointList();
   const w=S.mode==='corr'?wellById(S.panel[S.panel.length-1]||S.selected):wellById(S.selected);
-  $('topsWell').textContent=w?w.name:''; const tt=$('topsTable'); tt.innerHTML='';
-  if(w){ for(const t of [...w.tops].sort((a,b)=>a.md-b.md)){ const tr=document.createElement('tr'); tr.innerHTML=`<td>${t.name}</td><td style="text-align:right">${t.md.toFixed(1)}</td><td><button class="small" data-deltop="${t.name}">×</button></td>`; tt.appendChild(tr); } }
+  $('topsWell').textContent=w?w.name:'';
+  setHTML($('topsTable'),w?[...w.tops].sort((a,b)=>a.md-b.md).map(t=>`<tr><td>${t.name}</td><td style="text-align:right">${t.md.toFixed(1)}</td><td><button class="small" data-deltop="${t.name}">×</button></td></tr>`).join(''):'');
   const names=[...new Set([...S.wells.flatMap(w=>w.tops.map(t=>t.name)),'Pico','Repetto','Puente'])];
   $('topNames').innerHTML=names.map(n=>`<option value="${n}">`).join('');
   const dsel=$('datum'); const cur=S.datum; dsel.innerHTML=`<option value="MD">Measured depth</option><option value="TVDSS">Sea level (TVDSS)</option>`+names.map(n=>`<option value="${n}">Flatten on ${n}</option>`).join(''); dsel.value=names.includes(cur)||cur==='MD'||cur==='TVDSS'?cur:'MD';
   $('winTop').value=S.view.top; $('winBot').value=S.view.bottom; $('showEmpty').checked=S.showEmpty;
   const sw=wellById(S.selected); if(sw) $('stFile').innerHTML=`<b>${sw.fileName||sw.name+'.las (synthetic)'}</b> · ${sw.rows||depthOf(sw).length} rows · KB ${sw.elevation.kb??'?'} ft · null ${sw.nullv??-999.25}${sw.wrap?' · wrapped':''}`;
 }
+
+/* ---------- Color popover: pick a swatch and it closes (native pickers stay open on macOS) ---------- */
+const SWATCHES=['#172029','#4A5560','#6B7680','#9AA6B2','#D5DBE2','#FFFFFF','#8C7B62','#A89A84',
+  '#C62828','#E4572E','#EF6C00','#F7A04A','#F2D16B','#E9D8A6','#FCE8D5','#D9BD5A',
+  '#2E7D32','#5FBF66','#6B7A5E','#1baf7a','#1565C0','#2a78d6','#6AA6E8','#9DBBD6',
+  '#6A1B9A','#9085e9','#C084E8','#e87ba4','#B4541E','#7A8A6A','#3E4B57','#000000'];
+let colorTarget=null;
+function openColorPop(btn){ colorTarget=btn; const pop=$('colorPop'), r=btn.getBoundingClientRect(), cur=(btn.dataset.color||'').toLowerCase();
+  pop.querySelector('.grid').innerHTML=SWATCHES.map(c=>`<button type="button" data-pick="${c}" style="background:${c}" title="${c}" aria-label="${c}"${c.toLowerCase()===cur?' class="on"':''}></button>`).join('');
+  $('cpHex').value=btn.dataset.color||''; $('cpNative').value=/^#[0-9a-f]{6}$/i.test(btn.dataset.color)?btn.dataset.color:'#333333';
+  pop.hidden=false; const pw=pop.offsetWidth, ph=pop.offsetHeight;
+  pop.style.left=Math.max(8,Math.min(innerWidth-pw-8,r.left))+'px'; pop.style.top=(r.bottom+ph+8>innerHeight?r.top-ph-4:r.bottom+4)+'px';
+  pop.querySelector('button').focus(); }
+function pickColor(c){ if(colorTarget&&/^#[0-9a-f]{6}$/i.test(c)){ colorTarget.dataset.color=c; colorTarget.style.background=c; } closeColorPop(); }
+function closeColorPop(){ $('colorPop').hidden=true; colorTarget?.focus(); colorTarget=null; }
+document.addEventListener('click',e=>{ const sb=e.target.closest('.swatchbtn'); if(sb){ openColorPop(sb); return; }
+  const pk=e.target.closest('[data-pick]'); if(pk){ pickColor(pk.dataset.pick); return; }
+  if(!$('colorPop').hidden&&!e.target.closest('#colorPop')) closeColorPop(); },true);
+$('cpHex').addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); let v=e.target.value.trim(); if(!v.startsWith('#')) v='#'+v; pickColor(v); } });
+$('cpNative').addEventListener('change',e=>pickColor(e.target.value));
+document.addEventListener('keydown',e=>{ if(e.key==='Escape'&&!$('colorPop').hidden){ e.stopPropagation(); closeColorPop(); } },true);
 
 /* ---------- Track editor ---------- */
 let editing=null;
@@ -259,11 +282,11 @@ function drawTdCurves(){ const w=wellById(S.selected)||S.wells[0]; const tb=$('t
   editing.curves.forEach((c,i)=>{ const tr=document.createElement('tr'); const cur=resolveCurve(w,c);
     tr.innerHTML=`<td><select data-i="${i}" class="tdm">${w.curves.slice(1).map(x=>`<option value="${x.mnemonic}"${cur&&cur.mnemonic===x.mnemonic?' selected':''}>${x.mnemonic} (${x.unit||'-'})${x.sparse?' · points':''}</option>`).join('')}${cur?'':`<option selected value="">${c.label} (not in well)</option>`}</select><div class="hint" style="font-size:10px">${c.label}</div></td>
       <td><input type="number" class="tdmin" data-i="${i}" value="${c.min}" step="any"></td><td><input type="number" class="tdmax" data-i="${i}" value="${c.max}" step="any"><button class="small tdauto" data-i="${i}" title="Set scale from this well's data (p2 to p98)">auto</button></td>
-      <td><input type="checkbox" class="tdlog" data-i="${i}"${c.log?' checked':''}></td><td><input type="color" class="tdcol" data-i="${i}" value="${toHex(c.color||'#333333')}"></td>
+      <td><input type="checkbox" class="tdlog" data-i="${i}"${c.log?' checked':''}></td><td><button type="button" class="swatchbtn tdcol" data-i="${i}" data-color="${toHex(c.color||'#333333')}" style="background:${toHex(c.color||'#333333')}" title="Line color"></button></td>
       <td><input type="checkbox" class="tddash" data-i="${i}"${c.dash?' checked':''}></td>
       <td><select class="tdfill" data-i="${i}"><option value="none"${!c.fill||c.fill==='none'?' selected':''}>None</option><option value="left"${c.fill==='left'?' selected':''}>Left of curve</option><option value="right"${c.fill==='right'?' selected':''}>Right of curve</option></select>
-          <select class="tdfs" data-i="${i}"><option value="solid"${c.fillStyle!=='gradient'?' selected':''}>Solid</option><option value="gradient"${c.fillStyle==='gradient'?' selected':''}>Gradient by value</option></select></td>
-      <td><input type="color" class="tdfc" data-i="${i}" value="${toHex(c.fillColor||c.color||'#cccccc')}" title="Fill color (gradient: at left scale value)"><input type="color" class="tdfc2" data-i="${i}" value="${toHex(c.fillColor2||c.fillColor||c.color||'#cccccc')}" title="Gradient color at right scale value"></td>
+          <select class="tdfs" data-i="${i}"><option value="solid"${c.fillStyle!=='gradient'?' selected':''}>Solid</option><option value="gradient"${c.fillStyle==='gradient'?' selected':''}>Color by value</option></select></td>
+      <td><button type="button" class="swatchbtn tdfc" data-i="${i}" data-color="${toHex(c.fillColor||c.color||'#cccccc')}" style="background:${toHex(c.fillColor||c.color||'#cccccc')}" title="Fill color. Gradient: color at the left scale value"></button><button type="button" class="swatchbtn tdfc2" data-i="${i}" data-color="${toHex(c.fillColor2||c.fillColor||c.color||'#cccccc')}" style="background:${toHex(c.fillColor2||c.fillColor||c.color||'#cccccc')}" title="Gradient color at the right scale value"></button></td>
       <td><input type="number" class="tdfo" data-i="${i}" value="${c.fillOpacity??.35}" min="0" max="1" step="0.05" style="width:4em"></td>
       <td><button class="small tdrm" data-i="${i}">×</button></td>`; tb.appendChild(tr); }); }
 function autoScale(curve,log){ const v=Array.from(curve.data).filter(x=>Number.isFinite(x)&&(!log||x>0)).sort((a,b)=>a-b); if(v.length<10) return null;
@@ -272,8 +295,8 @@ function autoScale(curve,log){ const v=Array.from(curve.data).filter(x=>Number.i
 function cssVarHex(name){ const v=cssVar(name); if(/^#/.test(v)) return v; const m=v.match(/\d+/g); return m?'#'+m.slice(0,3).map(n=>(+n).toString(16).padStart(2,'0')).join(''):'#333333'; }
 function readTd(){ editing.name=$('tdName').value; editing.width=+$('tdWidth').value||190;
   document.querySelectorAll('#tdCurves tr').forEach((tr,i)=>{ const c=editing.curves[i]; const m=tr.querySelector('.tdm').value; if(m){ const mu=m.toUpperCase(); if(!c.aliases.some(a=>a.toUpperCase()===mu)) c.label=m; c.aliases=[m,...c.aliases.filter(a=>a.toUpperCase()!==mu)]; }
-    c.min=+tr.querySelector('.tdmin').value; c.max=+tr.querySelector('.tdmax').value; c.log=tr.querySelector('.tdlog').checked; c.color=tr.querySelector('.tdcol').value; c.dash=tr.querySelector('.tddash').checked?'4 3':undefined;
-    c.fill=tr.querySelector('.tdfill').value; c.fillStyle=tr.querySelector('.tdfs').value; c.fillColor=tr.querySelector('.tdfc').value; c.fillColor2=tr.querySelector('.tdfc2').value; c.fillOpacity=+tr.querySelector('.tdfo').value; }); }
+    c.min=+tr.querySelector('.tdmin').value; c.max=+tr.querySelector('.tdmax').value; c.log=tr.querySelector('.tdlog').checked; c.color=tr.querySelector('.tdcol').dataset.color; c.dash=tr.querySelector('.tddash').checked?'4 3':undefined;
+    c.fill=tr.querySelector('.tdfill').value; c.fillStyle=tr.querySelector('.tdfs').value; c.fillColor=tr.querySelector('.tdfc').dataset.color; c.fillColor2=tr.querySelector('.tdfc2').dataset.color; c.fillOpacity=+tr.querySelector('.tdfo').value; }); }
 document.addEventListener('change',e=>{ if(e.target.dataset.panel!==undefined){ S.tracks[+e.target.dataset.panel].panel=e.target.checked; render(); } });
 document.addEventListener('click',e=>{
   const b=e.target.closest('button'); if(!b) return;
@@ -345,10 +368,11 @@ $('btnPng').onclick=async()=>{ if(S.mode==='stats'){ $('stXp').toBlob(b=>downloa
   catch(err){ $('stNote').textContent='PNG export failed: '+err.message; } };
 
 /* ---------- View controls ---------- */
+$('wellList').addEventListener('click',e=>{ const li=e.target.closest('li[data-well]'); if(li&&!e.target.closest('button')) clickWell(li.dataset.well); });
 document.querySelectorAll('[data-mode]').forEach(b=>b.onclick=()=>setMode(b.dataset.mode));
 function setMode(m){ const was=S.mode; S.mode=m; document.querySelectorAll('[data-mode]').forEach(b=>b.setAttribute('aria-selected',b.dataset.mode===m)); if(m==='corr'&&S.panel.length===0) S.panel=[S.selected]; if(m!=='stats'&&was==='stats'){ render(); fitView(); } else render(); }
 $('datum').onchange=e=>{ S.datum=e.target.value; fitView(); };
-$('winTop').onchange=e=>{ S.view.top=+e.target.value; render(); }; $('winBot').onchange=e=>{ S.view.bottom=+e.target.value; render(); };
+$('winTop').onchange=e=>{ if(+e.target.value!==S.view.top){ S.view.top=+e.target.value; render(); } }; $('winBot').onchange=e=>{ if(+e.target.value!==S.view.bottom){ S.view.bottom=+e.target.value; render(); } };
 $('btnFit').onclick=fitView;
 $('showEmpty').onchange=e=>{ S.showEmpty=e.target.checked; render(); };
 function fitView(){ if(S.mode==='stats') return render(); const wells=S.mode==='single'?[wellById(S.selected)]:S.panel.map(wellById); let lo=Infinity,hi=-Infinity;

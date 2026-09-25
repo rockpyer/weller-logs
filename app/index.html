@@ -106,6 +106,7 @@ table.data tbody tr:hover{background:var(--ground)}
 #stBox{display:block;max-width:100%}
 #stBox .gl{stroke:var(--grid)}#stBox .ax{font:10px "IBM Plex Mono",monospace;fill:var(--muted)}#stBox .lbl{font:11px "IBM Plex Sans",sans-serif;fill:var(--ink)}
 #stXp{display:block;max-width:100%;cursor:crosshair}
+.more>summary{cursor:pointer;font-size:12px;color:var(--focus);margin:6px 0}
 .readout{font:400 11px "IBM Plex Mono",monospace;color:var(--muted);margin-left:auto}
 #dropHint{position:fixed;inset:12px;border:3px dashed var(--accent);border-radius:10px;background:var(--panel);opacity:.92;display:none;align-items:center;justify-content:center;font:600 20px "IBM Plex Sans Condensed",sans-serif;color:var(--accent);z-index:1000;pointer-events:none}
 body.dropping #dropHint{display:flex}
@@ -163,6 +164,15 @@ ul.list .meta{margin-left:auto;font:11px "IBM Plex Mono",monospace;color:var(--m
 #cursor{position:absolute;left:0;right:0;height:0;border-top:1px solid var(--accent);pointer-events:none;display:none}
 .status{display:flex;gap:18px;padding:4px 16px;border-top:1px solid var(--line);background:var(--panel);font:12px "IBM Plex Mono",monospace;font-variant-numeric:tabular-nums;color:var(--muted);flex-wrap:wrap;min-height:26px}
 .status b{color:var(--ink);font-weight:500}
+.swatchbtn{width:26px;height:22px;padding:0;border:1px solid var(--line);border-radius:4px;vertical-align:middle;box-shadow:inset 0 0 0 2px var(--panel)}
+.swatchbtn+.swatchbtn{margin-left:4px}
+.colorpop{position:fixed;z-index:60;background:var(--panel);border:1px solid var(--line);border-radius:6px;box-shadow:0 8px 24px rgba(0,0,0,.25);padding:8px;display:flex;flex-direction:column;gap:8px;width:236px}
+.colorpop .grid{display:grid;grid-template-columns:repeat(8,1fr);gap:4px}
+.colorpop .grid button{width:22px;height:22px;padding:0;border:1px solid var(--line);border-radius:3px}
+.colorpop .grid button.on,.colorpop .grid button:focus-visible{outline:2px solid var(--focus);outline-offset:1px}
+.colorpop .cprow{display:flex;gap:6px;align-items:center}
+.colorpop #cpHex{flex:1;min-width:0;font:12px "IBM Plex Mono",monospace}
+.colorpop input[type=color]{width:26px;height:22px;padding:0;border:1px solid var(--line)}
 .modal{position:fixed;inset:0;background:rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center;z-index:20;padding:16px}
 .dlg{background:var(--panel);border-radius:6px;box-shadow:0 10px 40px rgba(0,0,0,.3);width:min(960px,100%);max-height:90vh;overflow:auto;padding:16px 18px;display:flex;flex-direction:column;gap:12px}
 .dlg h3{margin:0;font:600 18px "IBM Plex Sans Condensed",sans-serif}
@@ -261,18 +271,13 @@ ul.list .meta{margin-left:auto;font:11px "IBM Plex Mono",monospace;color:var(--m
           <button class="small" id="btnTopsExport">Export tops CSV</button>
         </div>
         <div class="statsbody">
-          <section class="card">
-            <h3>Summary by zone</h3>
-            <div class="tblwrap"><table class="data" id="stSummary"></table></div>
-            <p class="hint">Zones run from each top to the next top, or to TD. Means are depth-weighted; columns marked g use the geometric mean (resistivity, gas, perm). Hover a value for P10, P50, P90 and null count.</p>
-          </section>
           <div class="legend2" id="stLegend"></div>
           <div class="grid2">
             <section class="card">
               <h3>Distribution <select id="stCurve" aria-label="Curve"></select></h3>
               <svg id="stBox" role="img" aria-label="Box plots by zone and well"></svg>
               <p class="hint">Box P25 to P75, whisker P10 to P90, bar median, open dot mean.</p>
-              <div class="tblwrap"><table class="data" id="stDetail"></table></div>
+              <details class="more"><summary>Show table</summary><div class="tblwrap"><table class="data" id="stDetail"></table></div></details>
             </section>
             <section class="card">
               <h3>Crossplot <select id="stX" aria-label="X curve"></select> vs <select id="stY" aria-label="Y curve"></select> <span id="stXpRead" class="readout"></span></h3>
@@ -280,6 +285,11 @@ ul.list .meta{margin-left:auto;font:11px "IBM Plex Mono",monospace;color:var(--m
               <p class="hint" id="stXpNote"></p>
             </section>
           </div>
+          <section class="card">
+            <h3>Summary by zone</h3>
+            <div class="tblwrap"><table class="data" id="stSummary"></table></div>
+            <p class="hint">Zones run from each top to the next top, or to TD. Means are depth-weighted; columns marked g use the geometric mean (resistivity, gas, perm). Hover a value for P10, P50, P90 and null count.</p>
+          </section>
         </div>
       </div>
     </main>
@@ -303,7 +313,7 @@ ul.list .meta{margin-left:auto;font:11px "IBM Plex Mono",monospace;color:var(--m
       <thead><tr><th>Curve</th><th>Left</th><th>Right</th><th>Log</th><th>Line</th><th>Dash</th><th>Fill</th><th>Fill colors</th><th>Opacity</th><th></th></tr></thead>
       <tbody id="tdCurves"></tbody>
     </table></div>
-    <div class="row"><button class="small" id="tdAddCurve">+ curve</button><span class="hint">Styles apply to this track in every well. Reversed scales (left &gt; right) are fine: that is how NPHI and DT are read. Gradient fills color by value from the left color to the right color across the scale.</span></div>
+    <div class="row"><button class="small" id="tdAddCurve">+ curve</button><span class="hint">Styles apply to this track in every well. Reversed scales (left &gt; right) are fine: that is how NPHI and DT are read. Color by value shades each depth by its reading, from the first color at the left scale value to the second at the right.</span></div>
     <div class="foot"><button id="tdDelete">Delete track</button><button id="tdSaveDefaults" title="Use the current track set as the default for new projects">Save all tracks as my defaults</button><button id="tdResetDefaults">Reset to built-in</button><span style="flex:1"></span><button id="tdCancel">Cancel</button><button class="primary" id="tdSave">Apply</button></div>
   </div>
 </div>
@@ -321,6 +331,10 @@ ul.list .meta{margin-left:auto;font:11px "IBM Plex Mono",monospace;color:var(--m
 </div>
 
 <a id="pdDownload" hidden></a>
+<div id="colorPop" class="colorpop" role="dialog" aria-label="Choose color" hidden>
+  <div class="grid"></div>
+  <div class="cprow"><input type="text" id="cpHex" placeholder="#hex, Enter" spellcheck="false" aria-label="Hex color"><label class="mini">Other <input type="color" id="cpNative" aria-label="Any color"></label></div>
+</div>
 <div id="dropHint" aria-hidden="true">Drop LAS, project, tops or point-data files</div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js"></script>
