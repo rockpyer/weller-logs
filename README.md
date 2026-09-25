@@ -30,28 +30,41 @@ the browser; no data leaves your machine.
 
 ## Using it
 
-- **Open LAS…** loads one or more files. Header quirks are handled: KB and lat/long in
-  free-text fields, positive west longitudes, `-9999` nulls, wrapped LAS 1.2.
+- **Open…** (or drop files anywhere) takes LAS files, `.lasproj` projects, tops CSVs and
+  point-data CSVs. The app tells them apart by content.
 - **Well ⚙** sets name, API, KB/GL, lat/long and CRS when the header lacks them.
 - **Track ⚙** edits curves, scales (with *auto* from the data), line and fill styles.
-  Fill can sit left or right of the curve, solid or as a value gradient. Styles are
-  project-wide: change GR once and every well follows. *Save all tracks as my defaults*
-  keeps the set for new projects.
-- **Tops**: type a name, *Pick on log*, click the depth. Import/export as CSV
-  (`well,top,md`).
-- **Correlation panel**: click wells on the map in section order; hang on measured depth,
-  sea level (TVDSS), or flatten on any top. Only tracks marked *panel* are shown.
-- **Export PNG** renders the current view at 2x.
+  Styles are project-wide: change GR once and every well follows.
+- **Point data**: a CSV with `well, md` and one column per measurement (core porosity,
+  permeability, XRD, pressures, show ratings). Units go in the header, e.g.
+  `core_phi (v/v)` or `k (mD)`. Porosity in percent is converted to v/v. Each series gets a
+  sensible track (porosity on the neutron scale, permeability on a log track) and can be
+  moved to any track or hidden from the sidebar.
+- **Map / Satellite** toggles USGS National Map topo and imagery. NAD27 well coordinates
+  are shifted to WGS84 so they land on the imagery.
+- **Tops**: type a name, *Pick on log*, click the depth. Tops CSV columns: `well, top, md`.
+- **Correlation**: click wells on the map in section order; hang on measured depth,
+  sea level (TVDSS), or flatten on any top.
+- **Zone stats**: per well and zone (top to next top), gross and net thickness from a GR
+  cutoff, depth-weighted means (geometric for resistivity, gas and perm), P10/P50/P90,
+  box plots by zone, and a crossplot of any two curves or point series colored by zone.
+  Exports as CSV.
+- **Export PNG** renders the log view, or the crossplot on the stats tab.
 
-Sample LAS files in `samples/` are synthetic. Regenerate with `npm run samples`.
+Sample LAS files and `samples/core_points.csv` are synthetic. Regenerate with `npm run samples`.
 
 ## Layout
 
 ```
 docs/PLAN.md         architecture, phases, default scales, pitfalls, open questions
-app/index.html       the app (single file, D3 from cdnjs with a vendored fallback)
+app/index.html       page layout and styles
+app/js/core.js       state, LAS parsing, log tracks, files, project save/load
+app/js/points.js     point-data import, placement and drawing
+app/js/map.js        Leaflet map, basemap toggle, NAD27 to WGS84 shift
+app/js/stats.js      zone statistics, box plots, crossplot
+app/synth.js         synthetic wells and core plugs for the demo
+app/vendor/          offline copies of D3 and Leaflet
 app/sw.js            service worker: offline shell cache
-app/synth.js         synthetic well generator shared with the sample script
 .github/workflows/   GitHub Pages deploy
 samples/*.las        synthetic LAS 2.0 files
 scripts/             utilities

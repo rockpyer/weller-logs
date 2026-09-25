@@ -14,7 +14,7 @@ scales, correlates across wells, and saves the whole session as one project file
 | Track rendering | Our D3 renderer now; **@equinor/videx-wellog** stays an option | videx-wellog is excellent for a single well, but the correlation panel needs datum shifts, cross-column polygons and gradient fills it does not provide. The current renderer does all of that in ~300 lines. Revisit if per-track zoom or huge curve counts become a problem. |
 | Cross-section / trajectory | **@equinor/esv-intersection** (phase 3) | Vertical-section view of deviated wells with surfaces and logs along the path. Same family as videx. |
 | 3D (later) | three.js or @webviz/subsurface-viewer | Only once trajectories and surfaces exist. |
-| Map | **MapLibre GL** + OSM/USGS raster tiles, **proj4js** for CRS | SoCal wells come in NAD27, NAD83, CA State Plane Zone 5/6 (feet). proj4 handles all of it. |
+| Map | **Leaflet** + USGS National Map topo and imagery tiles (public domain) | Light, no API key, satellite toggle. NAD27 is shifted to WGS84 with the abridged Molodensky transform (CONUS parameters, about 5 m). State Plane input still needs proj4js. |
 | Raster logs | **pdf.js** (PDF) + **UTIF** (TIFF) | Render page to canvas, user picks depth tie points, we stretch to the depth scale. |
 | Project file | `.lasproj` = JSON (optionally zipped with embedded LAS/raster copies) | Human-readable, diffable, easy to recover. |
 | Session memory | localStorage autosave + IndexedDB LAS cache | App start prompts "Resume last session?" |
@@ -112,6 +112,19 @@ Everything is adjustable; these are the defaults. Resistivity is always log scal
 - **Coordinates.** NAD27 vs NAD83 differs by ~100 m in LA. State Plane CA Zone 5 vs 6 in US survey feet. Always record CRS.
 - **Hung datums.** Flattening on a top is stratigraphic and can hide structure. Both modes stay one click apart.
 - **Deviated wells.** MD thickness ≠ TVT ≠ TST. Phase 3, but the model reserves the fields now.
+
+## 4b. Point data and zone statistics
+
+- Point series (core, XRD, pressures, shows) are sparse curves with their own depths. They
+  resolve through the same alias lookup as log curves, so tracks, cursor readout, stats and
+  crossplots treat them alike.
+- Core-to-log depth shift is not applied yet. Core depths are often 2 to 10 ft off the logs;
+  a per-well bulk shift is the next step.
+- Zone stats weight each sample by its depth interval, so irregular sampling does not bias
+  means. Resistivity, gas and permeability use geometric means; arithmetic means of
+  log-normal data overstate them.
+- Net sand is a single GR cutoff for now. A per-well Vsh from clean/shale baselines, plus
+  porosity and resistivity cutoffs, would make net pay.
 
 ## 5. Session and desktop behavior
 
