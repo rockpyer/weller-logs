@@ -1,0 +1,37 @@
+{
+ "A_swatch": {
+  "pixel_acc": 0.607,
+  "group_acc": 0.776,
+  "mIoU": 0.285,
+  "coverage": 1.0,
+  "polys": 10458
+ },
+ "B_selftrain0": {
+  "pixel_acc": 0.665,
+  "group_acc": 0.822,
+  "mIoU": 0.317,
+  "coverage": 1.0,
+  "polys": 7391
+ },
+ "B_selftrain1": {
+  "pixel_acc": 0.669,
+  "group_acc": 0.827,
+  "mIoU": 0.322,
+  "coverage": 1.0,
+  "polys": 7020
+ },
+ "C_linesnap": {
+  "pixel_acc": 0.667,
+  "group_acc": 0.824,
+  "mIoU": 0.317,
+  "coverage": 0.999,
+  "polys": 6599
+ },
+ "C_linesnap_A": {
+  "pixel_acc": 0.605,
+  "group_acc": 0.774,
+  "mIoU": 0.281,
+  "coverage": 0.999,
+  "polys": 9771
+ }
+}
