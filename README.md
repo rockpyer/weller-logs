@@ -42,6 +42,8 @@ Methods, equations, defaults and limits: [docs/PETROPHYSICS.md](docs/PETROPHYSIC
   (`well, md`, then one column per measurement, units in the header such as `k (mD)`).
 - **Save** (Cmd+S) writes the `.lasproj`. Brave and Chrome save back to the same file; Firefox downloads a copy.
 - **Export PNG** (Cmd+E) renders the log view, or the crossplot on the stats tab.
+- **Undo / redo**: Cmd+Z and Shift+Cmd+Z (Ctrl on Windows and Linux) step through edits to tops, tracks, parameters and the section.
+- ◐ in the top bar switches to a dark theme.
 - **Load example data** in the Wells panel switches between the Niobrara set and a synthetic LA Basin set.
 - Reopening the app offers to resume the last session; opened LAS files are cached in the browser.
 - In Brave or Chrome, the address-bar *Install* icon adds it to the Dock and it works offline.

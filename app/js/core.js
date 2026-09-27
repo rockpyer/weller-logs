@@ -149,6 +149,12 @@ function depthTrack(w,F,y,H,tickI,minorI,zc){
 const fillHex=c=>c&&c.startsWith('var(')?cssVarHex(c.slice(4,-1)):c;
 function scaleFor(c,width){ return c.log?d3.scaleLog([c.min,c.max],[0,width]).clamp(true):d3.scaleLinear([c.min,c.max],[0,width]).clamp(true); }
 const LITHO={Sandstone:'#EDC84A',Siltstone:'#C0CCC6',Shale:'#465445',Marl:'#A2DBDB','Limestone / chalk':'#4E86C4'};   // petroplots LITHOLOGY colors
+const LITHO_RULE={PE:{'Limestone / chalk':'PE ≥ 4, Vsh < 0.4',Marl:'PE ≥ 3.5, Vsh < 0.75',Sandstone:'PE < 2.6, Vsh < 0.4',Siltstone:'Vsh < 0.4 otherwise, or 0.4–0.65',Shale:'Vsh ≥ 0.65'},
+  GR:{Sandstone:'Vsh < 0.4',Siltstone:'Vsh 0.4–0.65',Shale:'Vsh ≥ 0.65'}};
+function showLithTip(e,k,hasPE){ const R=LITHO_RULE[hasPE?'PE':'GR'], tip=$('tip');
+  tip.innerHTML=`<div style="margin-bottom:4px;color:var(--muted)">Quick-look lithology from ${hasPE?'GR and PE':'GR only'}</div>`+Object.entries(R).map(([n,r])=>`<div class="lr${n===k?' on':''}"><i style="background:${LITHO[n]}"></i>${esc(n)} <small>${r}</small></div>`).join('');
+  tip.hidden=false; const x=e.clientX+14, y=e.clientY+14; tip.style.left=Math.min(x,innerWidth-tip.offsetWidth-8)+'px'; tip.style.top=Math.min(y,innerHeight-tip.offsetHeight-8)+'px'; }
+function hideTip(){ $('tip').hidden=true; }
 function quickLith(vsh,pe){ if(!Number.isFinite(vsh)) return null;
   if(Number.isFinite(pe)){ if(pe>=4&&vsh<0.4) return 'Limestone / chalk'; if(pe>=3.5&&vsh<0.75) return 'Marl'; if(pe<2.6&&vsh<0.4) return 'Sandstone'; if(vsh<0.4) return 'Siltstone'; }
   return vsh<0.4?'Sandstone':vsh<0.65?'Siltstone':'Shale'; }
@@ -157,9 +163,9 @@ function logTrack(w,t,F,y,H,tickI,minorI){
   const head=document.createElement('div'); head.className='thead';
   head.innerHTML=`<div class="tn"><span>${esc(t.name)}</span><button title="Edit track" data-edit="${t.id}">⚙</button></div>`;
   const resolved=t.curves.map(c=>{ const curve=resolveCurve(w,c); return {cfg:curve?effCfg(w,c):c,curve}; });
-  const gr=resolveCurve(w,{aliases:A.GR}), pe=resolveCurve(w,{aliases:A.PE});
+  const gr=resolveCurve(w,{aliases:A.GR}), pe=resolveCurve(w,{aliases:A.PE}); let lithCls=null;
   if(t.type==='lithpct'){ const have=resolved.filter(r=>r.curve&&!r.curve.sparse); head.innerHTML+=`<div class="scale" style="color:var(--muted)"><span>0</span><span class="c">${have.length?have.length+' components':'no cuttings curves'}</span><span class="r">100%</span></div><div class="legend">${have.map(r=>`<i style="background:${r.cfg.color}" title="${r.cfg.label} (${r.curve.mnemonic})"></i>`).join('')}</div>`; }
-  else if(t.type==='lith') head.innerHTML+=`<div class="scale" style="color:var(--muted)"><span></span><span class="c">${pe&&!pe.sparse?'GR + PE':'GR'} quick look</span><span></span></div><div class="legend">${Object.entries(LITHO).filter(([k])=>pe&&!pe.sparse||!/Marl|Lime/.test(k)).map(([k,c])=>`<i style="background:${c}" title="${k}"></i>`).join('')}</div>`;
+  else if(t.type==='lith') head.innerHTML+=`<div class="scale" style="color:var(--muted)"><span></span><span class="c">${pe&&!pe.sparse?'GR + PE':'GR'} quick look</span><span></span></div><div class="legend">${Object.entries(LITHO).filter(([k])=>pe&&!pe.sparse||!/Marl|Lime/.test(k)).map(([k,c])=>`<i style="background:${c}"></i>`).join('')}</div>`;
   else if(t.type==='flags') head.innerHTML+=`<div class="legend">${resolved.filter(r=>r.curve).map(r=>`<i style="background:${r.cfg.color}" title="${r.cfg.label}: ${esc(r.curve.description||'')}"></i>`).join('')}</div>`;
   else for(const {cfg,curve} of resolved){ const s=document.createElement('div'); s.className='scale'; s.style.color=cfg.color; s.style.opacity=curve?1:.35; s.title=curve?.description||'';
     s.innerHTML=`<span>${cfg.min}</span><span class="c">${curve?curve.mnemonic:cfg.label+' (none)'}${cfg.unit?' '+cfg.unit:''}${cfg.tag?' · '+cfg.tag:''}</span><span class="r">${cfg.max}</span><span class="bar${curve?.sparse?' pts':cfg.dash?' dash':''}"></span>`; head.appendChild(s); }
@@ -180,7 +186,7 @@ function logTrack(w,t,F,y,H,tickI,minorI){
       for(let k=0;k<idx.length;k++){ const i=idx[k], j=idx[k+1]??Math.min(i1,i+stride); let x=0;
         for(const r of have){ const v=r.curve.data[i]; if(!Number.isFinite(v)||v<=0) continue; band(g,i,j,x,v*sx,r.cfg.color); x+=v*sx; } } } }
   else if(t.type==='lith'){ if(gr&&!gr.sparse){ const g=svg.append('g'); const bl=grBaselines(w); const vs=resolveCurve(w,{aliases:['VSH_GR']}); let run=null;
-      const cls=i=>quickLith(vs?vs.data[i]:WellerPetro.igr(gr.data[i],bl.clean??20,bl.shale??130),pe&&!pe.sparse?pe.data[i]:NaN);
+      const cls=lithCls=i=>quickLith(vs?vs.data[i]:WellerPetro.igr(gr.data[i],bl.clean??20,bl.shale??130),pe&&!pe.sparse?pe.data[i]:NaN);
       const flush=(k,a,b)=>{ if(k) band(g,a,b,0,width,LITHO[k],k); };
       for(const i of idx){ const k=cls(i); if(!run||run.k!==k){ if(run) flush(run.k,run.a,i); run={k,a:i}; } }
       if(run) flush(run.k,run.a,i1); } }
@@ -206,8 +212,10 @@ function logTrack(w,t,F,y,H,tickI,minorI){
   for(const tp of w.tops){ const yy=y(F.z(tp.md)); if(yy<0||yy>H) continue; svg.append('line').attr('x1',0).attr('x2',width).attr('y1',yy).attr('y2',yy).attr('class','top').attr('data-top',tp.name);
     if(t===firstVis) svg.append('text').attr('x',3).attr('y',yy-3).attr('class','toplbl').attr('data-top',tp.name).text(tp.name); }
   const node=svg.node();
-  node.addEventListener('mousemove',e=>{ if(S.drag) return; const r=node.getBoundingClientRect(); const z=y.invert(e.clientY-r.top); showCursor(e.clientY-$('logPanel').getBoundingClientRect().top,mdAtZ(w,F,z),z,F,w,resolved); });
-  node.addEventListener('mouseleave',()=>{ $('cursor').style.display='none'; });
+  node.addEventListener('mousemove',e=>{ if(S.drag) return; const r=node.getBoundingClientRect(); const z=y.invert(e.clientY-r.top), md=mdAtZ(w,F,z); showCursor(e.clientY-$('logPanel').getBoundingClientRect().top,md,z,F,w,resolved);
+    if(lithCls){ const dep=depthOf(w); showLithTip(e,lithCls(Math.min(dep.length-1,Math.max(0,d3.bisectCenter(dep,md)))),pe&&!pe.sparse); } });
+  node.addEventListener('mouseleave',()=>{ $('cursor').style.display='none'; hideTip(); });
+  if(t.type==='lith') head.querySelector('.legend')?.addEventListener('mousemove',e=>showLithTip(e,null,pe&&!pe.sparse)), head.querySelector('.legend')?.addEventListener('mouseleave',hideTip);
   node.addEventListener('click',e=>{ if(!S.picking) return; const r=node.getBoundingClientRect(); const md=Math.round(mdAtZ(w,F,y.invert(e.clientY-r.top))*2)/2; placeTop(w,md); });
   attachTopDrag(node,w,F,y);
   div.appendChild(node); return div;
@@ -448,7 +456,20 @@ async function loadProject(p){ if(!p||p.app!=='weller-logs') throw new Error('no
     const live=S.wells.find(w=>w.fileName===ref.fileName)||fromCache[ref.fileName]; if(live){ if(ref.demo) live.demo=ref.demo; Object.assign(live,{tops:ref.tops,elevation:ref.elevation,location:ref.location,name:ref.name,api:ref.api,field:ref.field,id:ref.id}); restorePoints(live,ref.points); return live; } missing.push(ref.fileName||ref.name); return null; }).filter(Boolean);
   S.tracks=p.tracks; S.view=p.view; S.datum=p.datum||'MD'; S.hiddenPoints=p.hiddenPoints||[]; S.stats={...statsDefaults(),...(p.stats||{})}; S.interp={...interpDefaults(),...(p.interp||{})}; S.corr={...S.corr,...(p.corr||{})}; if(!p.tracks.some(t=>t.id==='t8')) S.tracks=[...p.tracks,...defaultTracks().filter(t=>['t8','t9','t10','t11','t12'].includes(t.id))]; setBasemap(p.basemap||'map'); if((p.version||1)<2) pointSeriesNames().forEach(placePointSeries); S.panel=(p.panel||[]).filter(id=>wellById(id)); S.selected=wellById(p.selected)?p.selected:(S.wells[0]?.id||null);
   computeAllInterp(); setMode(p.mode||'single'); $('stNote').textContent=missing.length?`Re-open these LAS files to restore them: ${missing.join(', ')}`:'Project loaded'; }
-function autosave(){ try{ localStorage.setItem('weller.session',JSON.stringify(projectJSON())); }catch(e){} }
+function autosave(){ try{ localStorage.setItem('weller.session',JSON.stringify(projectJSON())); }catch(e){} recordHistory(); }
+/* Undo and redo (Cmd/Ctrl+Z, Shift+Cmd/Ctrl+Z or Ctrl+Y). Each render compares an edit snapshot with the last one.
+   View, mode and selection are left out, so zooming or switching tabs is not an undo step. */
+const HIST={undo:[],redo:[],last:null,busy:false};
+function editSnapshot(){ const p=projectJSON(); delete p.savedAt; delete p.view; delete p.mode; delete p.selected; return JSON.stringify(p); }
+function recordHistory(){ if(HIST.busy||S.drag) return; const snap=editSnapshot(); if(snap===HIST.last) return;
+  if(HIST.last!==null){ HIST.undo.push(HIST.last); if(HIST.undo.length>60) HIST.undo.shift(); HIST.redo=[]; } HIST.last=snap; }
+async function stepHistory(back){ const from=back?HIST.undo:HIST.redo, to=back?HIST.redo:HIST.undo; if(!from.length||HIST.busy){ $('stNote').textContent=back?'Nothing to undo':'Nothing to redo'; return; }
+  const snap=from.pop(); to.push(HIST.last); HIST.busy=true;
+  try{ const p={...JSON.parse(snap),view:S.view,mode:S.mode,selected:S.selected}; S.wells.forEach(w=>w._grP=null); await loadProject(p); HIST.last=snap; $('stNote').textContent=(back?'Undone':'Redone')+` · ${HIST.undo.length} more to undo`; }
+  finally{ HIST.busy=false; } }
+document.addEventListener('keydown',e=>{ if(!(e.metaKey||e.ctrlKey)) return; const k=e.key.toLowerCase(); if(k!=='z'&&k!=='y') return;
+  const el=e.target; if(el.matches?.('textarea,input[type=text],input:not([type])')) return;   // native text undo
+  e.preventDefault(); if(el.blur&&el!==document.body) el.blur(); stepHistory(k==='z'&&!e.shiftKey); });
 const projName=()=>(wellById(S.selected)?.name||'project').replace(/\s+/g,'-')+'.lasproj';
 async function saveProject(as){ const text=JSON.stringify(projectJSON(),null,1);
   if(window.showSaveFilePicker){ try{ if(as||!S.fileHandle) S.fileHandle=await showSaveFilePicker({suggestedName:projName(),types:[{description:'Weller Logs project',accept:{'application/json':['.lasproj']}}]});
@@ -471,7 +492,7 @@ async function loadExample(name){
   // Example parameters. Rw: max specific conductance 61.3 mS/cm at 25 C in Niobrara produced water, Weld County
   // (USGS data release doi:10.5066/P14CRSQQ); late-time samples approach formation water, giving Rw 0.16 ohm.m at 77 F.
   S.interp={...interpDefaults(),matrix:'auto',swPhi:'total',rw:0.16,rwTemp:77,
-    source:'Example parameters: Rw 0.16 Ω·m at 77 °F from Niobrara produced water, Weld County (USGS doi:10.5066/P14CRSQQ); Sw on total porosity, as usual for chalk-marl source rocks. Replace with your own data.'};
+    source:'Example Rw 0.16 Ω·m at 77 °F, from Weld County Niobrara produced water (USGS doi:10.5066/P14CRSQQ)', sourceSw:'Sw on total porosity, usual for chalk-marl source rocks'};
   const notes=addLASFiles(NIOBRARA_FILES.map((f,i)=>({name:f,text:texts[i],demo:'niobrara/'+f})));
   const tops=await fetchText('data/niobrara/tops.csv'); if(tops) importTopsCSV(tops);
   computeAllInterp();
@@ -493,4 +514,14 @@ if(saved&&saved.savedAt){ $('resumeWhen').textContent=new Date(saved.savedAt).to
 $('btnResume').onclick=async()=>{ $('resume').hidden=true; try{ await loadProject(saved); }catch(e){ $('stNote').textContent='Saved session could not be restored: '+e.message; } };
 $('btnFresh').onclick=()=>{ $('resume').hidden=true; };
 if('serviceWorker' in navigator&&/^https?:/.test(location.protocol)&&!/claude\.ai|claudeusercontent/.test(location.host)) navigator.serviceWorker.register('sw.js').catch(()=>{});
-(async()=>{ if(!(await loadExample('niobrara'))){ loadPresets(); fitView(); } undoProject=null; })();
+(async()=>{ if(!(await loadExample('niobrara'))){ loadPresets(); fitView(); } undoProject=null; HIST.undo=[]; HIST.redo=[]; HIST.last=editSnapshot(); })();
+
+/* ---------- About, popouts and theme ---------- */
+function placePop(pop,anchor){ pop.hidden=false; const r=anchor.getBoundingClientRect(); pop.style.top=(r.bottom+8)+'px'; pop.style.left=Math.max(16,Math.min(r.right-pop.offsetWidth,innerWidth-pop.offsetWidth-16))+'px'; }
+$('btnAbout').onclick=e=>{ e.stopPropagation(); const p=$('aboutPop'); p.hidden?placePop(p,e.currentTarget):(p.hidden=true); };
+document.addEventListener('click',e=>{ if(e.target.closest('[data-close]')){ e.target.closest('.pop').hidden=true; return; }
+  if(e.target.closest('#btnNotes,#btnAbout')) return;
+  document.querySelectorAll('.pop:not([hidden])').forEach(p=>{ if(!p.contains(e.target)) p.hidden=true; }); });
+document.addEventListener('keydown',e=>{ if(e.key==='Escape') document.querySelectorAll('.pop:not([hidden])').forEach(p=>p.hidden=true); });
+function setTheme(t){ if(t==='dark') document.documentElement.dataset.theme='dark'; else delete document.documentElement.dataset.theme; try{ localStorage.setItem('weller.theme',t); }catch(e){} }
+$('btnTheme').onclick=()=>{ setTheme(document.documentElement.dataset.theme==='dark'?'light':'dark'); render(); };

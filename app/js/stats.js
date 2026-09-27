@@ -98,6 +98,9 @@ const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;',
 function renderStats() {
   S.stats ||= statsDefaults();
   const colors = zoneColorMap(); const { rows, curves } = computeStats();
+  // Group by formation, top down, then by well.
+  const zi = new Map([...colors.keys()].map((n, i) => [n, i])), wi = new Map(S.wells.map((w, i) => [w.id, i]));
+  rows.sort((a, b) => zi.get(a.zone.name) - zi.get(b.zone.name) || wi.get(a.well.id) - wi.get(b.well.id));
   // Well chips
   $('stWells').innerHTML = S.wells.map(w => `<label class="chip"><input type="checkbox" data-stwell="${w.id}"${!S.stats.wells || S.stats.wells.includes(w.id) ? ' checked' : ''}> ${esc(w.name)}</label>`).join('');
   $('stCutoff').value = S.stats.cutoff;
@@ -108,10 +111,10 @@ function renderStats() {
   const petro = rows.some(r => r.basis === 'flags'), grOnly = rows.some(r => r.basis === 'gr');
   $('stCutoffWrap').hidden = !grOnly;
   const pc = (v, d = 0) => v == null ? '—' : (100 * v).toFixed(d) + '%'; const PH = S.interp?.swPhi === 'total' ? 'PHIT' : 'PHIE';
-  const head = `<tr><th>Well</th><th>Zone</th><th class="num">Top MD</th><th class="num">Base MD</th><th class="num" title="True vertical thickness in deviated wells">Gross ft</th><th class="num">Net ft</th><th class="num">N/G</th>`
+  const head = `<tr><th>Zone</th><th>Well</th><th class="num">Top MD</th><th class="num">Base MD</th><th class="num" title="True vertical thickness in deviated wells">Gross ft</th><th class="num">Net ft</th><th class="num">N/G</th>`
     + (petro ? `<th class="num">Pay ft</th><th class="num" title="Average ${PH} over net reservoir">${PH} net</th><th class="num" title="Average Sw over net pay">Sw pay</th><th class="num" title="Sum of ${PH} x h over net reservoir">φ·h ft</th><th class="num" title="Sum of ${PH} x (1 - Sw) x h over net pay">HC·h ft</th>` : '')
     + curves.map(c => `<th class="num" title="${c.log ? 'Geometric mean' : 'Depth-weighted mean'}${c.unit ? ', ' + esc(c.unit) : ''}">${esc(c.label)}${c.log ? ' <small>g</small>' : ''}</th>`).join('') + '</tr>';
-  const body = rows.map(r => `<tr><td>${esc(r.well.name)}</td><td><i class="zsw" style="background:${colors.get(r.zone.name)}"></i>${esc(r.zone.name)}</td><td class="num">${fmtDepth(r.zone.top)}</td><td class="num">${fmtDepth(r.zone.base)}</td><td class="num">${fmtDepth(r.gross)}</td><td class="num">${r.net == null ? '—' : fmtDepth(r.net)}${r.basis === 'gr' ? '<small title="GR cutoff">*</small>' : ''}</td><td class="num">${pc(r.ntg)}</td>`
+  const body = rows.map((r, k) => `<tr${k && rows[k - 1].zone.name !== r.zone.name ? ' class="grp"' : ''}><td>${k && rows[k - 1].zone.name === r.zone.name ? '' : `<i class="zsw" style="background:${colors.get(r.zone.name)}"></i>${esc(r.zone.name)}`}</td><td>${esc(r.well.name)}</td><td class="num">${fmtDepth(r.zone.top)}</td><td class="num">${fmtDepth(r.zone.base)}</td><td class="num">${fmtDepth(r.gross)}</td><td class="num">${r.net == null ? '—' : fmtDepth(r.net)}${r.basis === 'gr' ? '<small title="GR cutoff">*</small>' : ''}</td><td class="num">${pc(r.ntg)}</td>`
     + (petro ? `<td class="num">${r.pay == null ? '—' : fmtDepth(r.pay)}</td><td class="num">${pc(r.phiNet, 1)}</td><td class="num">${pc(r.swPay)}</td><td class="num">${r.phih == null ? '—' : r.phih.toFixed(1)}</td><td class="num">${r.hch == null ? '—' : r.hch.toFixed(1)}</td>` : '')
     + curves.map(c => { const b = r.by[c.label]; const s = b?.s; return `<td class="num" title="${s?.n ? `${b.curve.mnemonic}: n ${s.n}, P10 ${f3(s.p10, c.log)}, P50 ${f3(s.p50, c.log)}, P90 ${f3(s.p90, c.log)}, ${s.nullPct.toFixed(0)}% null` : 'no data'}">${s?.n ? f3(s.mean, c.log) : '—'}</td>`; }).join('') + '</tr>').join('');
   $('stSummary').innerHTML = `<thead>${head}</thead><tbody>${body}</tbody>`;
@@ -141,23 +144,30 @@ function drawBoxes(rows, cfg, colors) {
   if (!cfg) return;
   const items = rows.map(r => ({ r, b: r.by[cfg.label] })).filter(x => x.b?.s.n);
   if (!items.length) { svg.attr('height', 40).append('text').attr('x', 8).attr('y', 24).attr('class', 'ax').text('No samples for this curve in the selected wells.'); return; }
-  const W = Math.max(320, $('stBox').parentElement.clientWidth - 4), rowH = 22, left = Math.min(260, Math.max(170, 7 * d3.max(items, it => (it.r.zone.name + ' · ' + it.r.well.name).length))), right = 16, topPad = 8, H = topPad + items.length * rowH + 30;
+  // One header row per formation (top down), then a box per well.
+  const lines = []; items.forEach((it, i) => { if (!i || items[i - 1].r.zone.name !== it.r.zone.name) lines.push({ head: it.r.zone.name }); lines.push(it); });
+  const W = Math.max(320, $('stBox').parentElement.clientWidth - 4), rowH = 20, left = Math.min(220, Math.max(130, 7 * d3.max(items, it => it.r.well.name.length) + 24)), right = 16, topPad = 4, H = topPad + lines.length * rowH + 30;
   svg.attr('width', W).attr('height', H).attr('viewBox', `0 0 ${W} ${H}`);
   const lo = d3.min(items, x => x.b.s.p10), hi = d3.max(items, x => x.b.s.p90);
   const x = (cfg.log ? d3.scaleLog().domain([Math.max(lo, 1e-6), hi]) : d3.scaleLinear().domain([lo, hi])).nice().range([left, W - right]);
   const ticks = cfg.log ? x.ticks(4).filter(t => /^1/.test(t.toExponential())) : x.ticks(6);
   svg.append('g').selectAll('line').data(ticks).join('line').attr('class', 'gl').attr('x1', x).attr('x2', x).attr('y1', topPad).attr('y2', H - 24);
   svg.append('g').selectAll('text').data(ticks).join('text').attr('class', 'ax').attr('x', x).attr('y', H - 8).attr('text-anchor', 'middle').text(t => f3(t, cfg.log));
-  items.forEach(({ r, b }, i) => {
-    const s = b.s, yc = topPad + i * rowH + rowH / 2, c = colors.get(r.zone.name);
+  lines.forEach((ln, i) => {
+    const yc = topPad + i * rowH + rowH / 2;
+    if (ln.head) { const c = colors.get(ln.head);
+      if (i) svg.append('line').attr('class', 'gl').attr('x1', 0).attr('x2', W).attr('y1', yc - rowH / 2).attr('y2', yc - rowH / 2);
+      svg.append('rect').attr('x', 0).attr('y', yc - 5).attr('width', 10).attr('height', 10).attr('rx', 2).attr('fill', c);
+      svg.append('text').attr('class', 'grp').attr('x', 16).attr('y', yc + 4).text(ln.head); return; }
+    const { r, b } = ln, s = b.s, c = colors.get(r.zone.name);
     const g = svg.append('g');
     g.append('rect').attr('x', 0).attr('y', yc - rowH / 2).attr('width', W).attr('height', rowH).attr('fill', 'transparent');
-    g.append('text').attr('class', 'lbl').attr('x', left - 8).attr('y', yc + 4).attr('text-anchor', 'end').text(`${r.zone.name} · ${r.well.name}`);
+    g.append('text').attr('class', 'lbl').attr('x', left - 8).attr('y', yc + 4).attr('text-anchor', 'end').text(r.well.name);
     g.append('line').attr('x1', x(s.p10)).attr('x2', x(s.p90)).attr('y1', yc).attr('y2', yc).attr('stroke', c).attr('stroke-width', 2);
     g.append('rect').attr('x', x(s.p25)).attr('y', yc - 6).attr('width', Math.max(2, x(s.p75) - x(s.p25))).attr('height', 12).attr('rx', 2).attr('fill', c).attr('fill-opacity', .35).attr('stroke', c).attr('stroke-width', 1.5);
     g.append('line').attr('x1', x(s.p50)).attr('x2', x(s.p50)).attr('y1', yc - 6).attr('y2', yc + 6).attr('stroke', 'var(--ink)').attr('stroke-width', 2);
     g.append('circle').attr('cx', x(s.mean)).attr('cy', yc).attr('r', 3).attr('fill', 'var(--paper)').attr('stroke', 'var(--ink)').attr('stroke-width', 1.5);
-    g.append('title').text(`${r.well.name} · ${r.zone.name} · ${b.curve.mnemonic}\nn ${s.n}  ${cfg.log ? 'gmean' : 'mean'} ${f3(s.mean, cfg.log)}\nP10 ${f3(s.p10, cfg.log)}  P50 ${f3(s.p50, cfg.log)}  P90 ${f3(s.p90, cfg.log)}\n${s.nullPct.toFixed(0)}% null`);
+    g.append('title').text(`${r.zone.name} · ${r.well.name} · ${b.curve.mnemonic}\nn ${s.n}  ${cfg.log ? 'gmean' : 'mean'} ${f3(s.mean, cfg.log)}\nP10 ${f3(s.p10, cfg.log)}  P50 ${f3(s.p50, cfg.log)}  P90 ${f3(s.p90, cfg.log)}\n${s.nullPct.toFixed(0)}% null`);
   });
   $('stDetail').innerHTML = `<thead><tr><th>Zone</th><th>Well</th><th class="num">n</th><th class="num">${cfg.log ? 'gmean' : 'mean'}</th><th class="num">sd</th><th class="num">min</th><th class="num">P10</th><th class="num">P50</th><th class="num">P90</th><th class="num">max</th><th class="num">null</th></tr></thead><tbody>`
     + items.map(({ r, b }) => { const s = b.s; return `<tr><td><i class="zsw" style="background:${colors.get(r.zone.name)}"></i>${esc(r.zone.name)}</td><td>${esc(r.well.name)}</td><td class="num">${s.n}</td><td class="num">${f3(s.mean, cfg.log)}</td><td class="num">${f3(s.sd)}</td><td class="num">${f3(s.min, cfg.log)}</td><td class="num">${f3(s.p10, cfg.log)}</td><td class="num">${f3(s.p50, cfg.log)}</td><td class="num">${f3(s.p90, cfg.log)}</td><td class="num">${f3(s.max, cfg.log)}</td><td class="num">${s.nullPct.toFixed(0)}%</td></tr>`; }).join('') + '</tbody>';

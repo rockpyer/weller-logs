@@ -94,7 +94,7 @@ function computeInterp(w) {
   if (ok(rhob)) { addComputed(w, 'NET_RES', '', `Net reservoir: Vsh < ${I.cut.vsh}, ${I.swPhi === 'total' ? 'PHIT' : 'PHIE'} >= ${I.cut.phi}, not bad hole`, nres); if (ok(rt)) addComputed(w, 'NET_PAY', '', `Net pay: net reservoir and Sw <= ${I.cut.sw}`, npay); }
   if (I.toc.enabled && ok(rt) && ok(rhob)) computeTOC(w, rt, rhob, vsh);
   if (!Number.isFinite(bht)) w.interpNotes.push('no BHT in header: Rw not temperature-corrected');
-  const gb = grBaselines(w); if (gb.auto && gb.hotFrac > 0.02) w.interpNotes.push(`${Math.round(gb.hotFrac * 100)}% of GR reads above ${Math.round(gb.hot)} API (organic or uranium-rich): excluded from the shale baseline. GR overstates clay in these rocks`);
+  const gb = grBaselines(w); if (gb.auto && gb.hotFrac > 0.02) w.interpNotes.push(`${Math.round(gb.hotFrac * 100)}% of GR is above ${Math.round(gb.hot)} API (organic or uranium-rich) and left out of the shale baseline`);
   if (w.neutronMatrix && S.interp.matrix !== 'auto' && S.interp.matrix !== w.neutronMatrix) w.interpNotes.push(`neutron recorded on ${w.neutronMatrix}, density porosity on ${S.interp.matrix}: neutron-density mixes matrices`);
 }
 
@@ -146,9 +146,29 @@ function renderInterpPanel() {
       <label>Cutoffs Vsh &lt; ${num('ipCv', I.cut.vsh, 0.05)} PHIE ≥ ${num('ipCp', I.cut.phi, 0.01)} Sw ≤ ${num('ipCs', I.cut.sw, 0.05)}</label>
       <label title="Level of organic metamorphism: about 10-11 in the oil window. Set from vitrinite reflectance or Tmax.">TOC LOM ${num('ipLom', I.toc.lom, 0.5)} baseline ${sel('ipBase', I.toc.baselineZone, [['auto', 'Auto'], ...zones.map(z => [z, z])])}</label>
     </div>
-    ${I.source ? `<p class="hint">${esc(I.source)}</p>` : ''}
-    <p class="hint">${w ? (w.interpNotes || []).concat(w.tocBaseline ? [`TOC baseline Rt ${w.tocBaseline.rt.toFixed(2)} Ω·m, RHOB ${w.tocBaseline.rhob.toFixed(3)} g/cc`] : []).join('. ') : ''}</p>`);
+    ${interpNotes(w).length ? `<button class="small notesbtn" id="btnNotes" aria-haspopup="dialog">ⓘ Notes · ${interpNotes(w).length}</button>` : ''}`);
+  if (!$('notesPop').hidden) showNotes();
 }
+// Parameter sources and per-well caveats, shown in a popout beside the sidebar so the panel stays short.
+function interpNotes(w) {
+  const out = [];
+  if (S.interp.source) out.push(S.interp.source);
+  if (S.interp.sourceSw) out.push(S.interp.sourceSw);
+  if (w) out.push(...(w.interpNotes || []));
+  if (w?.tocBaseline) out.push(`TOC baseline: Rt ${w.tocBaseline.rt.toFixed(2)} Ω·m, RHOB ${w.tocBaseline.rhob.toFixed(3)} g/cc`);
+  return out;
+}
+function showNotes() {
+  const w = wellById(S.selected), pop = $('notesPop'), b = $('btnNotes');
+  if (!b) { pop.hidden = true; return; }
+  const link = t => esc(t).replace(/doi:([\w./]+\w)/, (m, d) => `<a href="https://doi.org/${d}" target="_blank" rel="noopener">${m}</a>`);
+  pop.innerHTML = `<h4>Interpretation notes${w ? ' · ' + esc(w.name) : ''} <button class="x" data-close aria-label="Close">×</button></h4><ul>${interpNotes(w).map(n => `<li>${link(n)}</li>`).join('')}</ul>`;
+  const side = document.querySelector('.side').getBoundingClientRect(), r = b.getBoundingClientRect();
+  pop.hidden = false;
+  const wide = innerWidth > 760, left = wide ? side.right + 10 : 16;
+  pop.style.left = left + 'px'; pop.style.top = Math.max(8, Math.min(r.top - 8, innerHeight - pop.offsetHeight - 8)) + 'px';
+}
+document.addEventListener('click', e => { if (e.target.id === 'btnNotes') { e.stopPropagation(); $('notesPop').hidden ? showNotes() : ($('notesPop').hidden = true); } });
 
 let interpTimer = null;
 document.addEventListener('change', e => {
