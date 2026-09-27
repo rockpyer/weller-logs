@@ -12,8 +12,8 @@
   --ground:#EDF0F3; --panel:#FFFFFF; --paper:#FFFFFF; --ink:#172029; --muted:#5C6975; --line:#D5DBE2;
   --grid:#DCE2E8; --grid-strong:#B7C0CA; --accent:#B4541E; --accent-ink:#FFFFFF; --focus:#2B6CB0;
   --sand:#E9D8A6; --shale:#B9C6D1; --gas:#E4572E; --pico:#D7E3EE; --repetto:#F3E6C6; --puente:#DCD5E6;
-  --gr:#2E7D32; --sp:#1F5FA8; --cal:#6B7680; --rdeep:#C62828; --rmed:#1565C0; --rshal:#2E7D32;
-  --rhob:#C62828; --nphi:#1565C0; --dt:#6A1B9A; --rop:#172029; --wob:#1565C0; --tg:#172029; --c1:#C62828; --c2:#EF6C00;
+  --gr:#2C6E49; --sp:#7A5C3E; --cal:#5C6B73; --rdeep:#111111; --rmed:#555555; --rshal:#999999;
+  --rhob:#C1121F; --nphi:#0353A4; --dt:#6A4C93; --rop:#172029; --wob:#1565C0; --tg:#172029; --c1:#C62828; --pef:#B5651D; --vsh:#6C757D; --phie:#2A9D8F; --sw:#1D3557; --toc:#7A5C3E; --c2:#EF6C00;
   --shadow:0 1px 2px rgba(23,32,41,.08);
   color-scheme:light;
 }
@@ -21,8 +21,8 @@
   --ground:#12161B; --panel:#1B2128; --paper:#1F262E; --ink:#E4E9EE; --muted:#93A0AD; --line:#2E3740;
   --grid:#2A323B; --grid-strong:#3F4A56; --accent:#E07A3E; --accent-ink:#12161B; --focus:#6AA6E8;
   --sand:#6E5F2E; --shale:#3E4B57; --gas:#F0704E; --pico:#26333F; --repetto:#3E3624; --puente:#342E42;
-  --gr:#5FBF66; --sp:#6AA6E8; --cal:#9AA6B2; --rdeep:#F06767; --rmed:#6AA6E8; --rshal:#5FBF66;
-  --rhob:#F06767; --nphi:#6AA6E8; --dt:#C084E8; --rop:#E4E9EE; --wob:#6AA6E8; --tg:#E4E9EE; --c1:#F06767; --c2:#F7A04A;
+  --gr:#5FBF7F; --sp:#C19A6B; --cal:#9AA6B2; --rdeep:#E4E9EE; --rmed:#AAB4BE; --rshal:#6F7C88;
+  --rhob:#F06767; --nphi:#6AA6E8; --dt:#B79BE0; --rop:#E4E9EE; --wob:#6AA6E8; --tg:#E4E9EE; --c1:#F06767; --pef:#D99A5B; --vsh:#AAB4BE; --phie:#4FC3B5; --sw:#8FB3E8; --toc:#C19A6B; --c2:#F7A04A;
   --shadow:0 1px 2px rgba(0,0,0,.4);
   color-scheme:dark;
 }}
@@ -30,8 +30,8 @@
   --ground:#12161B; --panel:#1B2128; --paper:#1F262E; --ink:#E4E9EE; --muted:#93A0AD; --line:#2E3740;
   --grid:#2A323B; --grid-strong:#3F4A56; --accent:#E07A3E; --accent-ink:#12161B; --focus:#6AA6E8;
   --sand:#6E5F2E; --shale:#3E4B57; --gas:#F0704E; --pico:#26333F; --repetto:#3E3624; --puente:#342E42;
-  --gr:#5FBF66; --sp:#6AA6E8; --cal:#9AA6B2; --rdeep:#F06767; --rmed:#6AA6E8; --rshal:#5FBF66;
-  --rhob:#F06767; --nphi:#6AA6E8; --dt:#C084E8; --rop:#E4E9EE; --wob:#6AA6E8; --tg:#E4E9EE; --c1:#F06767; --c2:#F7A04A;
+  --gr:#5FBF7F; --sp:#C19A6B; --cal:#9AA6B2; --rdeep:#E4E9EE; --rmed:#AAB4BE; --rshal:#6F7C88;
+  --rhob:#F06767; --nphi:#6AA6E8; --dt:#B79BE0; --rop:#E4E9EE; --wob:#6AA6E8; --tg:#E4E9EE; --c1:#F06767; --pef:#D99A5B; --vsh:#AAB4BE; --phie:#4FC3B5; --sw:#8FB3E8; --toc:#C19A6B; --c2:#F7A04A;
   --shadow:0 1px 2px rgba(0,0,0,.4);
   color-scheme:dark;
 }
@@ -173,6 +173,15 @@ ul.list .meta{margin-left:auto;font:11px "IBM Plex Mono",monospace;color:var(--m
 .colorpop .cprow{display:flex;gap:6px;align-items:center}
 .colorpop #cpHex{flex:1;min-width:0;font:12px "IBM Plex Mono",monospace}
 .colorpop input[type=color]{width:26px;height:22px;padding:0;border:1px solid var(--line)}
+.colhead .warn{color:var(--accent);font:600 11px "IBM Plex Sans",sans-serif;cursor:help}
+.gaplbl{position:absolute;text-align:center;font:500 10px "IBM Plex Mono",monospace;color:var(--muted);pointer-events:auto;z-index:4}
+#overlay .corr.bad{stroke:#C1121F;stroke-dasharray:3 2;stroke-width:1.6}
+body.dragging,body.dragging *{cursor:ns-resize!important;user-select:none}
+.interp .chk{display:flex;gap:6px;align-items:center;font-size:12px;margin-bottom:6px}
+.ipgrid{display:flex;flex-direction:column;gap:5px;font-size:12px;color:var(--muted)}
+.ipgrid label{display:flex;gap:4px;align-items:center;flex-wrap:wrap}
+.ipgrid input[type=number]{width:4.4em;padding:2px 4px;font-size:12px}
+.ipgrid select{font-size:12px;padding:2px 4px;max-width:170px}
 .modal{position:fixed;inset:0;background:rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center;z-index:20;padding:16px}
 .dlg{background:var(--panel);border-radius:6px;box-shadow:0 10px 40px rgba(0,0,0,.3);width:min(960px,100%);max-height:90vh;overflow:auto;padding:16px 18px;display:flex;flex-direction:column;gap:12px}
 .dlg h3{margin:0;font:600 18px "IBM Plex Sans Condensed",sans-serif}
@@ -221,6 +230,7 @@ ul.list .meta{margin-left:auto;font:11px "IBM Plex Mono",monospace;color:var(--m
       </details>
       <details open><summary><h2>Wells <span class="pill" id="wellCount"></span></h2></summary>
         <ul class="list" id="wellList"></ul>
+        <div class="row"><select id="exampleSel" aria-label="Load example data"><option value="">Load example data…</option><option value="niobrara">Denver Basin Niobrara (real logs)</option><option value="labasin">LA Basin (synthetic)</option></select></div>
       </details>
       <details open><summary><h2>Tracks</h2></summary>
         <div class="tools"><label class="mini"><input type="checkbox" id="showEmpty"> show empty</label><button class="small" id="btnAddTrack">+ track</button></div>
@@ -228,6 +238,9 @@ ul.list .meta{margin-left:auto;font:11px "IBM Plex Mono",monospace;color:var(--m
       </details>
       <details open><summary><h2>Point data <span class="pill" id="pointCount"></span></h2></summary>
         <div id="pointList"></div>
+      </details>
+      <details open><summary><h2>Interpretation</h2></summary>
+        <div id="interpForm" class="interp"></div>
       </details>
       <details open><summary><h2>Tops <span id="topsWell" class="pill"></span></h2></summary>
         <table class="tops" id="topsTable"></table>
@@ -249,6 +262,9 @@ ul.list .meta{margin-left:auto;font:11px "IBM Plex Mono",monospace;color:var(--m
             <option value="TVDSS">Sea level (TVDSS)</option>
           </select>
         </label>
+        <label id="spacingWrap" hidden>Spacing
+          <select id="spacing"><option value="equal">Equal</option><option value="distance">By distance</option></select>
+        </label>
         <label>Top <input type="number" id="winTop" step="50"></label>
         <label>Bottom <input type="number" id="winBot" step="50"></label>
         <button class="small" id="btnFit">Fit</button>
@@ -265,10 +281,11 @@ ul.list .meta{margin-left:auto;font:11px "IBM Plex Mono",monospace;color:var(--m
         <div class="viewbar">
           <span class="well">Zone stats</span>
           <span id="stWells" class="chips"></span>
-          <label>Net sand: GR &lt; <input type="number" id="stCutoff" step="5"> GAPI</label>
+          <label id="stCutoffWrap">Net without porosity logs: GR &lt; <input type="number" id="stCutoff" step="5"> API</label>
           <span class="sp"></span>
           <button class="small" id="btnStatsExport">Export stats CSV</button>
           <button class="small" id="btnTopsExport">Export tops CSV</button>
+          <button class="small" id="btnPpExport" title="Curves in petroplots names, one row per foot, for tools/petroplots_figures.py">Export for petroplots</button>
         </div>
         <div class="statsbody">
           <div class="legend2" id="stLegend"></div>
@@ -280,14 +297,20 @@ ul.list .meta{margin-left:auto;font:11px "IBM Plex Mono",monospace;color:var(--m
               <details class="more"><summary>Show table</summary><div class="tblwrap"><table class="data" id="stDetail"></table></div></details>
             </section>
             <section class="card">
-              <h3>Crossplot <select id="stX" aria-label="X curve"></select> vs <select id="stY" aria-label="Y curve"></select> <span id="stXpRead" class="readout"></span></h3>
-              <canvas id="stXp" role="img" aria-label="Crossplot colored by zone"></canvas>
+              <h3>Crossplot <select id="stType" aria-label="Chart"><option value="nd">Neutron-density</option><option value="pickett">Pickett</option><option value="pe">PE-density</option><option value="custom">Any two curves</option></select>
+                <span id="stXY"><select id="stX" aria-label="X curve"></select> vs <select id="stY" aria-label="Y curve"></select></span>
+                <label class="mini">Color <select id="stColor"><option value="zone">Zone</option><option value="gr">GR bands</option><option value="well">Well</option></select></label>
+                <label class="mini" id="stCleanWrap"><input type="checkbox" id="stClean"> clean only</label>
+                <span id="stXpRead" class="readout"></span></h3>
+              <canvas id="stXp" role="img" aria-label="Crossplot"></canvas>
+              <div class="legend2" id="stXpLegend"></div>
               <p class="hint" id="stXpNote"></p>
             </section>
           </div>
           <section class="card">
             <h3>Summary by zone</h3>
             <div class="tblwrap"><table class="data" id="stSummary"></table></div>
+            <p class="hint" id="stSumNote"></p>
             <p class="hint">Zones run from each top to the next top, or to TD. Means are depth-weighted; columns marked g use the geometric mean (resistivity, gas, perm). Hover a value for P10, P50, P90 and null count.</p>
           </section>
         </div>
@@ -342,8 +365,11 @@ ul.list .meta{margin-left:auto;font:11px "IBM Plex Mono",monospace;color:var(--m
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
 <script>window.L||document.write('<script src="vendor/leaflet.js"><\/script>')</script>
 <script src="synth.js"></script>
+<script src="js/las.js"></script>
+<script src="js/petro.js"></script>
 <script src="js/points.js"></script>
 <script src="js/map.js"></script>
 <script src="js/stats.js"></script>
+<script src="js/interp.js"></script>
 <script src="js/core.js"></script>
 

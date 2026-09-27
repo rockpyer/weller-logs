@@ -4,7 +4,7 @@
 const ZONE_COLORS = { light: ['#2a78d6', '#eb6834', '#1baf7a', '#eda100', '#e87ba4', '#4a3aa7'], dark: ['#3987e5', '#d95926', '#199e70', '#c98500', '#d55181', '#9085e9'] };
 const isDark = () => cssVar('color-scheme').includes('dark') || getComputedStyle(document.documentElement).colorScheme === 'dark';
 
-function statsDefaults() { return { wells: null, cutoff: 75, curve: 'GR', x: 'NPHI', y: 'RHOB' }; }
+function statsDefaults() { return { wells: null, cutoff: 75, curve: 'GR', x: 'NPHI', y: 'RHOB', type: 'nd', color: 'zone', clean: true }; }
 
 function zonesOf(w) {
   const d = depthOf(w), td = d[d.length - 1], start = d[0];
@@ -26,7 +26,7 @@ function zoneColorMap() {
 
 function statCurves() {
   const seen = new Set(), out = [];
-  for (const t of S.tracks) { if (t.type) continue;
+  for (const t of S.tracks) { if (t.type) continue;   // lithology, cuttings and flag tracks are not averaged
     for (const c of t.curves) { if (seen.has(c.label)) continue; seen.add(c.label); out.push(c); } }
   return out;
 }
@@ -42,7 +42,7 @@ function zoneValues(w, curve, z, log) {
   if (curve.sparse) { const v = [], wt = []; let total = 0;
     for (let k = 0; k < curve.md.length; k++) if (curve.md[k] >= z.top && curve.md[k] < z.base) { total++; if (ok(curve.data[k])) { v.push(curve.data[k]); wt.push(1); } }
     return { v, wt, total }; }
-  const dep = depthOf(w); w._wt ||= sampleWeights(dep);
+  const dep = depthOf(w); w._wt ||= sampleWeights(tvdOf(w) || dep);   // true vertical thickness for deviated wells
   const i0 = d3.bisectLeft(dep, z.top), i1 = d3.bisectLeft(dep, z.base);
   const v = [], wt = [];
   for (let i = i0; i < i1; i++) if (ok(curve.data[i])) { v.push(curve.data[i]); wt.push(w._wt[i]); }
@@ -61,15 +61,30 @@ function summarize({ v, wt, total }, log) {
 
 function statWells() { const ids = S.stats.wells; return S.wells.filter(w => !ids || ids.includes(w.id)); }
 
+function tvdThick(w, z) { return tvdOf(w) ? mdToTvd(w, z.base) - mdToTvd(w, z.top) : z.base - z.top; }
+
+// Summations follow the usual convention: net reservoir and net pay thickness from the flag curves, average PHIE over
+// net reservoir, average Sw over net pay, porosity-feet (sum phi h over net) and hydrocarbon-feet (sum phi (1 - Sw) h
+// over net pay). Thickness is true vertical in deviated wells. Without porosity logs, net falls back to a GR cutoff.
 function computeStats() {
   const curves = statCurves(), grCfg = S.tracks.flatMap(t => t.curves).find(c => c.label === 'GR') || { aliases: A.GR };
   const rows = [];
   for (const w of statWells()) {
-    const gr = resolveCurve(w, grCfg);
+    const gr = resolveCurve(w, grCfg), dep = depthOf(w);
+    const fl = m => w.curves.find(c => c.computed && c.mnemonic === m);
+    const tot = S.interp?.swPhi === 'total', nres = fl('NET_RES'), npay = fl('NET_PAY'), phie = fl(tot ? 'PHIT_ND' : 'PHIE'), sw = fl('SW');
+    w._wt ||= sampleWeights(tvdOf(w) || dep);
     for (const z of zonesOf(w)) {
-      const row = { well: w, zone: z, gross: z.base - z.top, by: {} };
-      if (gr && !gr.sparse) { const { v, wt } = zoneValues(w, gr, z, false); const cov = d3.sum(wt);
-        row.net = d3.sum(v, (x, i) => x < S.stats.cutoff ? wt[i] : 0); row.ntg = cov ? row.net / cov : null; }
+      const row = { well: w, zone: z, gross: tvdThick(w, z), by: {} };
+      const i0 = d3.bisectLeft(dep, z.top), i1 = d3.bisectLeft(dep, z.base);
+      if (nres && phie) {
+        let net = 0, pay = 0, phiNet = 0, swPay = 0, phih = 0, hch = 0, cov = 0;
+        for (let i = i0; i < i1; i++) { const h = w._wt[i]; if (Number.isFinite(phie.data[i])) cov += h;
+          if (nres.data[i] > 0.5) { net += h; phiNet += phie.data[i] * h; phih += phie.data[i] * h; }
+          if (npay?.data[i] > 0.5 && sw) { pay += h; swPay += sw.data[i] * h; hch += phie.data[i] * (1 - sw.data[i]) * h; } }
+        Object.assign(row, { net, ntg: cov ? net / cov : null, pay: npay ? pay : null, phiNet: net ? phiNet / net : null, swPay: pay ? swPay / pay : null, phih, hch: npay ? hch : null, basis: 'flags' });
+      } else if (gr && !gr.sparse) { const { v, wt } = zoneValues(w, gr, z, false); const cov = d3.sum(wt);
+        row.net = d3.sum(v, (x, i) => x < S.stats.cutoff ? wt[i] : 0); row.ntg = cov ? row.net / cov : null; row.basis = 'gr'; }
       for (const c of curves) { const cur = resolveCurve(w, c); if (cur) row.by[c.label] = { cfg: c, curve: cur, s: summarize(zoneValues(w, cur, z, c.log), c.log) }; }
       rows.push(row);
     }
@@ -90,10 +105,18 @@ function renderStats() {
   const zoneNames = [...colors.keys()].filter(n => rows.some(r => r.zone.name === n));
   $('stLegend').innerHTML = zoneNames.map(n => `<span><i style="background:${colors.get(n)}"></i>${esc(n)}</span>`).join('');
   // Summary table
-  const head = `<tr><th>Well</th><th>Zone</th><th class="num">Top</th><th class="num">Base</th><th class="num">Gross ft</th><th class="num">Net ft</th><th class="num">N/G</th>${curves.map(c => `<th class="num" title="${c.log ? 'Geometric mean' : 'Depth-weighted mean'}${c.unit ? ', ' + esc(c.unit) : ''}">${esc(c.label)}${c.log ? ' <small>g</small>' : ''}</th>`).join('')}</tr>`;
-  const body = rows.map(r => `<tr><td>${esc(r.well.name)}</td><td><i class="zsw" style="background:${colors.get(r.zone.name)}"></i>${esc(r.zone.name)}</td><td class="num">${fmtDepth(r.zone.top)}</td><td class="num">${fmtDepth(r.zone.base)}</td><td class="num">${fmtDepth(r.gross)}</td><td class="num">${r.net == null ? '—' : fmtDepth(r.net)}</td><td class="num">${r.ntg == null ? '—' : (100 * r.ntg).toFixed(0) + '%'}</td>`
+  const petro = rows.some(r => r.basis === 'flags'), grOnly = rows.some(r => r.basis === 'gr');
+  $('stCutoffWrap').hidden = !grOnly;
+  const pc = (v, d = 0) => v == null ? '—' : (100 * v).toFixed(d) + '%'; const PH = S.interp?.swPhi === 'total' ? 'PHIT' : 'PHIE';
+  const head = `<tr><th>Well</th><th>Zone</th><th class="num">Top MD</th><th class="num">Base MD</th><th class="num" title="True vertical thickness in deviated wells">Gross ft</th><th class="num">Net ft</th><th class="num">N/G</th>`
+    + (petro ? `<th class="num">Pay ft</th><th class="num" title="Average ${PH} over net reservoir">${PH} net</th><th class="num" title="Average Sw over net pay">Sw pay</th><th class="num" title="Sum of ${PH} x h over net reservoir">φ·h ft</th><th class="num" title="Sum of ${PH} x (1 - Sw) x h over net pay">HC·h ft</th>` : '')
+    + curves.map(c => `<th class="num" title="${c.log ? 'Geometric mean' : 'Depth-weighted mean'}${c.unit ? ', ' + esc(c.unit) : ''}">${esc(c.label)}${c.log ? ' <small>g</small>' : ''}</th>`).join('') + '</tr>';
+  const body = rows.map(r => `<tr><td>${esc(r.well.name)}</td><td><i class="zsw" style="background:${colors.get(r.zone.name)}"></i>${esc(r.zone.name)}</td><td class="num">${fmtDepth(r.zone.top)}</td><td class="num">${fmtDepth(r.zone.base)}</td><td class="num">${fmtDepth(r.gross)}</td><td class="num">${r.net == null ? '—' : fmtDepth(r.net)}${r.basis === 'gr' ? '<small title="GR cutoff">*</small>' : ''}</td><td class="num">${pc(r.ntg)}</td>`
+    + (petro ? `<td class="num">${r.pay == null ? '—' : fmtDepth(r.pay)}</td><td class="num">${pc(r.phiNet, 1)}</td><td class="num">${pc(r.swPay)}</td><td class="num">${r.phih == null ? '—' : r.phih.toFixed(1)}</td><td class="num">${r.hch == null ? '—' : r.hch.toFixed(1)}</td>` : '')
     + curves.map(c => { const b = r.by[c.label]; const s = b?.s; return `<td class="num" title="${s?.n ? `${b.curve.mnemonic}: n ${s.n}, P10 ${f3(s.p10, c.log)}, P50 ${f3(s.p50, c.log)}, P90 ${f3(s.p90, c.log)}, ${s.nullPct.toFixed(0)}% null` : 'no data'}">${s?.n ? f3(s.mean, c.log) : '—'}</td>`; }).join('') + '</tr>').join('');
   $('stSummary').innerHTML = `<thead>${head}</thead><tbody>${body}</tbody>`;
+  const I = S.interp;
+  $('stSumNote').textContent = petro ? `Net reservoir: Vsh < ${I.cut.vsh}, ${PH} ≥ ${I.cut.phi}, not bad hole. Net pay adds Sw ≤ ${I.cut.sw} (Sw on ${PH}). Parameters are in the Interpretation panel.` + (grOnly ? ' * Wells without porosity logs use the GR cutoff.' : '') : 'Net uses the GR cutoff above because no well has porosity logs.';
   // Curve pickers
   const all = statCurves().filter(c => S.wells.some(w => resolveCurve(w, c)));
   const opt = sel => all.map(c => `<option value="${esc(c.label)}"${c.label === sel ? ' selected' : ''}>${esc(c.label)}${c.pointSeries ? ' (points)' : ''}</option>`).join('');
@@ -101,8 +124,16 @@ function renderStats() {
   if (!all.some(c => c.label === S.stats.x)) S.stats.x = all.find(c => c.label === 'NPHI')?.label || all[0]?.label;
   if (!all.some(c => c.label === S.stats.y)) S.stats.y = all.find(c => c.label === 'RHOB')?.label || all[1]?.label || all[0]?.label;
   $('stCurve').innerHTML = opt(S.stats.curve); $('stX').innerHTML = opt(S.stats.x); $('stY').innerHTML = opt(S.stats.y);
+  $('stType').value = S.stats.type || 'custom'; $('stColor').value = S.stats.color || 'zone'; $('stClean').checked = S.stats.clean !== false;
+  $('stXY').hidden = S.stats.type && S.stats.type !== 'custom'; $('stCleanWrap').hidden = S.stats.type !== 'pickett';
   drawBoxes(rows, all.find(c => c.label === S.stats.curve), colors);
-  drawCrossplot(all.find(c => c.label === S.stats.x), all.find(c => c.label === S.stats.y), colors);
+  const cfgOf = (label, aliases, extra) => ({ label, aliases, ...extra });
+  const T = S.stats.type || 'custom';
+  const pair = T === 'nd' ? [cfgOf('NPHI', A.NPHI, { min: -0.15, max: 0.45, unit: 'v/v' }), cfgOf('RHOB', A.RHOB, { min: 1.9, max: 3.0, unit: 'g/cc' })]
+    : T === 'pickett' ? [cfgOf('PHIE', ['PHIE', 'PHIT_ND', 'PHIT', 'PHI'], { min: 0.01, max: 1, log: true, unit: 'v/v' }), cfgOf('Deep', A.RD, { min: 0.1, max: 1000, log: true, unit: 'Ω·m' })]
+    : T === 'pe' ? [cfgOf('PEF', A.PE, { min: 0, max: 7, unit: 'b/e' }), cfgOf('RHOB', A.RHOB, { min: 1.9, max: 3.0, unit: 'g/cc' })]
+    : [all.find(c => c.label === S.stats.x), all.find(c => c.label === S.stats.y)];
+  drawCrossplot(pair[0], pair[1], colors, T);
 }
 
 function drawBoxes(rows, cfg, colors) {
@@ -110,7 +141,7 @@ function drawBoxes(rows, cfg, colors) {
   if (!cfg) return;
   const items = rows.map(r => ({ r, b: r.by[cfg.label] })).filter(x => x.b?.s.n);
   if (!items.length) { svg.attr('height', 40).append('text').attr('x', 8).attr('y', 24).attr('class', 'ax').text('No samples for this curve in the selected wells.'); return; }
-  const W = Math.max(320, $('stBox').parentElement.clientWidth - 4), rowH = 22, left = 170, right = 16, topPad = 8, H = topPad + items.length * rowH + 30;
+  const W = Math.max(320, $('stBox').parentElement.clientWidth - 4), rowH = 22, left = Math.min(260, Math.max(170, 7 * d3.max(items, it => (it.r.zone.name + ' · ' + it.r.well.name).length))), right = 16, topPad = 8, H = topPad + items.length * rowH + 30;
   svg.attr('width', W).attr('height', H).attr('viewBox', `0 0 ${W} ${H}`);
   const lo = d3.min(items, x => x.b.s.p10), hi = d3.max(items, x => x.b.s.p90);
   const x = (cfg.log ? d3.scaleLog().domain([Math.max(lo, 1e-6), hi]) : d3.scaleLinear().domain([lo, hi])).nice().range([left, W - right]);
@@ -139,48 +170,93 @@ function pairSamples(w, cx, cy) {
   const dep = depthOf(w), out = [];
   const at = (c, md) => { if (!c.sparse) { const i = d3.bisectCenter(dep, md); return Math.abs(dep[i] - md) <= 1 ? c.data[i] : NaN; } const k = nearestPoint(c, md, 0.5); return k < 0 ? NaN : c.data[k]; };
   if (a.sparse || b.sparse) { const s = a.sparse ? a : b;
-    for (let k = 0; k < s.md.length; k++) { const md = s.md[k]; out.push([at(a, md), at(b, md), zoneAt(md), true]); } }
+    for (let k = 0; k < s.md.length; k++) { const md = s.md[k]; out.push([at(a, md), at(b, md), zoneAt(md), true, md]); } }
   else { const step = Math.max(1, Math.floor(dep.length / 8000));
-    for (let i = 0; i < dep.length; i += step) out.push([a.data[i], b.data[i], zoneAt(dep[i]), false]); }
+    for (let i = 0; i < dep.length; i += step) out.push([a.data[i], b.data[i], zoneAt(dep[i]), false, dep[i]]); }
   return out.filter(p => Number.isFinite(p[0]) && Number.isFinite(p[1]) && (!cx.log || p[0] > 0) && (!cy.log || p[1] > 0));
 }
 
-function drawCrossplot(cx, cy, colors) {
-  const cv = $('stXp'); const W = Math.max(320, cv.parentElement.clientWidth - 4), H = Math.min(520, Math.round(W * 0.8));
+// GR in six bands over 0-150 API (the petroplots convention), light to dark in one hue; stepped for each theme.
+const GR_BANDS = { light: ['#86b6ef', '#5598e7', '#2a78d6', '#1c5cab', '#104281', '#0d366b'], dark: ['#184f95', '#256abf', '#3987e5', '#6da7ec', '#9ec5f4', '#cde2fb'] };
+// Matrix neutron readings on each calibration (thermal neutron, fresh water). The calibration matrix is exact by
+// definition; the other two are approximate offsets after the service-company chartbooks, drawn dashed.
+const ND_MATRIX = { limestone: { sandstone: -0.035, limestone: 0, dolomite: 0.02 }, sandstone: { sandstone: 0, limestone: 0.035, dolomite: 0.055 } };
+const RHO_MA = { sandstone: 2.65, limestone: 2.71, dolomite: 2.87 };
+const PE_POINTS = [['Quartz', 1.81, 2.65], ['Calcite', 5.08, 2.71], ['Dolomite', 3.14, 2.87], ['Anhydrite', 5.05, 2.98]];
+
+function drawCrossplot(cx, cy, colors, type = 'custom') {
+  const cv = $('stXp'); const W = Math.max(320, cv.parentElement.clientWidth - 4), H = Math.min(540, Math.round(W * 0.82));
   const dpr = window.devicePixelRatio || 1; cv.width = W * dpr; cv.height = H * dpr; cv.style.width = W + 'px'; cv.style.height = H + 'px';
   const ctx = cv.getContext('2d'); ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, W, H);
-  if (!cx || !cy) return;
+  $('stXpLegend').innerHTML = '';
+  if (!cx || !cy) { $('stXpNote').textContent = 'Pick two curves.'; return; }
   const m = { l: 56, r: 14, t: 12, b: 40 };
   const dom = c => [Math.min(c.min, c.max), Math.max(c.min, c.max)];
   const x = (cx.log ? d3.scaleLog() : d3.scaleLinear()).domain(dom(cx)).range([m.l, W - m.r]);
-  // Density conventionally increases downward on a neutron-density crossplot.
-  const yRange = cy.label === 'RHOB' || /GRAIN/.test(cy.label) ? [m.t, H - m.b] : [H - m.b, m.t];
-  const y = (cy.log ? d3.scaleLog() : d3.scaleLinear()).domain(dom(cy)).range(yRange);
-  const grid = cssVar('--grid'), muted = cssVar('--muted'), ink = cssVar('--ink');
+  const yDown = /^(RHOB|GRAIN)/.test(cy.label);   // density increases downward on N-D and PE-density charts
+  const y = (cy.log ? d3.scaleLog() : d3.scaleLinear()).domain(dom(cy)).range(yDown ? [m.t, H - m.b] : [H - m.b, m.t]);
+  const grid = cssVar('--grid'), muted = cssVar('--muted'), ink = cssVar('--ink'), paper = cssVar('--paper');
   ctx.font = '11px "IBM Plex Mono",monospace'; ctx.fillStyle = muted; ctx.strokeStyle = grid; ctx.lineWidth = 1;
-  const xt = cx.log ? x.ticks(5).filter(t => /^1/.test(t.toExponential())) : x.ticks(6), yt = cy.log ? y.ticks(5).filter(t => /^1/.test(t.toExponential())) : y.ticks(6);
+  const decades = sc => sc.ticks(6).filter(t => /^1(\.0+)?e/.test(t.toExponential()));
+  const xt = cx.log ? decades(x) : x.ticks(6), yt = cy.log ? decades(y) : y.ticks(6);
   ctx.textAlign = 'center'; for (const t of xt) { ctx.beginPath(); ctx.moveTo(x(t), m.t); ctx.lineTo(x(t), H - m.b); ctx.stroke(); ctx.fillText(f3(t, cx.log), x(t), H - m.b + 14); }
   ctx.textAlign = 'right'; for (const t of yt) { ctx.beginPath(); ctx.moveTo(m.l, y(t)); ctx.lineTo(W - m.r, y(t)); ctx.stroke(); ctx.fillText(f3(t, cy.log), m.l - 6, y(t) + 4); }
   ctx.fillStyle = ink; ctx.textAlign = 'center'; ctx.fillText(`${cx.label}${cx.unit ? ' (' + cx.unit + ')' : ''}`, (m.l + W - m.r) / 2, H - 8);
   ctx.save(); ctx.translate(14, (m.t + H - m.b) / 2); ctx.rotate(-Math.PI / 2); ctx.fillText(`${cy.label}${cy.unit ? ' (' + cy.unit + ')' : ''}`, 0, 0); ctx.restore();
   ctx.save(); ctx.beginPath(); ctx.rect(m.l, m.t, W - m.l - m.r, H - m.t - m.b); ctx.clip();
-  let n = 0;
-  for (const w of statWells()) for (const [a, b, z, pt] of pairSamples(w, cx, cy)) {
-    ctx.fillStyle = colors.get(z) || muted;
-    if (pt) { ctx.globalAlpha = 1; ctx.beginPath(); ctx.arc(x(a), y(b), 3.5, 0, 7); ctx.fill(); ctx.strokeStyle = cssVar('--paper'); ctx.stroke(); }
-    else { ctx.globalAlpha = .35; ctx.fillRect(x(a) - 1, y(b) - 1, 2.2, 2.2); }
-    n++;
+  const mode = S.stats.color || 'zone', dark = isDark(), bands = GR_BANDS[dark ? 'dark' : 'light'];
+  const wellsOn = statWells(), wellColor = new Map(wellsOn.map((w, i) => [w.id, ZONE_COLORS[dark ? 'dark' : 'light'][i % 6]]));
+  const vshCut = S.interp?.cut?.vsh ?? 0.5, cleanOnly = type === 'pickett' && S.stats.clean !== false;
+  let n = 0, skipped = 0; const temps = [], matrices = new Set();
+  for (const w of wellsOn) {
+    const grC = resolveCurve(w, { aliases: A.GR }), vshC = w.curves.find(c => c.computed && c.mnemonic === 'VSH_GR'), dep = depthOf(w);
+    if (type === 'nd' && resolveCurve(w, cy) && resolveCurve(w, cx)) matrices.add(w.neutronMatrix || 'limestone');
+    const tvd = tvdOf(w) || dep, td = tvd[tvd.length - 1];
+    for (const [a, b, z, pt, md] of pairSamples(w, cx, cy)) {
+      const i = d3.bisectCenter(dep, md);
+      if (cleanOnly && vshC && !(vshC.data[i] < vshCut)) { skipped++; continue; }
+      if (type === 'pickett') temps.push(WellerPetro.tempAtDepth(tvd[i], S.interp.surfaceT, w.params?.bht, td));
+      let col = colors.get(z) || muted;
+      if (mode === 'well') col = wellColor.get(w.id);
+      else if (mode === 'gr') { const g = grC && !grC.sparse ? grC.data[i] : NaN; col = Number.isFinite(g) ? bands[Math.min(5, Math.max(0, Math.floor(g / 25)))] : muted; }
+      ctx.fillStyle = col;
+      if (pt) { ctx.globalAlpha = 1; ctx.beginPath(); ctx.arc(x(a), y(b), 3.5, 0, 7); ctx.fill(); ctx.strokeStyle = paper; ctx.stroke(); }
+      else { ctx.globalAlpha = .35; ctx.fillRect(x(a) - 1, y(b) - 1, 2.2, 2.2); }
+      n++;
+    }
   }
-  ctx.globalAlpha = 1;
-  // Limestone matrix line for a limestone-calibrated neutron vs bulk density (fluid 1.0 g/cc).
-  if (cx.label === 'NPHI' && cy.label === 'RHOB') {
-    ctx.strokeStyle = ink; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(x(0), y(2.71)); ctx.lineTo(x(0.4), y(2.71 - 1.71 * 0.4)); ctx.stroke();
-    ctx.fillStyle = ink; ctx.textAlign = 'left';
-    for (const p of [0, .1, .2, .3, .4]) { ctx.beginPath(); ctx.arc(x(p), y(2.71 - 1.71 * p), 2.5, 0, 7); ctx.fill(); ctx.fillText(`${p * 100}`, x(p) + 5, y(2.71 - 1.71 * p) - 4); }
-    ctx.fillText('Limestone (φ %)', x(0.02), y(2.71) + 16);
+  ctx.globalAlpha = 1; ctx.lineWidth = 1.5; ctx.strokeStyle = ink; ctx.fillStyle = ink; ctx.textAlign = 'left';
+  const notes = [];
+  if (type === 'nd') {
+    const cal = matrices.size === 1 ? [...matrices][0] : null;
+    if (matrices.size > 1) notes.push('Wells mix neutron calibrations; lines drawn for limestone. Compare wells with the same calibration.');
+    const offs = ND_MATRIX[cal === 'sandstone' ? 'sandstone' : 'limestone'];
+    for (const lith of ['sandstone', 'limestone', 'dolomite']) {
+      const nma = offs[lith], rma = RHO_MA[lith], exact = nma === 0;
+      ctx.setLineDash(exact ? [] : [5, 4]); ctx.beginPath();
+      for (let p = 0; p <= 0.4001; p += 0.02) { const X = x(nma * (1 - p) + p), Y = y(rma * (1 - p) + p); p === 0 ? ctx.moveTo(X, Y) : ctx.lineTo(X, Y); }
+      ctx.stroke(); ctx.setLineDash([]);
+      for (const p of [0, .1, .2, .3]) { const X = x(nma * (1 - p) + p), Y = y(rma * (1 - p) + p); ctx.beginPath(); ctx.arc(X, Y, 2.5, 0, 7); ctx.fill(); if (lith === 'limestone' || exact) ctx.fillText(`${Math.round(p * 100)}`, X + 5, Y - 4); }
+      ctx.textAlign = 'right'; ctx.fillText(lith[0].toUpperCase() + lith.slice(1) + (exact ? '' : ' ≈'), x(nma) - 6, y(rma) + 4); ctx.textAlign = 'left';
+    }
+    notes.push(`Neutron ${cal ? cal + '-calibrated' : ''}: the solid line is exact, dashed lines are approximate. Porosity ticks in %.`);
+  } else if (type === 'pickett') {
+    const I = S.interp, T = temps.length ? WellerLAS.median(temps) : I.rwTemp, rwT = WellerPetro.rwAtTemp(I.rw, I.rwTemp, T);
+    for (const sw of [1, 0.5, 0.25]) {
+      ctx.setLineDash(sw === 1 ? [] : [5, 4]); ctx.beginPath();
+      const ps = [0.01, 1]; ps.forEach((p, k) => { const X = x(p), Y = y(WellerPetro.pickettRt(p, sw, rwT, I.a, I.m, I.n)); k ? ctx.lineTo(X, Y) : ctx.moveTo(X, Y); }); ctx.stroke();
+      const lp = 0.3, ly = y(WellerPetro.pickettRt(lp, sw, rwT, I.a, I.m, I.n)); ctx.fillText(`Sw ${sw * 100}%`, x(lp) + 4, ly - 4);
+    }
+    ctx.setLineDash([]);
+    notes.push(`Lines: Archie with a ${I.a}, m ${I.m}, n ${I.n}, Rw ${rwT.toFixed(3)} Ω·m at ${T.toFixed(0)} °F (median formation temperature of the points). Fit the Sw 100% line to the wet points to read Rw; its slope is -m.` + (cleanOnly ? ` Showing Vsh < ${vshCut} only (${skipped.toLocaleString()} shaly samples hidden).` : ''));
+  } else if (type === 'pe') {
+    for (const [name, pe, rho] of PE_POINTS) { const X = x(pe), Y = y(rho); ctx.beginPath(); ctx.rect(X - 4, Y - 4, 8, 8); ctx.fillStyle = paper; ctx.fill(); ctx.stroke(); ctx.fillStyle = ink; ctx.fillText(name, X + 7, Y + 4); }
+    notes.push('Squares: matrix points (PE b/e, grain density g/cc). Porosity moves points toward lower density at roughly constant PE.');
   }
   ctx.restore();
-  $('stXpNote').textContent = `${n.toLocaleString()} samples plotted${n ? '' : ' (no overlapping data)'}. Log samples are thinned to about 8,000 per well; point data is drawn as larger dots.`;
+  $('stXpNote').textContent = `${n.toLocaleString()} samples plotted${n ? '' : ' (no overlapping data)'}. ${notes.join(' ')}`;
+  if (mode === 'gr') $('stXpLegend').innerHTML = 'GR API ' + bands.map((c, i) => `<span><i style="background:${c}"></i>${i * 25}–${i === 5 ? '150+' : (i + 1) * 25}</span>`).join('');
+  else if (mode === 'well') $('stXpLegend').innerHTML = wellsOn.map(w => `<span><i style="background:${wellColor.get(w.id)}"></i>${esc(w.name)}</span>`).join('');
   cv.onmousemove = e => { const r = cv.getBoundingClientRect(), px = e.clientX - r.left, py = e.clientY - r.top;
     if (px < m.l || px > W - m.r || py < m.t || py > H - m.b) { $('stXpRead').textContent = ''; return; }
     $('stXpRead').textContent = `${cx.label} ${f3(x.invert(px), cx.log)} · ${cy.label} ${f3(y.invert(py), cy.log)}`; };
@@ -188,11 +264,33 @@ function drawCrossplot(cx, cy, colors) {
 
 function statsCSV() {
   const { rows, curves } = computeStats();
-  const head = ['well', 'zone', 'top_ft', 'base_ft', 'gross_ft', 'net_ft', 'ntg', ...curves.flatMap(c => ['mean', 'p10', 'p50', 'p90', 'n'].map(k => `${c.label}_${k === 'mean' && c.log ? 'gmean' : k}`))];
+  const head = ['well', 'zone', 'top_md_ft', 'base_md_ft', 'gross_tvt_ft', 'net_ft', 'ntg', 'pay_ft', (S.interp?.swPhi === 'total' ? 'phit' : 'phie') + '_net', 'sw_pay', 'phi_h_ft', 'hc_h_ft', ...curves.flatMap(c => ['mean', 'p10', 'p50', 'p90', 'n'].map(k => `${c.label}_${k === 'mean' && c.log ? 'gmean' : k}`))];
   const q = v => /[",]/.test(String(v)) ? `"${String(v).replace(/"/g, '""')}"` : v;
   const L = [head.join(',')];
-  for (const r of rows) L.push([r.well.name, r.zone.name, r.zone.top, r.zone.base, r.gross, r.net ?? '', r.ntg == null ? '' : r.ntg.toFixed(3),
+  const f = (v, d) => v == null || !Number.isFinite(v) ? '' : +v.toFixed(d);
+  for (const r of rows) L.push([r.well.name, r.zone.name, r.zone.top, r.zone.base, f(r.gross, 1), f(r.net, 1), f(r.ntg, 3), f(r.pay, 1), f(r.phiNet, 4), f(r.swPay, 4), f(r.phih, 2), f(r.hch, 2),
     ...curves.flatMap(c => { const s = r.by[c.label]?.s; return s?.n ? [s.mean, s.p10, s.p50, s.p90, s.n].map(v => +v.toPrecision(5)) : ['', '', '', '', 0]; })].map(q).join(','));
+  return L.join('\n') + '\n';
+}
+
+/* Long-format curve export in petroplots' canonical names (GR, RDEEP, RHOB, NPHI, PHIT, SW, ...), one row per depth per
+   well, with FORMATION from the tops. tools/petroplots_figures.py turns it into publication figures with petroplots. */
+const ppColumns = () => [['GR', A.GR], ['SP', A.SP], ['CALI', A.CAL], ['RDEEP', A.RD], ['RMED', A.RM], ['RSHAL', A.RS], ['RHOB', A.RHOB], ['NPHI', A.NPHI], ['PEF', A.PE], ['DT', A.DT],
+  ['VSH', ['VSH_GR']], ['PHIT', ['PHIT_ND']], ['PHIE', ['PHIE']], ['SW', ['SW']], ['TOC', ['TOC_DLR']]];   // built lazily: the alias table loads later
+function petroplotsCSV(step = 1) {
+  const q = v => /[",]/.test(String(v)) ? `"${String(v).replace(/"/g, '""')}"` : v;
+  const PP = ppColumns(), L = ['WELL,DEPTH,TVDSS,' + PP.map(c => c[0]).join(',') + ',FORMATION,NEUTRON_MATRIX'];
+  for (const w of statWells()) {
+    const dep = depthOf(w), cols = PP.map(([, al]) => { const c = resolveCurve(w, { aliases: al }); return c && !c.sparse ? c.data : null; });
+    const e = WellerLAS.datumElevation(w), tvd = tvdOf(w) || dep, zones = zonesOf(w);
+    const every = Math.max(1, Math.round(step / Math.max(1e-6, dep[1] - dep[0])));
+    let zi = 0;
+    for (let i = 0; i < dep.length; i += every) {
+      while (zi < zones.length - 1 && dep[i] >= zones[zi].base) zi++;
+      const vals = cols.map(a => a && Number.isFinite(a[i]) ? +a[i].toPrecision(5) : '');
+      L.push([q(w.name), dep[i], Number.isFinite(e) ? +(tvd[i] - e).toFixed(1) : '', ...vals, q(zones[zi].name), w.neutronMatrix || ''].join(','));
+    }
+  }
   return L.join('\n') + '\n';
 }
 
@@ -203,4 +301,7 @@ document.addEventListener('change', e => {
   else if (t.id === 'stCurve') { S.stats.curve = t.value; render(); }
   else if (t.id === 'stX') { S.stats.x = t.value; render(); }
   else if (t.id === 'stY') { S.stats.y = t.value; render(); }
+  else if (t.id === 'stType') { S.stats.type = t.value; render(); }
+  else if (t.id === 'stColor') { S.stats.color = t.value; render(); }
+  else if (t.id === 'stClean') { S.stats.clean = t.checked; render(); }
 });

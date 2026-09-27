@@ -54,14 +54,22 @@ function renderMap() {
     const tag = (ll, t) => L.marker(ll, { interactive: false, icon: L.divIcon({ className: 'secTag', html: t, iconSize: [18, 18], iconAnchor: [22, 22] }) }).addTo(MAP.layer);
     tag(sec[0], 'A'); tag(sec[sec.length - 1], 'A′');
   }
-  for (const { w, ll } of placed) {
-    const inSec = S.mode === 'corr' && S.panel.includes(w.id), sel = w.id === S.selected;
-    L.circleMarker(ll, { radius: 6, weight: sel ? 3 : 1.5, color: sel ? focus : ink, fillColor: inSec ? accent : paper, fillOpacity: 1 })
-      .bindTooltip(w.name, { permanent: true, direction: 'right', offset: [7, 0], className: 'wlabel' })
-      .on('click', () => clickWell(w.id)).addTo(MAP.layer);
-  }
   const key = placed.map(p => p.w.id + p.ll.join()).join('|');
   if (key && key !== MAP.fitKey) { MAP.fitKey = key; MAP.map.fitBounds(L.latLngBounds(placed.map(p => p.ll)), { paddingTopLeft: [24, 24], paddingBottomRight: [100, 24], maxZoom: 14 }); }
+  // Permanent labels only where they fit: the selected well first, then section wells, then the rest.
+  // Wells on a crowded pad keep a hover label instead of stacking unreadable text.
+  const order = [...placed].sort((a, b) => (b.w.id === S.selected) - (a.w.id === S.selected) || (S.panel.includes(b.w.id) - S.panel.includes(a.w.id)));
+  const boxes = [];
+  for (const { w, ll } of order) {
+    const inSec = S.mode === 'corr' && S.panel.includes(w.id), sel = w.id === S.selected;
+    const pt = MAP.map.latLngToContainerPoint(ll), wpx = 7 + w.name.length * 6.8, box = [pt.x + 6, pt.y - 8, pt.x + 6 + wpx, pt.y + 8];
+    const fits = !boxes.some(b => !(box[2] < b[0] || box[0] > b[2] || box[3] < b[1] || box[1] > b[3]));
+    if (fits) boxes.push(box);
+    L.circleMarker(ll, { radius: 6, weight: sel ? 3 : 1.5, color: sel ? focus : ink, fillColor: inSec ? accent : paper, fillOpacity: 1 })
+      .bindTooltip(w.name, { permanent: fits, direction: 'right', offset: [7, 0], className: 'wlabel' })
+      .on('click', () => clickWell(w.id)).addTo(MAP.layer);
+  }
+  if (!MAP.zoomHooked) { MAP.zoomHooked = true; MAP.map.on('zoomend', () => renderMap()); }
   const off = S.wells.length - placed.length;
   $('mapHint').textContent = (S.mode === 'corr' ? 'Click wells to add or remove them from section A–A′, in order.' : 'Click a well to show it.')
     + (off ? ` ${off} well${off > 1 ? 's have' : ' has'} no location: set it in well settings.` : '');

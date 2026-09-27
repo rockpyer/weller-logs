@@ -21,6 +21,18 @@ scales, correlates across wells, and saves the whole session as one project file
 
 Links: [las-js](https://www.npmjs.com/package/las-js) · [videx-wellog](https://github.com/equinor/videx-wellog) · [esv-intersection](https://github.com/equinor/esv-intersection) · [pdf.js](https://mozilla.github.io/pdf.js/) · [UTIF](https://github.com/photopea/UTIF.js) · [MapLibre](https://maplibre.org/) · [proj4js](http://proj4js.org/) · [Electron](https://www.electronjs.org/)
 
+## Status (September 2026)
+
+Done: web app on GitHub Pages with offline install; LAS reader hardened on real files and unit-tested; tracks,
+fills and point data; map with satellite toggle and NAD27 shift; correlation in MD, TVDSS or flattened, with TVD
+from surveys, distance spacing, draggable tops and crossing checks; deterministic interpretation (Vsh, porosity,
+Sw, TOC, net pay) documented in [PETROPHYSICS.md](PETROPHYSICS.md); zone summations and chartbook-style
+crossplots; petroplots export and figure script; real Denver Basin Niobrara example; CI.
+
+Next, in order of value: core-to-log and run-to-run depth shift; neutron-density clay volume and spectral GR as
+alternatives to GR Vsh; raster (PDF/TIFF) logs stretched to depth; directional survey import from CSV; State
+Plane coordinates through proj4js; horizontal-well cross sections along the wellbore (esv-intersection).
+
 ## 1. Architecture
 
 ```
