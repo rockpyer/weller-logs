@@ -1,61 +1,13 @@
 /* Weller Logs: state, LAS parsing, log rendering, files, project. */
-/* ---------- LAS parsing (LAS 1.2 / 2.0, wrapped or not) ---------- */
-function parseLAS(text){
-  const lines=text.split(/\r?\n/); let sec=''; const H={version:{},well:{},curves:[],params:{},other:[]}; const rows=[];
-  const NULLS=new Set([-999.25,-999,-9999,-999.99,-99999,1e30]);
-  let wrap=false, nullv=-999.25, buf=[];
-  const parseHead=l=>{ // MNEM.UNIT  DATA : DESC
-    const i=l.indexOf('.'); if(i<0) return null; const mnem=l.slice(0,i).trim();
-    const rest=l.slice(i+1); const ci=rest.lastIndexOf(':'); const body=ci>=0?rest.slice(0,ci):rest, desc=ci>=0?rest.slice(ci+1).trim():'';
-    const m=body.match(/^(\S*)\s*(.*)$/); if(!m) return null;
-    return {mnem,unit:m[1],value:(m[2]||'').trim(),desc};
-  };
-  for(const raw of lines){
-    const l=raw.trim(); if(!l||l.startsWith('#')) continue;
-    if(l[0]==='~'){ sec=l[1].toUpperCase(); continue; }
-    if(sec==='A'){ const toks=l.split(/\s+/).map(Number); if(toks.some(isNaN)) continue;
-      if(wrap){ buf.push(...toks); if(buf.length>=H.curves.length){ rows.push(buf.slice(0,H.curves.length)); buf=[]; } } else rows.push(toks); continue; }
-    const h=parseHead(l); if(!h) { if(sec==='O') H.other.push(l); continue; }
-    if(sec==='V'){ H.version[h.mnem]=h.value; if(h.mnem==='WRAP') wrap=/yes/i.test(h.value); }
-    else if(sec==='W'){ H.well[h.mnem.toUpperCase()]=h; if(h.mnem.toUpperCase()==='NULL') nullv=parseFloat(h.value)||nullv; }
-    else if(sec==='C'){ H.curves.push({mnemonic:h.mnem,unit:h.unit,description:h.desc}); }
-    else if(sec==='P'){ H.params[h.mnem.toUpperCase()]=h; }
-  }
-  NULLS.add(nullv);
-  const n=rows.length; const curves=H.curves.map((c,j)=>{ const a=new Float64Array(n); let nulls=0; for(let i=0;i<n;i++){ let v=rows[i][j]; if(v===undefined||NULLS.has(v)||Math.abs(v-nullv)<1e-6){v=NaN;nulls++;} a[i]=v; } return {...c,data:a,nulls}; });
-  return {header:H,curves,wrap,nullv,rows:n};
-}
-function normalizeWell(p,fileName){
-  const W=p.header.well; const g=k=>W[k]?.value; const num=k=>{const t=(g(k)||'').trim(); return /^-?\d+(\.\d+)?$/.test(t)?parseFloat(t):undefined;};
-  const dep=p.curves[0]; const depthUnit=/m/i.test(dep.unit)&&!/ft|f$/i.test(dep.unit)?'m':'ft';
-  // Unit normalization for known curves.
-  for(const c of p.curves){ const m=c.mnemonic.toUpperCase(), u=(c.unit||'').toUpperCase();
-    if(/^(NPHI|TNPH|NPOR|PHIN|CNC|HNPO)/.test(m)){ const med=d3.median(c.data.filter(Number.isFinite)); if(/PU|%/.test(u)||(med>1.5)){ c.data=c.data.map(v=>v/100); c.unit='V/V'; c.note='converted from pu'; } }
-    if(/^(DT|DTC|DTCO|AC)$/.test(m)&&/US\/M|USEC\/M/.test(u)){ c.data=c.data.map(v=>v/3.28084); c.unit='US/F'; c.note='converted from us/m'; }
-  }
-  const tops=Object.values(p.header.params).filter(h=>/^TOP_/.test(h.mnem.toUpperCase())).map(h=>({name:h.mnem.slice(4).replace(/_/g,' ').replace(/\w\S*/g,s=>s[0]+s.slice(1).toLowerCase()),md:parseFloat(h.value),source:'import'})).filter(t=>Number.isFinite(t.md));
-  const notes=[]; const all=Object.values(W).map(h=>`${h.mnem} ${h.value} ${h.desc}`).join(' | ');
-  let kb=num('EKB')??num('KB')??num('EDF')??num('DF')??num('ELEV'), gl=num('EGL')??num('GL');
-  if(kb===undefined){ const m=all.match(/(-?\d+(?:\.\d+)?)\s*'?\s*(?:KB|RKB|DF)\b/i); if(m){ kb=parseFloat(m[1]); notes.push('KB read from free text'); } }
-  if(gl===undefined){ const m=all.match(/(-?\d+(?:\.\d+)?)\s*[?']?\s*GL\b/i); if(m) gl=parseFloat(m[1]); }
-  let lat=num('LATI')??num('LAT'), lon=num('LONG')??num('LON');
-  if(lat===undefined){ const m=all.match(/LAT[A-Z]*\s*[:=]?\s*(-?\d+\.\d+)/i); if(m) lat=parseFloat(m[1]); }
-  if(lon===undefined){ const m=all.match(/LON[A-Z]*\s*[:=]?\s*(-?\d+\.\d+)/i); if(m) lon=parseFloat(m[1]); }
-  const inUS=/CALIFORNIA|\bCA\b|UNITED STATES|USA/i.test(all);
-  if(lon!==undefined&&lon>0&&inUS){ lon=-lon; notes.push('longitude sign corrected to west'); }
-  const crsM=all.match(/NAD\s*(27|83)/i); const zoneM=all.match(/ZONE\s*(\d)/i);
-  const crs=g('GDAT')||(crsM?`NAD${crsM[1]}${zoneM?' · State Plane Zone '+zoneM[1]:''}`:'unknown');
-  return { id:'u'+Math.random().toString(36).slice(2,8), name:g('WELL')||fileName.replace(/\.las$/i,''), api:g('API')||(g('UWI')&&!/enter/i.test(g('UWI'))?g('UWI'):''), fileName,
-    location:{lat,lon,crs}, elevation:{kb,gl,unit:depthUnit}, field:g('FLD')||'', notes,
-    depthUnit, curves:p.curves, tops, wrap:p.wrap, nullv:p.nullv, rows:p.rows };
-}
+const {parseLAS,normalizeWell}=WellerLAS;   // app/js/las.js
 
 /* ---------- Curve aliases and default track presets ---------- */
+// Mnemonic families. Merged with petroplots' alias table so templates resolve the same curves in both tools.
 const A={
-  GR:['GR','GRC','SGR','CGR','ECGR','HSGR','GAMMA','GRD','GRS','GRR'], SP:['SP','SPR','SPC'], CAL:['CALI','CAL','HCAL','CALX','CALS'],
-  RD:['ILD','LLD','RT','AT90','AHT90','RLA5','RD','RESD','RILD','AF90','M2R9'], RM:['ILM','AT60','AHT60','RLA3','RM','RILM','AF60','M2R6'],
-  RS:['SFL','SFLU','MSFL','LLS','AT10','AHT10','RXO','RS','RLA1','SN','AF10','M2R1'],
-  RHOB:['RHOB','RHOZ','DEN','ZDEN','DENS'], NPHI:['NPHI','TNPH','NPOR','PHIN','CNC','HNPO','NPHI_LS'], DT:['DT','DTC','DTCO','AC','DT4P'], PE:['PE','PEF','PEFZ'],
+  GR:['GR','GRD','SGR','CGR','GRC','GAMMA','GRGC','GR_EDTC','ECGR','HSGR','GRS','GRR','HGR'], SP:['SP','SPC','SSP','SPR'], CAL:['CALI','CAL','CALS','HCAL','CALX','DCAL'],
+  RD:['RDEEP','RT','RD','ILD','LLD','AT90','AHT90','AF90','RES_DEEP','M2R9','RLA5','RESD','RILD'], RM:['RMED','RM','ILM','LLM','AT30','AT60','AHT60','AF60','RES_MED','RLA3','RILM','M2R6'],
+  RS:['RSHAL','RS','LLS','SFL','SFLU','MSFL','AT10','AHT10','AF10','RES_SHAL','RXO','RXOZ','RLA1','SN','M2R1'],
+  RHOB:['RHOB','DEN','RHOZ','DENS','ZDEN','RHO'], NPHI:['NPHI','TNPH','NEU','PHIN','CNC','NPOR','HNPO','NPHI_LS'], DT:['DT','DTC','AC','SONIC','DT24','DTCO','DT4P'], PE:['PEF','PE','PEFZ','PDPE'],
   ROP:['ROP','ROPA','ROP_AVG'], WOB:['WOB','WOBA'], RPM:['RPM'], TG:['TG','TGU','TGAS','GAS','TOTGAS','GASU'], C1:['C1','CH4','METH','METHANE'], C2:['C2','C2H6','ETH'], C3:['C3','C3H8','PROP'],
   C4:['C4','NC4','IC4'], C5:['C5','NC5','IC5'], H2S:['H2S'], CO2:['CO2'],
 };
@@ -68,17 +20,28 @@ const LITH=[
 const cssVar=n=>getComputedStyle(document.documentElement).getPropertyValue(n).trim();
 function defaultTracks(){ return [
   {id:'t1',name:'GR / SP / Cal',width:190,panel:true,curves:[
-    {label:'GR',aliases:A.GR,min:0,max:150,unit:'GAPI',color:'var(--gr)',fill:'left',fillStyle:'gradient',fillColor:'#F2D16B',fillColor2:'#6B7A5E',fillOpacity:.75},
-    {label:'SP',aliases:A.SP,min:-160,max:40,unit:'mV',color:'var(--sp)'},
+    {label:'GR',aliases:A.GR,min:0,max:200,unit:'API',color:'var(--gr)',fill:'left',fillStyle:'gradient',fillColor:'#EDC84A',fillColor2:'#465445',fillOpacity:.6},
+    {label:'SP',aliases:A.SP,min:-100,max:100,unit:'mV',color:'var(--sp)'},
     {label:'CAL',aliases:A.CAL,min:6,max:16,unit:'in',color:'var(--cal)',dash:'3 3'}]},
   {id:'t2',name:'Resistivity',width:190,panel:true,curves:[
     {label:'Deep',aliases:A.RD,min:0.2,max:2000,log:true,unit:'Ω·m',color:'var(--rdeep)'},
-    {label:'Med',aliases:A.RM,min:0.2,max:2000,log:true,unit:'Ω·m',color:'var(--rmed)'},
-    {label:'Shal',aliases:A.RS,min:0.2,max:2000,log:true,unit:'Ω·m',color:'var(--rshal)',dash:'4 2'}]},
-  {id:'t3',name:'Porosity',width:190,crossover:['RHOB','NPHI'],curves:[
-    {label:'RHOB',aliases:A.RHOB,min:1.95,max:2.95,unit:'g/cc',color:'var(--rhob)'},
+    {label:'Med',aliases:A.RM,min:0.2,max:2000,log:true,unit:'Ω·m',color:'var(--rmed)',dash:'5 3'},
+    {label:'Shal',aliases:A.RS,min:0.2,max:2000,log:true,unit:'Ω·m',color:'var(--rshal)',dash:'2 2'}]},
+  {id:'t3',name:'Density · Neutron',width:190,panel:true,crossover:['RHOB','NPHI'],curves:[
+    {label:'RHOB',aliases:A.RHOB,min:1.95,max:2.95,unit:'g/cc',color:'var(--rhob)',matchNeutron:true},
     {label:'NPHI',aliases:A.NPHI,min:0.45,max:-0.15,unit:'v/v',color:'var(--nphi)',dash:'5 3'},
+    {label:'PEF',aliases:A.PE,min:0,max:10,unit:'b/e',color:'var(--pef)',dash:'1 2'},
     {label:'DT',aliases:A.DT,min:140,max:40,unit:'µs/ft',color:'var(--dt)'}]},
+  {id:'t6',name:'Lith',width:56,type:'lith',panel:true,curves:[{label:'GR',aliases:A.GR,min:0,max:200}]},
+  {id:'t8',name:'Vsh',width:84,curves:[{label:'VSH',aliases:['VSH_GR','VSH','VCL','VSHALE','VCLAY'],min:0,max:1,unit:'v/v',color:'var(--vsh)',fill:'left',fillColor:'#465445',fillOpacity:.45}]},
+  {id:'t9',name:'Porosity · BVW',width:120,curves:[
+    {label:'PHI',aliases:['PHI_SW','PHIE','PORE','PHIEF'],min:0.5,max:0,unit:'v/v',color:'var(--phie)',fill:'right',fillColor:'#2A9D8F',fillOpacity:.5},
+    {label:'BVW',aliases:['BVW'],min:0.5,max:0,unit:'v/v',color:'var(--sw)',fill:'right',fillColor:'#0353A4',fillOpacity:.55},
+    {label:'PHIE',aliases:['PHIE','PORE','PHIEF'],min:0.5,max:0,unit:'v/v',color:'var(--muted)',dash:'2 2'}]},
+  {id:'t10',name:'Sw',width:84,curves:[{label:'SW',aliases:['SW','SWT','SWE','SUWI'],min:1,max:0,unit:'v/v',color:'var(--sw)'}]},
+  {id:'t11',name:'TOC',width:84,curves:[{label:'TOC',aliases:['TOC_DLR','TOC'],min:0,max:10,unit:'wt%',color:'var(--toc)',fill:'left',fillColor:'#7A5C3E',fillOpacity:.45}]},
+  {id:'t12',name:'Flags',width:40,type:'flags',curves:[
+    {label:'Net reservoir',aliases:['NET_RES'],color:'#EDC84A'},{label:'Net pay',aliases:['NET_PAY'],color:'#C1121F'},{label:'Bad hole',aliases:['FLAG_BH'],color:'#9AA5AB'}]},
   {id:'t4',name:'Drilling',width:130,curves:[
     {label:'ROP',aliases:A.ROP,min:0,max:300,unit:'ft/hr',color:'var(--rop)'},
     {label:'WOB',aliases:A.WOB,min:0,max:50,unit:'klb',color:'var(--wob)',dash:'3 3'}]},
@@ -86,152 +49,220 @@ function defaultTracks(){ return [
     {label:'TG',aliases:A.TG,min:1,max:10000,log:true,unit:'units',color:'var(--tg)'},
     {label:'C1',aliases:A.C1,min:1,max:100000,log:true,unit:'ppm',color:'var(--c1)',fill:'left',fillStyle:'gradient',fillColor:'#FCE8D5',fillColor2:'#E4572E',fillOpacity:.75},
     {label:'C2',aliases:A.C2,min:1,max:100000,log:true,unit:'ppm',color:'var(--c2)',dash:'4 2'}]},
-  {id:'t6',name:'Lith',width:70,type:'lith',panel:true,curves:[{label:'GR',aliases:A.GR,min:20,max:130}]},
   {id:'t7',name:'Cuttings %',width:110,type:'lithpct',curves:LITH.map(l=>({...l,min:0,max:100,unit:'%'}))},
 ];}
-function loadTrackDefaults(){ try{ const d=JSON.parse(localStorage.getItem('weller.trackDefaults')||'null'); if(Array.isArray(d)&&d.length) return d; }catch(e){} return defaultTracks(); }
+function loadTrackDefaults(){ try{ const d=JSON.parse(localStorage.getItem('weller.trackDefaults2')||'null'); if(Array.isArray(d)&&d.length) return d; }catch(e){} return defaultTracks(); }
 const norm=s=>s.toUpperCase().replace(/[:_-]\d+$/,'');
 function resolveCurve(well,cfg){ for(const a of cfg.aliases){ const c=well.curves.find(c=>norm(c.mnemonic)===a.toUpperCase()); if(c) return c; } return null; }
 
 /* ---------- State ---------- */
-const S={ mode:'single', wells:[], selected:null, panel:[], showEmpty:false, tracks:loadTrackDefaults(), view:{top:0,bottom:6000,pxPerFt:0.35}, datum:'MD', picking:false, hiddenPoints:[], stats:null, basemap:'map' };
+const S={ mode:'single', wells:[], selected:null, panel:[], showEmpty:false, tracks:loadTrackDefaults(), view:{top:0,bottom:6000,pxPerFt:0.35}, datum:'MD', picking:false, hiddenPoints:[], stats:null, basemap:'map', interp:interpDefaults(), corr:{gap:64,spacing:'equal',scale:0.75} };
 const $=id=>document.getElementById(id);
 function presetWell(cfg){ const w={...WellerSynth.makeWell(cfg),preset:cfg.id}; for(const p of w.points) w.curves.push(makePointCurve(p.mnemonic,p.unit,p.description,p.md,p.data)); delete w.points; return w; }
-function loadPresets(){ S.wells=WellerSynth.PRESET_WELLS.map(presetWell); S.selected=S.wells[0].id; S.panel=['w1','w2','w4']; pointSeriesNames().forEach(placePointSeries); }
+function loadPresets(){ S.wells=WellerSynth.PRESET_WELLS.map(presetWell); S.selected=S.wells[0].id; S.panel=['w1','w2','w4']; S.datum='MD'; pointSeriesNames().forEach(placePointSeries); computeAllInterp(); }
 const wellById=id=>S.wells.find(w=>w.id===id);
 const depthOf=w=>w.curves[0].data;
 function wellRange(w){ const d=depthOf(w); return [d[0],d[d.length-1]]; }
-function offsetOf(w){ // plotted depth = md - offset
-  if(S.mode==='single'||S.datum==='MD') return 0;
-  if(S.datum==='TVDSS') return w.elevation.kb??0; // vertical-well assumption until surveys exist (phase 3)
-  const t=w.tops.find(t=>t.name===S.datum); return t?t.md:NaN;
+/* ---------- Depth frames: MD, TVDSS, or flattened on a top. Deviated wells use TVD from their survey. ---------- */
+function tvdOf(w){ if(!w.survey) return null; const d=depthOf(w); if(!w._tvd||w._tvd.length!==d.length) w._tvd=WellerLAS.tvdAt(w.survey,d); return w._tvd; }
+function mdToTvd(w,md){ return w.survey?WellerLAS.tvdAt(w.survey,Float64Array.of(md))[0]:md; }
+function frameOf(w){
+  const dep=depthOf(w), mode=S.mode==='single'?'MD':S.datum, md={kind:'MD',z:m=>m,arr:dep,mono:true,note:''};
+  if(mode==='MD') return md;
+  const tvd=tvdOf(w), base=tvd?(m=>mdToTvd(w,m)):(m=>m), src=tvd||dep;
+  const mono=!tvd||src.every((v,i)=>i===0||v>=src[i-1]-1e-9);
+  if(mode==='TVDSS'){ const e=WellerLAS.datumElevation(w); if(!Number.isFinite(e)) return {...md,note:'no elevation, shown in MD'};
+    const hungGL=!Number.isFinite(w.elevation?.kb); return {kind:'TVDSS',z:m=>base(m)-e,arr:src.map(v=>v-e),mono,note:(hungGL?'hung on GL':'')+(tvd?(hungGL?', ':'')+'TVD from survey':'')}; }
+  const t=w.tops.find(t=>t.name===mode); if(!t) return {...md,note:`no ${mode} top, shown in MD`};
+  const zt=base(t.md); return {kind:'FLAT',z:m=>base(m)-zt,arr:src.map(v=>v-zt),mono,note:tvd?'TVD from survey':''};
 }
+function mdAtZ(w,F,z){ const a=F.arr,d=depthOf(w); let i=F.mono?d3.bisectLeft(a,z):a.findIndex(v=>v>=z); if(i<=0) return d[0]; if(i<0||i>=a.length) return d[d.length-1];
+  const t=(z-a[i-1])/((a[i]-a[i-1])||1); return d[i-1]+t*(d[i]-d[i-1]); }
+function visibleRange(F,top,bot){ const a=F.arr; let i0,i1;
+  if(F.mono){ i0=Math.max(0,d3.bisectLeft(a,top)-1); i1=Math.min(a.length-1,d3.bisectRight(a,bot)+1); }
+  else { i0=a.findIndex(v=>v>=top); if(i0<0) i0=a.length-1; i0=Math.max(0,i0-1); i1=a.length-1; while(i1>0&&a[i1]>bot) i1--; i1=Math.min(a.length-1,i1+1); }
+  return [i0,Math.max(i0,i1)]; }
+
+/* Density scale matched to the neutron's recorded matrix, so the crossover reads the same in every well. */
+const ND_RHOB={limestone:[1.95,2.95],sandstone:[1.90,2.90],dolomite:[2.12,3.12]};
+const MATRIX_TAG={limestone:'LS',sandstone:'SS',dolomite:'DOL'};
+function effCfg(w,cfg){
+  if(cfg.matchNeutron&&A.RHOB.includes((cfg.aliases||[])[0])){ const m=w.neutronMatrix||'limestone'; const [a,b]=ND_RHOB[m]; return {...cfg,min:a,max:b,tag:MATRIX_TAG[m]+' scale'}; }
+  if(A.NPHI.includes((cfg.aliases||[])[0])&&w.neutronMatrix) return {...cfg,tag:MATRIX_TAG[w.neutronMatrix]};
+  return cfg; }
 
 /* ---------- Rendering ---------- */
 function visibleTracks(w){ return S.tracks.filter(t=>(S.mode==='single'||t.panel)&&(S.showEmpty||t.curves.some(c=>resolveCurve(w,c)))); }
 function fmtDepth(v){ return Math.round(v).toLocaleString(); }
 function tickInterval(px){ for(const i of [10,20,25,50,100,200,250,500,1000,2000]) if(i*px>=44) return i; return 5000; }
+const trackW=t=>Math.round((t.width||190)*(S.mode==='corr'?(S.corr?.scale??0.75):1));
 function render(){
   const statsMode=S.mode==='stats'; $('statsView').hidden=!statsMode; $('logView').hidden=statsMode;
   if(statsMode){ renderSidebar(); renderStats(); autosave(); return; }
-  const panel=$('logPanel'); panel.querySelectorAll('.column').forEach(c=>c.remove()); const ov=$('overlay'); ov.innerHTML=''; ov.setAttribute('width',0); ov.setAttribute('height',0);
+  const panel=$('logPanel'); panel.querySelectorAll('.column,.gaplbl').forEach(c=>c.remove()); const ov=$('overlay'); ov.innerHTML=''; ov.setAttribute('width',0); ov.setAttribute('height',0);
   const wells=S.mode==='single'?[wellById(S.selected)].filter(Boolean):S.panel.map(wellById).filter(Boolean);
-  $('datumWrap').hidden=S.mode==='single';
+  $('datumWrap').hidden=S.mode!=='corr'; $('spacingWrap').hidden=S.mode!=='corr';
   $('vbWell').textContent=S.mode==='single'?(wells[0]?.name||'No well'):`Section A–A′ · ${wells.length} wells`;
   $('scaleLbl').textContent=`${(100*S.view.pxPerFt).toFixed(0)} px / 100 ft`;
   const {top,bottom,pxPerFt}=S.view; const H=Math.max(10,(bottom-top)*pxPerFt); const y=d3.scaleLinear([top,bottom],[0,H]);
-  const tickI=tickInterval(pxPerFt), minorI=tickI/5;
+  const tickI=tickInterval(pxPerFt), minorI=tickI/5, zc=zoneColorMap();
+  const gaps=S.mode==='corr'?wellGaps(wells):[];
   const cols=[];
-  for(const w of wells){
-    const off=offsetOf(w); const dep=depthOf(w); const noDatum=Number.isNaN(off); const o=noDatum?0:off;
-    const col=document.createElement('div'); col.className='column'; col.dataset.well=w.id;
+  wells.forEach((w,k)=>{
+    const F=frameOf(w);
+    const col=document.createElement('div'); col.className='column'; col.dataset.well=w.id; if(k>0&&S.mode==='corr') col.style.marginLeft=gaps[k-1].px+'px';
     const head=document.createElement('div'); head.className='colhead';
-    head.innerHTML=`<span>${w.name}${w.synthetic?' <small>synthetic</small>':''}</span><small>${w.api||''}${noDatum?' · no '+S.datum+' top, shown in MD':''}</small>`;
+    const warn=(w.notes||[]).some(n=>/ignored|corrected/.test(n));
+    head.innerHTML=`<span>${esc(w.name)}${w.synthetic?' <small>synthetic</small>':''}${warn?' <small class="warn" title="'+esc(w.notes.join('; '))+'">⚠ header</small>':''}</span><small>${esc(w.api||'')}${F.note?' · '+F.note:''}</small>`;
     col.appendChild(head);
     const tr=document.createElement('div'); tr.className='tracks';
-    // depth track
-    tr.appendChild(depthTrack(w,y,H,tickI,minorI,o));
-    for(const t of visibleTracks(w)) tr.appendChild(logTrack(w,t,y,H,tickI,minorI,o,dep));
-    col.appendChild(tr); panel.insertBefore(col,ov); cols.push({w,el:col,o});
-  }
+    tr.appendChild(depthTrack(w,F,y,H,tickI,minorI,zc));
+    for(const t of visibleTracks(w)) tr.appendChild(logTrack(w,t,F,y,H,tickI,minorI));
+    col.appendChild(tr); panel.insertBefore(col,ov); cols.push({w,el:col,F});
+  });
   const heads=[...panel.querySelectorAll('.thead')]; heads.forEach(h=>h.style.height=''); const mh=Math.max(0,...heads.map(h=>h.offsetHeight)); heads.forEach(h=>h.style.height=mh+'px');
-  if(S.mode==='corr') drawCorrelations(cols,y);
+  S._ctx={cols,y};
+  if(S.mode==='corr') drawCorrelations(cols,y,gaps,zc); else S._corrWarn='';
   renderSidebar();
   autosave();
 }
-function depthTrack(w,y,H,tickI,minorI,o){
+function haversineKm(a,b){ const r=Math.PI/180, dLat=(b[0]-a[0])*r, dLon=(b[1]-a[1])*r; const h=Math.sin(dLat/2)**2+Math.cos(a[0]*r)*Math.cos(b[0]*r)*Math.sin(dLon/2)**2; return 12742*Math.asin(Math.sqrt(h)); }
+function wellGaps(wells){ const out=[]; const base=S.corr?.gap??64;
+  const d=wells.slice(1).map((w,i)=>{ const a=wgs84Of(wells[i]), b=wgs84Of(w); return a&&b?haversineKm(a,b):null; });
+  const dmax=Math.max(0,...d.filter(v=>v!=null));
+  d.forEach(km=>out.push({km,px:S.corr?.spacing==='distance'&&km!=null&&dmax>0?Math.round(36+220*km/dmax):base}));
+  return out; }
+function depthTrack(w,F,y,H,tickI,minorI,zc){
   const div=document.createElement('div'); div.className='track'; div.style.width='64px';
-  const lbl=S.mode==='single'||S.datum==='MD'?'MD ft':S.datum==='TVDSS'?'TVDSS ft':'ft rel. '+S.datum;
+  const u=w.depthUnit||'ft', lbl=F.kind==='MD'?`MD ${u}`:F.kind==='TVDSS'?`TVDSS ${u}`:`${u} from ${S.datum}`;
   div.innerHTML=`<div class="thead"><div class="tn">Depth</div><div class="scale" style="color:var(--muted)"><span></span><span class="c">${lbl}</span><span></span></div></div>`;
-  const svg=d3.create('svg').attr('width',64).attr('height',H);
-  const [t,b]=S.view.top!==undefined?[S.view.top,S.view.bottom]:[0,0];
-  const start=Math.ceil(t/minorI)*minorI;
+  const svg=d3.create('svg').attr('width',64).attr('height',H).attr('class','depthsvg');
+  // Zone strip: the same zone colors as the stats tab and the correlation fills.
+  for(const z of zonesOf(w)){ if(z.name==='Whole well') continue; const y0=y(F.z(z.top)), y1=y(F.z(z.base)); if(y1<0||y0>H) continue;
+    svg.append('rect').attr('x',0).attr('width',7).attr('y',Math.max(0,y0)).attr('height',Math.max(0,Math.min(H,y1)-Math.max(0,y0))).attr('fill',zc.get(z.name)||'transparent').append('title').text(z.name); }
+  const [t,b]=[S.view.top,S.view.bottom]; const start=Math.ceil(t/minorI)*minorI;
   for(let v=start;v<=b;v+=minorI){ const major=Math.abs(v/tickI-Math.round(v/tickI))<1e-6; svg.append('line').attr('x1',major?40:52).attr('x2',64).attr('y1',y(v)).attr('y2',y(v)).attr('class','grid'+(major?' s':''));
     if(major) svg.append('text').attr('x',38).attr('y',y(v)+3.5).attr('text-anchor','end').attr('class','depth').text(fmtDepth(v)); }
-  for(const tp of w.tops){ const yy=y(tp.md-o); if(yy<0||yy>H) continue; svg.append('line').attr('x1',0).attr('x2',64).attr('y1',yy).attr('y2',yy).attr('class','top'); }
-  div.appendChild(svg.node()); return div;
+  for(const tp of w.tops){ const yy=y(F.z(tp.md)); if(yy<0||yy>H) continue; svg.append('line').attr('x1',8).attr('x2',64).attr('y1',yy).attr('y2',yy).attr('class','top').attr('data-top',tp.name); }
+  const node=svg.node(); attachTopDrag(node,w,F,y); div.appendChild(node); return div;
 }
 const fillHex=c=>c&&c.startsWith('var(')?cssVarHex(c.slice(4,-1)):c;
 function scaleFor(c,width){ return c.log?d3.scaleLog([c.min,c.max],[0,width]).clamp(true):d3.scaleLinear([c.min,c.max],[0,width]).clamp(true); }
-function logTrack(w,t,y,H,tickI,minorI,o,dep){
-  const width=t.width||190; const div=document.createElement('div'); div.className='track'; div.style.width=width+'px';
+const LITHO={Sandstone:'#EDC84A',Siltstone:'#C0CCC6',Shale:'#465445',Marl:'#A2DBDB','Limestone / chalk':'#4E86C4'};   // petroplots LITHOLOGY colors
+const LITHO_RULE={PE:{'Limestone / chalk':'PE ≥ 4, Vsh < 0.4',Marl:'PE ≥ 3.5, Vsh < 0.75',Sandstone:'PE < 2.6, Vsh < 0.4',Siltstone:'Vsh < 0.4 otherwise, or 0.4–0.65',Shale:'Vsh ≥ 0.65'},
+  GR:{Sandstone:'Vsh < 0.4',Siltstone:'Vsh 0.4–0.65',Shale:'Vsh ≥ 0.65'}};
+function showLithTip(e,k,hasPE){ const R=LITHO_RULE[hasPE?'PE':'GR'], tip=$('tip');
+  tip.innerHTML=`<div style="margin-bottom:4px;color:var(--muted)">Quick-look lithology from ${hasPE?'GR and PE':'GR only'}</div>`+Object.entries(R).map(([n,r])=>`<div class="lr${n===k?' on':''}"><i style="background:${LITHO[n]}"></i>${esc(n)} <small>${r}</small></div>`).join('');
+  tip.hidden=false; const x=e.clientX+14, y=e.clientY+14; tip.style.left=Math.min(x,innerWidth-tip.offsetWidth-8)+'px'; tip.style.top=Math.min(y,innerHeight-tip.offsetHeight-8)+'px'; }
+function hideTip(){ $('tip').hidden=true; }
+function quickLith(vsh,pe){ if(!Number.isFinite(vsh)) return null;
+  if(Number.isFinite(pe)){ if(pe>=4&&vsh<0.4) return 'Limestone / chalk'; if(pe>=3.5&&vsh<0.75) return 'Marl'; if(pe<2.6&&vsh<0.4) return 'Sandstone'; if(vsh<0.4) return 'Siltstone'; }
+  return vsh<0.4?'Sandstone':vsh<0.65?'Siltstone':'Shale'; }
+function logTrack(w,t,F,y,H,tickI,minorI){
+  const width=trackW(t), dep=depthOf(w), zA=F.arr; const div=document.createElement('div'); div.className='track'; div.style.width=width+'px';
   const head=document.createElement('div'); head.className='thead';
-  head.innerHTML=`<div class="tn"><span>${t.name}</span><button title="Edit track" data-edit="${t.id}">⚙</button></div>`;
-  const resolved=t.curves.map(c=>({cfg:c,curve:resolveCurve(w,c)}));
+  head.innerHTML=`<div class="tn"><span>${esc(t.name)}</span><button title="Edit track" data-edit="${t.id}">⚙</button></div>`;
+  const resolved=t.curves.map(c=>{ const curve=resolveCurve(w,c); return {cfg:curve?effCfg(w,c):c,curve}; });
+  const gr=resolveCurve(w,{aliases:A.GR}), pe=resolveCurve(w,{aliases:A.PE}); let lithCls=null;
   if(t.type==='lithpct'){ const have=resolved.filter(r=>r.curve&&!r.curve.sparse); head.innerHTML+=`<div class="scale" style="color:var(--muted)"><span>0</span><span class="c">${have.length?have.length+' components':'no cuttings curves'}</span><span class="r">100%</span></div><div class="legend">${have.map(r=>`<i style="background:${r.cfg.color}" title="${r.cfg.label} (${r.curve.mnemonic})"></i>`).join('')}</div>`; }
-  else if(t.type!=='lith') for(const {cfg,curve} of resolved){ const s=document.createElement('div'); s.className='scale'; s.style.color=cfg.color; s.style.opacity=curve?1:.35;
-    s.innerHTML=`<span>${cfg.min}</span><span class="c">${curve?curve.mnemonic:cfg.label+' (none)'}${cfg.unit?' '+cfg.unit:''}</span><span class="r">${cfg.max}</span><span class="bar${curve?.sparse?' pts':cfg.dash?' dash':''}"></span>`; head.appendChild(s); }
-  else head.innerHTML+=`<div class="scale" style="color:var(--muted)"><span>sand</span><span class="c">Vsh</span><span class="r">shale</span></div>`;
+  else if(t.type==='lith') head.innerHTML+=`<div class="scale" style="color:var(--muted)"><span></span><span class="c">${pe&&!pe.sparse?'GR + PE':'GR'} quick look</span><span></span></div><div class="legend">${Object.entries(LITHO).filter(([k])=>pe&&!pe.sparse||!/Marl|Lime/.test(k)).map(([k,c])=>`<i style="background:${c}"></i>`).join('')}</div>`;
+  else if(t.type==='flags') head.innerHTML+=`<div class="legend">${resolved.filter(r=>r.curve).map(r=>`<i style="background:${r.cfg.color}" title="${r.cfg.label}: ${esc(r.curve.description||'')}"></i>`).join('')}</div>`;
+  else for(const {cfg,curve} of resolved){ const s=document.createElement('div'); s.className='scale'; s.style.color=cfg.color; s.style.opacity=curve?1:.35; s.title=curve?.description||'';
+    s.innerHTML=`<span>${cfg.min}</span><span class="c">${curve?curve.mnemonic:cfg.label+' (none)'}${cfg.unit?' '+cfg.unit:''}${cfg.tag?' · '+cfg.tag:''}</span><span class="r">${cfg.max}</span><span class="bar${curve?.sparse?' pts':cfg.dash?' dash':''}"></span>`; head.appendChild(s); }
   div.appendChild(head);
   const svg=d3.create('svg').attr('width',width).attr('height',H).classed('pick',S.picking);
   const [top,bot]=[S.view.top,S.view.bottom];
-  // horizontal grid
   for(let v=Math.ceil(top/minorI)*minorI;v<=bot;v+=minorI){ const major=Math.abs(v/tickI-Math.round(v/tickI))<1e-6; svg.append('line').attr('x1',0).attr('x2',width).attr('y1',y(v)).attr('y2',y(v)).attr('class','grid'+(major?' s':'')); }
-  // vertical grid
-  const first=t.curves[0];
+  const first=resolved[0]?.cfg||t.curves[0];
   if(t.type==='lithpct'){ for(let i=1;i<10;i++){ const x=width*i/10; svg.append('line').attr('x1',x).attr('x2',x).attr('y1',0).attr('y2',H).attr('class','grid'+(i%5===0?' s':'')); } }
-  else if(t.type!=='lith'){ if(first.log){ const dec=Math.round(Math.log10(first.max/first.min)); const sx=scaleFor(first,width);
-      for(let d=0;d<=dec;d++){ const base=first.min*10**d; for(let m=1;m<10;m++){ const v=base*m; if(v>first.max*1.0001) break; svg.append('line').attr('x1',sx(v)).attr('x2',sx(v)).attr('y1',0).attr('y2',H).attr('class','grid'+(m===1?' s':'')); } } }
+  else if(first&&!t.type){ if(first.log){ const dec=Math.round(Math.log10(Math.max(first.max,first.min)/Math.min(first.max,first.min))); const sx=scaleFor(first,width); const lo=Math.min(first.min,first.max);
+      for(let d=0;d<=dec;d++){ const base=lo*10**d; for(let m=1;m<10;m++){ const v=base*m; if(v>Math.max(first.min,first.max)*1.0001) break; svg.append('line').attr('x1',sx(v)).attr('x2',sx(v)).attr('y1',0).attr('y2',H).attr('class','grid'+(m===1?' s':'')); } } }
     else for(let i=0;i<=10;i++){ const x=width*i/10; svg.append('line').attr('x1',x).attr('x2',x).attr('y1',0).attr('y2',H).attr('class','grid'+(i%5===0?' s':'')); } }
-  // sample stride: ~2 samples per px
   const step=dep.length>1?Math.abs(dep[1]-dep[0]):1; const stride=Math.max(1,Math.floor(1/(S.view.pxPerFt*step)/2));
-  const i0=Math.max(0,d3.bisectLeft(dep,top+o)-1), i1=Math.min(dep.length-1,d3.bisectRight(dep,bot+o)+1);
-  const idx=d3.range(i0,i1+1,stride);
+  const [i0,i1]=visibleRange(F,top,bot); const idx=d3.range(i0,i1+1,stride);
+  const Y=i=>y(zA[i]);
+  const band=(g,a,b,x,wd,fill,title)=>{ const y0=Y(a), h=Math.max(.6,Y(b)-y0); const r=g.append('rect').attr('x',x).attr('y',y0).attr('width',wd).attr('height',h).attr('fill',fill); if(title) r.append('title').text(title); };
   if(t.type==='lithpct'){ const have=resolved.filter(r=>r.curve&&!r.curve.sparse); if(have.length){ const g=svg.append('g'); const sx=width/100;
-      for(let k=0;k<idx.length;k++){ const i=idx[k], j=idx[k+1]??Math.min(i1,i+stride); const y0=y(dep[i]-o), h=Math.max(.5,y(dep[j]-o)-y0); let x=0;
-        for(const r of have){ const v=r.curve.data[i]; if(!Number.isFinite(v)||v<=0) continue; g.append('rect').attr('x',x).attr('y',y0).attr('width',v*sx).attr('height',h).attr('fill',r.cfg.color); x+=v*sx; } } } }
-  else if(t.type==='lith'){ const c=resolved[0].curve; if(c&&!c.sparse){ const s=first; const g=svg.append('g'); let run=null;
-      const flush=(kind,a,b)=>g.append('rect').attr('x',0).attr('width',width).attr('y',y(dep[a]-o)).attr('height',Math.max(.5,y(dep[b]-o)-y(dep[a]-o))).attr('fill',kind==='sand'?'var(--sand)':kind==='shale'?'var(--shale)':'var(--paper)');
-      for(const i of idx){ const v=c.data[i]; const vsh=Number.isFinite(v)?Math.min(1,Math.max(0,(v-s.min)/(s.max-s.min))):NaN; const kind=Number.isNaN(vsh)?'gap':vsh<0.4?'sand':vsh>0.6?'shale':'silt';
-        if(!run||run.kind!==kind){ if(run) flush(run.kind,run.a,i); run={kind,a:i}; } }
-      if(run) flush(run.kind,run.a,i1); } }
+      for(let k=0;k<idx.length;k++){ const i=idx[k], j=idx[k+1]??Math.min(i1,i+stride); let x=0;
+        for(const r of have){ const v=r.curve.data[i]; if(!Number.isFinite(v)||v<=0) continue; band(g,i,j,x,v*sx,r.cfg.color); x+=v*sx; } } } }
+  else if(t.type==='lith'){ if(gr&&!gr.sparse){ const g=svg.append('g'); const bl=grBaselines(w); const vs=resolveCurve(w,{aliases:['VSH_GR']}); let run=null;
+      const cls=lithCls=i=>quickLith(vs?vs.data[i]:WellerPetro.igr(gr.data[i],bl.clean??20,bl.shale??130),pe&&!pe.sparse?pe.data[i]:NaN);
+      const flush=(k,a,b)=>{ if(k) band(g,a,b,0,width,LITHO[k],k); };
+      for(const i of idx){ const k=cls(i); if(!run||run.k!==k){ if(run) flush(run.k,run.a,i); run={k,a:i}; } }
+      if(run) flush(run.k,run.a,i1); } }
+  else if(t.type==='flags'){ const have=resolved.filter(r=>r.curve&&!r.curve.sparse); const wd=width/Math.max(1,have.length);
+    have.forEach((r,c)=>{ const g=svg.append('g'); let a=null; for(const i of idx){ const on=r.curve.data[i]>0.5; if(on&&a===null) a=i; if(!on&&a!==null){ band(g,a,i,c*wd,wd,r.cfg.color); a=null; } } if(a!==null) band(g,a,i1,c*wd,wd,r.cfg.color); }); }
   else {
-    // crossover shading (gas)
     if(t.crossover){ const ra=resolved.find(r=>r.cfg.label===t.crossover[0]), rb=resolved.find(r=>r.cfg.label===t.crossover[1]);
       if(ra?.curve&&rb?.curve&&!ra.curve.sparse&&!rb.curve.sparse){ const sa=scaleFor(ra.cfg,width), sb=scaleFor(rb.cfg,width);
         const area=d3.area().defined(i=>Number.isFinite(ra.curve.data[i])&&Number.isFinite(rb.curve.data[i])&&sa(ra.curve.data[i])<sb(rb.curve.data[i]))
-          .x0(i=>sa(ra.curve.data[i])).x1(i=>sb(rb.curve.data[i])).y(i=>y(dep[i]-o));
+          .x0(i=>sa(ra.curve.data[i])).x1(i=>sb(rb.curve.data[i])).y(Y);
         svg.append('path').attr('d',area(idx)).attr('fill','var(--gas)').attr('opacity',.45); } }
-    for(const {cfg,curve} of resolved){ if(!curve) continue; const sx=scaleFor(cfg,width); if(curve.sparse){ drawPoints(svg,cfg,curve,sx,y,o,top,bot); continue; } const ok=i=>Number.isFinite(curve.data[i])&&!(cfg.log&&curve.data[i]<=0);
+    for(const {cfg,curve} of resolved){ if(!curve) continue; const sx=scaleFor(cfg,width); if(curve.sparse){ drawPoints(svg,cfg,curve,sx,y,F,top,bot); continue; } const ok=i=>Number.isFinite(curve.data[i])&&!(cfg.log&&curve.data[i]<=0);
       if(cfg.fill&&cfg.fill!=='none'){ let fillRef=cfg.fillColor||cfg.color;
-        if(cfg.fillStyle==='gradient'){ // color each depth by its value: left-scale color to right-scale color
-          const gid='g'+t.id+'_'+cfg.label.replace(/\W/g,'')+'_'+w.id, mix=d3.interpolateRgb(fillHex(cfg.fillColor||cfg.color),fillHex(cfg.fillColor2||cfg.color));
-          const gr=svg.append('defs').append('linearGradient').attr('id',gid).attr('gradientUnits','userSpaceOnUse').attr('x1',0).attr('x2',0).attr('y1',0).attr('y2',H);
-          for(const i of idx){ if(!ok(i)) continue; const yy=y(dep[i]-o); if(yy<0||yy>H) continue; gr.append('stop').attr('offset',(yy/H).toFixed(5)).attr('stop-color',mix(sx(curve.data[i])/width)); }
+        if(cfg.fillStyle==='gradient'){ const gid='g'+t.id+'_'+cfg.label.replace(/\W/g,'')+'_'+w.id, mix=d3.interpolateRgb(fillHex(cfg.fillColor||cfg.color),fillHex(cfg.fillColor2||cfg.color));
+          const gr2=svg.append('defs').append('linearGradient').attr('id',gid).attr('gradientUnits','userSpaceOnUse').attr('x1',0).attr('x2',0).attr('y1',0).attr('y2',H);
+          for(const i of idx){ if(!ok(i)) continue; const yy=Y(i); if(yy<0||yy>H) continue; gr2.append('stop').attr('offset',(yy/H).toFixed(5)).attr('stop-color',mix(sx(curve.data[i])/width)); }
           fillRef=`url(#${gid})`; }
-        const area=d3.area().defined(ok).x0(cfg.fill==='left'?0:width).x1(i=>sx(curve.data[i])).y(i=>y(dep[i]-o)); svg.append('path').attr('d',area(idx)).attr('fill',fillRef).attr('opacity',cfg.fillOpacity??.35); }
-      const line=d3.line().defined(ok).x(i=>sx(curve.data[i])).y(i=>y(dep[i]-o));
+        const area=d3.area().defined(ok).x0(cfg.fill==='left'?0:width).x1(i=>sx(curve.data[i])).y(Y); svg.append('path').attr('d',area(idx)).attr('fill',fillRef).attr('opacity',cfg.fillOpacity??.35); }
+      const line=d3.line().defined(ok).x(i=>sx(curve.data[i])).y(Y);
       svg.append('path').attr('d',line(idx)).attr('fill','none').attr('stroke',cfg.color).attr('stroke-width',1.2).attr('stroke-dasharray',cfg.dash||null); }
   }
-  // tops
-  for(const tp of w.tops){ const yy=y(tp.md-o); if(yy<0||yy>H) continue; svg.append('line').attr('x1',0).attr('x2',width).attr('y1',yy).attr('y2',yy).attr('class','top');
-    if(t===visibleTracks(w)[0]) svg.append('text').attr('x',3).attr('y',yy-3).attr('class','toplbl').text(tp.name); }
+  const firstVis=visibleTracks(w)[0];
+  for(const tp of w.tops){ const yy=y(F.z(tp.md)); if(yy<0||yy>H) continue; svg.append('line').attr('x1',0).attr('x2',width).attr('y1',yy).attr('y2',yy).attr('class','top').attr('data-top',tp.name);
+    if(t===firstVis) svg.append('text').attr('x',3).attr('y',yy-3).attr('class','toplbl').attr('data-top',tp.name).text(tp.name); }
   const node=svg.node();
-  node.addEventListener('mousemove',e=>{ const r=node.getBoundingClientRect(); const d=y.invert(e.clientY-r.top)+o; showCursor(e.clientY-$('logPanel').getBoundingClientRect().top,d,w,resolved,dep); });
-  node.addEventListener('mouseleave',()=>{ $('cursor').style.display='none'; });
-  node.addEventListener('click',e=>{ if(!S.picking) return; const r=node.getBoundingClientRect(); const md=Math.round((y.invert(e.clientY-r.top)+o)*2)/2; placeTop(w,md); });
+  node.addEventListener('mousemove',e=>{ if(S.drag) return; const r=node.getBoundingClientRect(); const z=y.invert(e.clientY-r.top), md=mdAtZ(w,F,z); showCursor(e.clientY-$('logPanel').getBoundingClientRect().top,md,z,F,w,resolved);
+    if(lithCls){ const dep=depthOf(w); showLithTip(e,lithCls(Math.min(dep.length-1,Math.max(0,d3.bisectCenter(dep,md)))),pe&&!pe.sparse); } });
+  node.addEventListener('mouseleave',()=>{ $('cursor').style.display='none'; hideTip(); });
+  if(t.type==='lith') head.querySelector('.legend')?.addEventListener('mousemove',e=>showLithTip(e,null,pe&&!pe.sparse)), head.querySelector('.legend')?.addEventListener('mouseleave',hideTip);
+  node.addEventListener('click',e=>{ if(!S.picking) return; const r=node.getBoundingClientRect(); const md=Math.round(mdAtZ(w,F,y.invert(e.clientY-r.top))*2)/2; placeTop(w,md); });
+  attachTopDrag(node,w,F,y);
   div.appendChild(node); return div;
 }
-function showCursor(yPx,md,w,resolved,dep){ const c=$('cursor'); c.style.display='block'; c.style.top=(yPx)+'px';
-  const i=Math.min(dep.length-1,Math.max(0,d3.bisectCenter(dep,md)));
-  $('stCursor').innerHTML=`<b>${w.name}</b> MD ${md.toFixed(1)} ft`;
-  $('stVals').innerHTML=resolved.filter(r=>r.curve).map(r=>{ const c=r.curve; if(c.sparse){ const k=nearestPoint(c,md); return k<0?'':`${c.mnemonic} <b>${fmtVal(c.data[k],r.cfg)}</b> @${c.md[k]}`; } return `${c.mnemonic} <b>${fmtVal(c.data[i],r.cfg)}</b>`; }).filter(Boolean).join(' · '); }
-function drawCorrelations(cols,y){
-  const ov=d3.select('#overlay'); const panelR=$('logPanel').getBoundingClientRect();
-  const fmColor={Pico:'var(--pico)',Repetto:'var(--repetto)',Puente:'var(--puente)'};
-  const names=[...new Set(cols.flatMap(c=>c.w.tops.map(t=>t.name)))];
-  const geo=cols.map(c=>{ const r=c.el.getBoundingClientRect(); const trk=c.el.querySelector('.tracks').getBoundingClientRect(); return {l:r.left-panelR.left,r:r.right-panelR.left,y0:trk.top-panelR.top,c}; });
-  ov.attr('width',panelR.width).attr('height',panelR.height);
-  for(let i=0;i<geo.length-1;i++){ const a=geo[i],b=geo[i+1];
-    const ya=n=>{const t=a.c.w.tops.find(t=>t.name===n); return t?a.y0+y(t.md-a.c.o):null;}, yb=n=>{const t=b.c.w.tops.find(t=>t.name===n); return t?b.y0+y(t.md-b.c.o):null;};
-    const shared=names.filter(n=>ya(n)!==null&&yb(n)!==null).sort((p,q)=>ya(p)-ya(q));
-    shared.forEach((n,k)=>{ const nx=shared[k+1]; const bottomA=nx?ya(nx):a.y0+y(S.view.bottom), bottomB=nx?yb(nx):b.y0+y(S.view.bottom);
-      ov.append('polygon').attr('class','fm').attr('fill',fmColor[n]||'var(--grid)').attr('points',`${a.r},${ya(n)} ${b.l},${yb(n)} ${b.l},${bottomB} ${a.r},${bottomA}`);
-      ov.append('line').attr('class','corr').attr('x1',a.r).attr('y1',ya(n)).attr('x2',b.l).attr('y2',yb(n));
-      ov.append('text').attr('x',(a.r+b.l)/2).attr('y',(ya(n)+yb(n))/2-4).attr('text-anchor','middle').text(n); });
-  }
+/* Drag a top line to move it. Hovering within 5 px of a top shows a resize cursor. */
+function attachTopDrag(node,w,F,y){
+  const near=e=>{ const r=node.getBoundingClientRect(), py=e.clientY-r.top; let best=null,bd=6; for(const tp of w.tops){ const d=Math.abs(y(F.z(tp.md))-py); if(d<bd){ bd=d; best=tp; } } return best; };
+  node.addEventListener('pointermove',e=>{ if(!S.drag&&!S.picking) node.style.cursor=near(e)?'ns-resize':''; });
+  node.addEventListener('pointerdown',e=>{ if(S.picking||e.button!==0) return; const tp=near(e); if(!tp) return; e.preventDefault();
+    const col=node.closest('.column'), r=node.getBoundingClientRect(); S.drag={w,tp,F,y,col,top:r.top,md:tp.md};
+    node.setPointerCapture(e.pointerId); document.body.classList.add('dragging'); });
+  node.addEventListener('pointermove',e=>{ const D=S.drag; if(!D||D.w!==w) return;
+    const z=D.y.invert(e.clientY-D.top); D.md=Math.round(mdAtZ(w,D.F,z)*2)/2; const yy=D.y(D.F.z(D.md));
+    D.col.querySelectorAll(`[data-top="${CSS.escape(D.tp.name)}"]`).forEach(el=>{ if(el.tagName==='line'){ el.setAttribute('y1',yy); el.setAttribute('y2',yy); } else el.setAttribute('y',yy-3); });
+    $('stNote').textContent=`${D.tp.name}: ${D.md.toFixed(1)} ${w.depthUnit||'ft'} MD in ${w.name}`; });
+  const end=e=>{ const D=S.drag; if(!D||D.w!==w) return; S.drag=null; document.body.classList.remove('dragging');
+    if(Math.abs(D.md-D.tp.md)>=0.5){ D.tp.md=D.md; D.tp.source='user'; w._grP=null; if(S.interp?.enabled) computeInterp(w); } render(); };
+  node.addEventListener('pointerup',end); node.addEventListener('pointercancel',end);
 }
-function placeTop(w,md){ const name=$('topName').value.trim(); if(!name) return; const ex=w.tops.find(t=>t.name===name); if(ex) ex.md=md; else w.tops.push({name,md,source:'user'}); S.picking=false; $('btnPick').classList.remove('primary'); $('stNote').textContent=`${name} set at ${md} ft in ${w.name}`; render(); }
+function showCursor(yPx,md,z,F,w,resolved){ const dep=depthOf(w); const c=$('cursor'); c.style.display='block'; c.style.top=(yPx)+'px';
+  const i=Math.min(dep.length-1,Math.max(0,d3.bisectCenter(dep,md))); const u=w.depthUnit||'ft';
+  $('stCursor').innerHTML=`<b>${esc(w.name)}</b> MD ${md.toFixed(1)} ${u}${F.kind!=='MD'?` · ${F.kind==='TVDSS'?'TVDSS':'rel.'} ${z.toFixed(1)}`:''}`;
+  $('stVals').innerHTML=resolved.filter(r=>r.curve).map(r=>{ const c=r.curve; if(c.sparse){ const k=nearestPoint(c,md); return k<0?'':`${c.mnemonic} <b>${fmtVal(c.data[k],r.cfg)}</b> @${c.md[k]}`; } return `${c.mnemonic} <b>${fmtVal(c.data[i],r.cfg)}</b>`; }).filter(Boolean).join(' · '); }
+function drawCorrelations(cols,y,gaps,zc){
+  const ov=d3.select('#overlay'), panel=$('logPanel'), panelR=panel.getBoundingClientRect();
+  const geo=cols.map(c=>{ const r=c.el.getBoundingClientRect(); const trk=c.el.querySelector('.tracks svg').getBoundingClientRect(); return {l:r.left-panelR.left,r:r.right-panelR.left,y0:trk.top-panelR.top,c}; });
+  ov.attr('width',panelR.width).attr('height',panelR.height);
+  const labelled=new Set(), warn=[], names=[...new Set(cols.flatMap(c=>c.w.tops.map(t=>t.name)))];
+  for(let i=0;i<geo.length-1;i++){ const a=geo[i],b=geo[i+1];
+    const yOf=(g,n)=>{ const t=g.c.w.tops.find(t=>t.name===n); return t?g.y0+y(g.c.F.z(t.md)):null; };
+    const shared=names.filter(n=>yOf(a,n)!==null&&yOf(b,n)!==null).sort((p,q)=>yOf(a,p)-yOf(a,q));
+    // Tops must keep their order from one well to the next; a crossing means a mis-pick or a fault.
+    const bad=new Set(); for(let k=0;k<shared.length;k++) for(let j=k+1;j<shared.length;j++) if(yOf(b,shared[j])<yOf(b,shared[k])-0.5){ bad.add(shared[k]); bad.add(shared[j]); }
+    if(bad.size) warn.push(`${[...bad].join(' / ')} cross between ${a.c.w.name} and ${b.c.w.name}`);
+    shared.forEach((n,k)=>{ const nx=shared[k+1]; const ya=yOf(a,n), yb=yOf(b,n);
+      if(!bad.size){ const bottomA=nx?yOf(a,nx):a.y0+y(S.view.bottom), bottomB=nx?yOf(b,nx):b.y0+y(S.view.bottom);
+        ov.append('polygon').attr('class','fm').attr('fill',zc.get(n)||'var(--grid)').attr('points',`${a.r},${ya} ${b.l},${yb} ${b.l},${bottomB} ${a.r},${bottomA}`); }
+      ov.append('line').attr('class','corr'+(bad.has(n)?' bad':'')).attr('x1',a.r).attr('y1',ya).attr('x2',b.l).attr('y2',yb);
+      if(!labelled.has(n)&&b.l-a.r>34){ labelled.add(n); ov.append('text').attr('x',a.r+4).attr('y',ya-4).text(n); } });
+    const missing=names.filter(n=>(yOf(a,n)===null)!==(yOf(b,n)===null)&&cols.slice(i).some(c=>c.w.tops.some(t=>t.name===n))&&cols.slice(0,i+1).some(c=>c.w.tops.some(t=>t.name===n)));
+    if(missing.length) warn.push(`${missing.join(', ')} not picked in ${(yOf(a,missing[0])===null?a:b).c.w.name}`);
+    const g=gaps[i]; if(g?.km!=null&&b.l-a.r>30){ const lbl=document.createElement('div'); lbl.className='gaplbl'; lbl.style.left=(a.r)+'px'; lbl.style.width=(b.l-a.r)+'px'; lbl.style.top=(geo[i].y0-54)+'px';
+      lbl.textContent=g.km<1.6?`${Math.round(g.km*3280.84).toLocaleString()} ft`:`${(g.km*0.621371).toFixed(1)} mi`; lbl.title=`${g.km.toFixed(2)} km between wellheads`; panel.appendChild(lbl); }
+  }
+  S._corrWarn=warn.join(' · '); if(warn.length) $('stNote').textContent='⚠ '+S._corrWarn;
+}
+function placeTop(w,md){ const name=$('topName').value.trim(); if(!name) return; const ex=w.tops.find(t=>t.name===name); if(ex) ex.md=md; else w.tops.push({name,md,source:'user'}); S.picking=false; $('btnPick').classList.remove('primary'); $('stNote').textContent=`${name} set at ${md} ft in ${w.name}`; if(S.interp?.enabled) computeInterp(w); render(); }
 
 /* ---------- Sidebar: map, wells, tracks, tops ---------- */
 function clickWell(id){ if(S.mode==='corr'){ const i=S.panel.indexOf(id); if(i>=0) S.panel.splice(i,1); else S.panel.push(id); } else S.selected=id; render(); }
@@ -242,14 +273,14 @@ function renderSidebar(){
   $('wellCount').textContent=S.wells.length;
   setHTML($('wellList'),S.wells.map(w=>{ const [a,b]=wellRange(w); return `<li data-well="${w.id}" class="${w.id===S.selected?'sel':''}"><span class="dot${S.mode==='corr'&&S.panel.includes(w.id)?' in':''}"></span><span>${w.name}</span><span class="meta">${w.curves.filter(c=>!c.sparse).length-1} crv${w.curves.some(c=>c.sparse)?' · pts':''} · ${fmtDepth(b)} ${w.depthUnit}</span><button class="small" data-wellset="${w.id}" title="Well settings">⚙</button></li>`; }).join(''));
   setHTML($('trackList'),S.tracks.map((t,i)=>`<div class="trackrow"><span class="sw">${t.curves.slice(0,4).map(c=>`<i style="background:${c.color||'var(--muted)'}"></i>`).join('')}</span><span class="nm">${t.name}</span><label title="Show in correlation panel" style="display:${S.mode==='corr'?'inline':'none'};font-size:11px;color:var(--muted)"><input type="checkbox" data-panel="${i}"${t.panel?' checked':''}> panel</label><button class="small" data-up="${i}" title="Move left">◂</button><button class="small" data-dn="${i}" title="Move right">▸</button><button class="small" data-edit="${t.id}">⚙</button></div>`).join(''));
-  renderPointList();
+  renderPointList(); renderInterpPanel();
   const w=S.mode==='corr'?wellById(S.panel[S.panel.length-1]||S.selected):wellById(S.selected);
   $('topsWell').textContent=w?w.name:'';
   setHTML($('topsTable'),w?[...w.tops].sort((a,b)=>a.md-b.md).map(t=>`<tr><td>${t.name}</td><td style="text-align:right">${t.md.toFixed(1)}</td><td><button class="small" data-deltop="${t.name}">×</button></td></tr>`).join(''):'');
-  const names=[...new Set([...S.wells.flatMap(w=>w.tops.map(t=>t.name)),'Pico','Repetto','Puente'])];
+  const names=[...new Set(S.wells.flatMap(w=>[...w.tops].sort((a,b)=>a.md-b.md).map(t=>t.name)))];
   $('topNames').innerHTML=names.map(n=>`<option value="${n}">`).join('');
   const dsel=$('datum'); const cur=S.datum; dsel.innerHTML=`<option value="MD">Measured depth</option><option value="TVDSS">Sea level (TVDSS)</option>`+names.map(n=>`<option value="${n}">Flatten on ${n}</option>`).join(''); dsel.value=names.includes(cur)||cur==='MD'||cur==='TVDSS'?cur:'MD';
-  $('winTop').value=S.view.top; $('winBot').value=S.view.bottom; $('showEmpty').checked=S.showEmpty;
+  $('spacing').value=S.corr.spacing; $('winTop').value=S.view.top; $('winBot').value=S.view.bottom; $('showEmpty').checked=S.showEmpty;
   const sw=wellById(S.selected); if(sw) $('stFile').innerHTML=`<b>${sw.fileName||sw.name+'.las (synthetic)'}</b> · ${sw.rows||depthOf(sw).length} rows · KB ${sw.elevation.kb??'?'} ft · null ${sw.nullv??-999.25}${sw.wrap?' · wrapped':''}`;
 }
 
@@ -295,7 +326,7 @@ function autoScale(curve,log){ const v=Array.from(curve.data).filter(x=>Number.i
 function cssVarHex(name){ const v=cssVar(name); if(/^#/.test(v)) return v; const m=v.match(/\d+/g); return m?'#'+m.slice(0,3).map(n=>(+n).toString(16).padStart(2,'0')).join(''):'#333333'; }
 function readTd(){ editing.name=$('tdName').value; editing.width=+$('tdWidth').value||190;
   document.querySelectorAll('#tdCurves tr').forEach((tr,i)=>{ const c=editing.curves[i]; const m=tr.querySelector('.tdm').value; if(m){ const mu=m.toUpperCase(); if(!c.aliases.some(a=>a.toUpperCase()===mu)) c.label=m; c.aliases=[m,...c.aliases.filter(a=>a.toUpperCase()!==mu)]; }
-    c.min=+tr.querySelector('.tdmin').value; c.max=+tr.querySelector('.tdmax').value; c.log=tr.querySelector('.tdlog').checked; c.color=tr.querySelector('.tdcol').dataset.color; c.dash=tr.querySelector('.tddash').checked?'4 3':undefined;
+    const mn=+tr.querySelector('.tdmin').value, mx=+tr.querySelector('.tdmax').value; if(c.matchNeutron&&(mn!==c.min||mx!==c.max)) c.matchNeutron=false; c.min=mn; c.max=mx; c.log=tr.querySelector('.tdlog').checked; c.color=tr.querySelector('.tdcol').dataset.color; c.dash=tr.querySelector('.tddash').checked?'4 3':undefined;
     c.fill=tr.querySelector('.tdfill').value; c.fillStyle=tr.querySelector('.tdfs').value; c.fillColor=tr.querySelector('.tdfc').dataset.color; c.fillColor2=tr.querySelector('.tdfc2').dataset.color; c.fillOpacity=+tr.querySelector('.tdfo').value; }); }
 document.addEventListener('change',e=>{ if(e.target.dataset.panel!==undefined){ S.tracks[+e.target.dataset.panel].panel=e.target.checked; render(); } });
 document.addEventListener('click',e=>{
@@ -308,8 +339,8 @@ document.addEventListener('click',e=>{
   if(b.classList.contains('tdauto')){ readTd(); const c=editing.curves[+b.dataset.i]; const w=wellById(S.selected)||S.wells[0]; const cur=resolveCurve(w,c); const r=cur&&autoScale(cur,c.log); if(r){ [c.min,c.max]=(c.min>c.max)?[r[1],r[0]]:r; drawTdCurves(); } }
   if(b.dataset.wellset) openWellDlg(b.dataset.wellset);
 });
-$('tdSaveDefaults').onclick=()=>{ readTd(); const i=S.tracks.findIndex(t=>t.id===editing.id); const set=S.tracks.map(t=>t.id===editing.id?editing:t); if(i<0) set.push(editing); try{ localStorage.setItem('weller.trackDefaults',JSON.stringify(set)); $('stNote').textContent='Track defaults saved for new projects'; }catch(e){ $('stNote').textContent='Could not save defaults (storage blocked)'; } };
-$('tdResetDefaults').onclick=()=>{ try{ localStorage.removeItem('weller.trackDefaults'); }catch(e){} S.tracks=defaultTracks(); $('trackDlg').hidden=true; render(); };
+$('tdSaveDefaults').onclick=()=>{ readTd(); const i=S.tracks.findIndex(t=>t.id===editing.id); const set=S.tracks.map(t=>t.id===editing.id?editing:t); if(i<0) set.push(editing); try{ localStorage.setItem('weller.trackDefaults2',JSON.stringify(set)); $('stNote').textContent='Track defaults saved for new projects'; }catch(e){ $('stNote').textContent='Could not save defaults (storage blocked)'; } };
+$('tdResetDefaults').onclick=()=>{ try{ localStorage.removeItem('weller.trackDefaults2'); }catch(e){} S.tracks=defaultTracks(); $('trackDlg').hidden=true; render(); };
 $('tdAddCurve').onclick=()=>{ readTd(); const w=wellById(S.selected)||S.wells[0]; const c=w.curves[1]; editing.curves.push({label:c.mnemonic,aliases:[c.mnemonic],min:0,max:100,color:'#333333'}); drawTdCurves(); };
 $('tdSave').onclick=()=>{ readTd(); const i=S.tracks.findIndex(t=>t.id===editing.id); if(i>=0) S.tracks[i]=editing; else S.tracks.push(editing); $('trackDlg').hidden=true; render(); };
 $('tdCancel').onclick=()=>{ $('trackDlg').hidden=true; };
@@ -340,6 +371,7 @@ function importTopsCSV(text){ const rows=d3.csvParse(text); const cols=rows.colu
   return `${n} tops imported${miss.size?'; no matching well for: '+[...miss].join(', '):''}`; }
 $('btnTopsExport').onclick=()=>downloadBlob('tops.csv',new Blob([topsCSV()],{type:'text/csv'}));
 $('btnStatsExport').onclick=()=>downloadBlob('zone-stats.csv',new Blob([statsCSV()],{type:'text/csv'}));
+$('btnPpExport').onclick=()=>downloadBlob('weller-curves-petroplots.csv',new Blob([petroplotsCSV()],{type:'text/csv'}));
 function svgToImage(svgEl){ const clone=svgEl.cloneNode(true); const vars=['--grid','--grid-strong','--ink','--muted','--paper','--sand','--shale','--gas','--pico','--repetto','--puente','--gr','--sp','--cal','--rdeep','--rmed','--rshal','--rhob','--nphi','--dt','--rop','--wob','--tg','--c1','--c2'];
   const st=document.createElementNS('http://www.w3.org/2000/svg','style'); st.textContent=`.grid{stroke:${cssVar('--grid')};stroke-width:1}.grid.s{stroke:${cssVar('--grid-strong')}}.top{stroke:${cssVar('--ink')};stroke-width:1.2}text{font:10px "IBM Plex Mono",monospace;fill:${cssVar('--muted')}}.depth{fill:${cssVar('--ink')};font-size:11px}.toplbl{font:600 10px "IBM Plex Sans Condensed",sans-serif;fill:${cssVar('--ink')}}.corr{stroke:${cssVar('--ink')};stroke-width:1.2;stroke-dasharray:4 3;fill:none}.fm{opacity:.55}`;
   clone.insertBefore(st,clone.firstChild); clone.setAttribute('xmlns','http://www.w3.org/2000/svg');
@@ -372,11 +404,14 @@ $('wellList').addEventListener('click',e=>{ const li=e.target.closest('li[data-w
 document.querySelectorAll('[data-mode]').forEach(b=>b.onclick=()=>setMode(b.dataset.mode));
 function setMode(m){ const was=S.mode; S.mode=m; document.querySelectorAll('[data-mode]').forEach(b=>b.setAttribute('aria-selected',b.dataset.mode===m)); if(m==='corr'&&S.panel.length===0) S.panel=[S.selected]; if(m!=='stats'&&was==='stats'){ render(); fitView(); } else render(); }
 $('datum').onchange=e=>{ S.datum=e.target.value; fitView(); };
+$('spacing').onchange=e=>{ S.corr.spacing=e.target.value; render(); };
 $('winTop').onchange=e=>{ if(+e.target.value!==S.view.top){ S.view.top=+e.target.value; render(); } }; $('winBot').onchange=e=>{ if(+e.target.value!==S.view.bottom){ S.view.bottom=+e.target.value; render(); } };
 $('btnFit').onclick=fitView;
 $('showEmpty').onchange=e=>{ S.showEmpty=e.target.checked; render(); };
-function fitView(){ if(S.mode==='stats') return render(); const wells=S.mode==='single'?[wellById(S.selected)]:S.panel.map(wellById); let lo=Infinity,hi=-Infinity;
-  for(const w of wells.filter(Boolean)){ const o=offsetOf(w); const oo=Number.isNaN(o)?0:o; const [a,b]=wellRange(w); lo=Math.min(lo,a-oo); hi=Math.max(hi,b-oo); }
+function fitView(){ if(S.mode==='stats') return render(); const wells=(S.mode==='single'?[wellById(S.selected)]:S.panel.map(wellById)).filter(Boolean); let lo=Infinity,hi=-Infinity;
+  for(const w of wells){ const a=frameOf(w).arr; for(let i=0;i<a.length;i+=8){ if(a[i]<lo) lo=a[i]; if(a[i]>hi) hi=a[i]; } lo=Math.min(lo,a[0]); hi=Math.max(hi,a[a.length-1]); }
+  // A correlation hung on a top opens on the interval around it, not the whole well.
+  if(S.mode==='corr'&&!['MD','TVDSS'].includes(S.datum)&&Number.isFinite(lo)){ lo=Math.max(lo,-400); hi=Math.min(hi,1200); }
   if(!Number.isFinite(lo)) {lo=0;hi=1000;} S.view.top=Math.floor(lo/100)*100; S.view.bottom=Math.ceil(hi/100)*100;
   const vh=$('logScroll').clientHeight-80; S.view.pxPerFt=Math.max(0.05,vh/(S.view.bottom-S.view.top)*2); render(); }
 function zoom(f,anchorPx){ const sc=$('logScroll'); const before=(anchorPx??sc.scrollTop+sc.clientHeight/2); const depthAt=S.view.top+before/S.view.pxPerFt; S.view.pxPerFt=Math.min(20,Math.max(0.02,S.view.pxPerFt*f)); render(); sc.scrollTop=(depthAt-S.view.top)*S.view.pxPerFt-(anchorPx??sc.clientHeight/2)+(anchorPx?0:0); }
@@ -402,7 +437,7 @@ async function openFiles(files){ const by={project:[],las:[],tops:[],points:[]};
   for(const f of by.points){ try{ notes.push('Points: '+importPointsCSV(f.text,f.name)); }catch(err){ notes.push(`${f.name}: ${err.message}`); } }
   render(); $('stNote').textContent=notes.filter(Boolean).join(' · '); }
 function addLASFiles(files){ let first=null; const notes=[];
-  for(const f of files){ try{ const p=parseLAS(f.text); if(!p.curves.length||!p.rows) throw new Error('no curve data found'); const w=normalizeWell(p,f.name); S.wells.push(w); first=first||w.id; lasCache.put(f.name,f.text);
+  for(const f of files){ try{ const p=parseLAS(f.text); if(!p.curves.length||!p.rows) throw new Error('no curve data found'); const w=normalizeWell(p,f.name); if(f.demo) w.demo=f.demo; S.wells.push(w); first=first||w.id; if(!f.demo) lasCache.put(f.name,f.text); computeInterp(w);
       if(!Number.isFinite(w.location.lat)) notes.push(`${w.name}: no location in header, not on map`); if(w.elevation.kb===undefined) notes.push(`${w.name}: no KB elevation, TVDSS unavailable`); const conv=w.curves.filter(c=>c.note).map(c=>c.mnemonic+' '+c.note); if(conv.length) notes.push(`${w.name}: ${conv.join(', ')}`); if(w.notes?.length) notes.push(`${w.name}: ${w.notes.join(', ')}`);
     }catch(err){ notes.push(`${f.name}: could not read (${err.message})`); } }
   if(first){ S.selected=first; if(S.mode==='corr') S.panel.push(first); if(S.mode!=='stats') fitView(); } return notes; }
@@ -413,15 +448,28 @@ addEventListener('dragover',e=>e.preventDefault());
 addEventListener('drop',async e=>{ e.preventDefault(); dragDepth=0; document.body.classList.remove('dropping'); const files=[]; for(const f of e.dataTransfer.files) files.push({name:f.name,text:await f.text()}); if(files.length) openFiles(files); });
 
 /* ---------- Project save / load / autosave ---------- */
-function projectJSON(){ return { version:2, app:'weller-logs', savedAt:new Date().toISOString(), mode:S.mode, selected:S.selected, panel:S.panel, datum:S.datum, view:S.view, tracks:S.tracks, hiddenPoints:S.hiddenPoints, stats:S.stats, basemap:S.basemap,
-  wells:S.wells.map(w=>({id:w.id,name:w.name,api:w.api,field:w.field,preset:w.preset,fileName:w.fileName,location:w.location,elevation:w.elevation,depthUnit:w.depthUnit,tops:w.tops,points:pointsJSON(w),curveList:w.curves.filter(c=>!c.sparse).map(c=>c.mnemonic)})) }; }
+function projectJSON(){ return { version:2, app:'weller-logs', savedAt:new Date().toISOString(), mode:S.mode, selected:S.selected, panel:S.panel, datum:S.datum, view:S.view, tracks:S.tracks, hiddenPoints:S.hiddenPoints, stats:S.stats, basemap:S.basemap, interp:S.interp, corr:S.corr,
+  wells:S.wells.map(w=>({id:w.id,name:w.name,api:w.api,field:w.field,preset:w.preset,demo:w.demo,fileName:w.fileName,location:w.location,elevation:w.elevation,depthUnit:w.depthUnit,tops:w.tops,points:pointsJSON(w),curveList:w.curves.filter(c=>!c.sparse).map(c=>c.mnemonic)})) }; }
 async function loadProject(p){ if(!p||p.app!=='weller-logs') throw new Error('not a Weller Logs project'); const missing=[];
-  const fromCache={}; for(const r of p.wells){ if(r.preset||S.wells.some(w=>w.fileName===r.fileName)) continue; const text=await lasCache.get(r.fileName); if(text){ try{ fromCache[r.fileName]=normalizeWell(parseLAS(text),r.fileName); }catch(e){} } }
+  const fromCache={}; for(const r of p.wells){ if(r.preset||S.wells.some(w=>w.fileName===r.fileName)) continue; const text=r.demo?await fetchText('data/'+r.demo):await lasCache.get(r.fileName); if(text){ try{ fromCache[r.fileName]=normalizeWell(parseLAS(text),r.fileName); }catch(e){} } }
   S.wells=p.wells.map(ref=>{ if(ref.preset){ const cfg=WellerSynth.PRESET_WELLS.find(c=>c.id===ref.preset); const w=presetWell(cfg); w.tops=ref.tops; w.elevation=ref.elevation; restorePoints(w,ref.points); return w; }
-    const live=S.wells.find(w=>w.fileName===ref.fileName)||fromCache[ref.fileName]; if(live){ Object.assign(live,{tops:ref.tops,elevation:ref.elevation,location:ref.location,name:ref.name,api:ref.api,field:ref.field,id:ref.id}); restorePoints(live,ref.points); return live; } missing.push(ref.fileName||ref.name); return null; }).filter(Boolean);
-  S.tracks=p.tracks; S.view=p.view; S.datum=p.datum||'MD'; S.hiddenPoints=p.hiddenPoints||[]; S.stats={...statsDefaults(),...(p.stats||{})}; setBasemap(p.basemap||'map'); if((p.version||1)<2) pointSeriesNames().forEach(placePointSeries); S.panel=(p.panel||[]).filter(id=>wellById(id)); S.selected=wellById(p.selected)?p.selected:(S.wells[0]?.id||null);
-  setMode(p.mode||'single'); $('stNote').textContent=missing.length?`Re-open these LAS files to restore them: ${missing.join(', ')}`:'Project loaded'; }
-function autosave(){ try{ localStorage.setItem('weller.session',JSON.stringify(projectJSON())); }catch(e){} }
+    const live=S.wells.find(w=>w.fileName===ref.fileName)||fromCache[ref.fileName]; if(live){ if(ref.demo) live.demo=ref.demo; Object.assign(live,{tops:ref.tops,elevation:ref.elevation,location:ref.location,name:ref.name,api:ref.api,field:ref.field,id:ref.id}); restorePoints(live,ref.points); return live; } missing.push(ref.fileName||ref.name); return null; }).filter(Boolean);
+  S.tracks=p.tracks; S.view=p.view; S.datum=p.datum||'MD'; S.hiddenPoints=p.hiddenPoints||[]; S.stats={...statsDefaults(),...(p.stats||{})}; S.interp={...interpDefaults(),...(p.interp||{})}; S.corr={...S.corr,...(p.corr||{})}; if(!p.tracks.some(t=>t.id==='t8')) S.tracks=[...p.tracks,...defaultTracks().filter(t=>['t8','t9','t10','t11','t12'].includes(t.id))]; setBasemap(p.basemap||'map'); if((p.version||1)<2) pointSeriesNames().forEach(placePointSeries); S.panel=(p.panel||[]).filter(id=>wellById(id)); S.selected=wellById(p.selected)?p.selected:(S.wells[0]?.id||null);
+  computeAllInterp(); setMode(p.mode||'single'); $('stNote').textContent=missing.length?`Re-open these LAS files to restore them: ${missing.join(', ')}`:'Project loaded'; }
+function autosave(){ try{ localStorage.setItem('weller.session',JSON.stringify(projectJSON())); }catch(e){} recordHistory(); }
+/* Undo and redo (Cmd/Ctrl+Z, Shift+Cmd/Ctrl+Z or Ctrl+Y). Each render compares an edit snapshot with the last one.
+   View, mode and selection are left out, so zooming or switching tabs is not an undo step. */
+const HIST={undo:[],redo:[],last:null,busy:false};
+function editSnapshot(){ const p=projectJSON(); delete p.savedAt; delete p.view; delete p.mode; delete p.selected; return JSON.stringify(p); }
+function recordHistory(){ if(HIST.busy||S.drag) return; const snap=editSnapshot(); if(snap===HIST.last) return;
+  if(HIST.last!==null){ HIST.undo.push(HIST.last); if(HIST.undo.length>60) HIST.undo.shift(); HIST.redo=[]; } HIST.last=snap; }
+async function stepHistory(back){ const from=back?HIST.undo:HIST.redo, to=back?HIST.redo:HIST.undo; if(!from.length||HIST.busy){ $('stNote').textContent=back?'Nothing to undo':'Nothing to redo'; return; }
+  const snap=from.pop(); to.push(HIST.last); HIST.busy=true;
+  try{ const p={...JSON.parse(snap),view:S.view,mode:S.mode,selected:S.selected}; S.wells.forEach(w=>w._grP=null); await loadProject(p); HIST.last=snap; $('stNote').textContent=(back?'Undone':'Redone')+` · ${HIST.undo.length} more to undo`; }
+  finally{ HIST.busy=false; } }
+document.addEventListener('keydown',e=>{ if(!(e.metaKey||e.ctrlKey)) return; const k=e.key.toLowerCase(); if(k!=='z'&&k!=='y') return;
+  const el=e.target; if(el.matches?.('textarea,input[type=text],input:not([type])')) return;   // native text undo
+  e.preventDefault(); if(el.blur&&el!==document.body) el.blur(); stepHistory(k==='z'&&!e.shiftKey); });
 const projName=()=>(wellById(S.selected)?.name||'project').replace(/\s+/g,'-')+'.lasproj';
 async function saveProject(as){ const text=JSON.stringify(projectJSON(),null,1);
   if(window.showSaveFilePicker){ try{ if(as||!S.fileHandle) S.fileHandle=await showSaveFilePicker({suggestedName:projName(),types:[{description:'Weller Logs project',accept:{'application/json':['.lasproj']}}]});
@@ -430,12 +478,50 @@ async function saveProject(as){ const text=JSON.stringify(projectJSON(),null,1);
 $('btnSave').onclick=()=>saveProject(false);
 document.addEventListener('keydown',e=>{ if(!(e.metaKey||e.ctrlKey)) return; const k=e.key.toLowerCase(); if(k==='o'){ e.preventDefault(); $('btnOpen').click(); } else if(k==='s'){ e.preventDefault(); saveProject(e.shiftKey); } else if(k==='e'){ e.preventDefault(); $('btnPng').click(); } });
 
+/* ---------- Examples: real Denver Basin Niobrara logs, or the synthetic LA Basin set ---------- */
+const NIOBRARA_FILES=['2120933C.las','2121045D.las','2121046D.las','2121038B.las','2121035D.las','2121034E.las','2121022A.las','400709586.las'];
+async function fetchText(url){ try{ const r=await fetch(url); return r.ok?await r.text():null; }catch(e){ return null; } }
+let undoProject=null;
+async function loadExample(name){
+  undoProject=S.wells.length?projectJSON():null;
+  if(name==='labasin'){ S.tracks=loadTrackDefaults(); loadPresets(); S.mode='single'; setMode('single'); fitView(); exampleNote('Synthetic LA Basin wells loaded'); return true; }
+  $('stNote').textContent='Loading Denver Basin Niobrara logs…';
+  const texts=await Promise.all(NIOBRARA_FILES.map(f=>fetchText('data/niobrara/'+f)));
+  if(texts.some(t=>!t)){ $('stNote').textContent='Could not load the example logs (open the app from a web server, not a file).'; return false; }
+  S.wells=[]; S.tracks=loadTrackDefaults(); S.hiddenPoints=[];
+  // Example parameters. Rw: max specific conductance 61.3 mS/cm at 25 C in Niobrara produced water, Weld County
+  // (USGS data release doi:10.5066/P14CRSQQ); late-time samples approach formation water, giving Rw 0.16 ohm.m at 77 F.
+  S.interp={...interpDefaults(),matrix:'auto',swPhi:'total',rw:0.16,rwTemp:77,
+    source:'Example Rw 0.16 Ω·m at 77 °F, from Weld County Niobrara produced water (USGS doi:10.5066/P14CRSQQ)', sourceSw:'Sw on total porosity, usual for chalk-marl source rocks'};
+  const notes=addLASFiles(NIOBRARA_FILES.map((f,i)=>({name:f,text:texts[i],demo:'niobrara/'+f})));
+  const tops=await fetchText('data/niobrara/tops.csv'); if(tops) importTopsCSV(tops);
+  computeAllInterp();
+  // Section west to east through the pad.
+  const vert=S.wells.filter(w=>Number.isFinite(w.location.lon)).sort((a,b)=>a.location.lon-b.location.lon);
+  const horiz=S.wells.find(w=>w.survey);
+  S.panel=[vert[0],vert[1],vert[3],vert[5],vert[6],horiz].filter(Boolean).map(w=>w.id); S.selected=(vert[3]||S.wells[0]).id;
+  S.datum='Niobrara'; S.stats={...statsDefaults(),curve:'PHI',x:'NPHI',y:'RHOB',type:'nd'}; S.mode='corr'; setMode('corr'); fitView();
+  exampleNote('Denver Basin Niobrara: 7 Laramie County, WY verticals (WOGCC) and 1 Weld County, CO horizontal. Tops are rule-based picks.'+(notes.length?' · '+notes.join(' · '):''));
+  return true; }
+function exampleNote(msg){ $('stNote').innerHTML=esc(msg)+(undoProject?' <button class="small" id="btnUndoEx">Undo</button>':''); }
+document.addEventListener('click',async e=>{ if(e.target.id==='btnUndoEx'&&undoProject){ const p=undoProject; undoProject=null; await loadProject(p); } });
+$('exampleSel').onchange=async e=>{ const v=e.target.value; e.target.value=''; if(v) await loadExample(v); };
+
 /* ---------- Boot: resume-last-session prompt ---------- */
 S.stats=statsDefaults();
-loadPresets();
 let saved=null; try{ saved=JSON.parse(localStorage.getItem('weller.session')||'null'); }catch(e){}
 if(saved&&saved.savedAt){ $('resumeWhen').textContent=new Date(saved.savedAt).toLocaleString(); $('resume').hidden=false; }
 $('btnResume').onclick=async()=>{ $('resume').hidden=true; try{ await loadProject(saved); }catch(e){ $('stNote').textContent='Saved session could not be restored: '+e.message; } };
 $('btnFresh').onclick=()=>{ $('resume').hidden=true; };
 if('serviceWorker' in navigator&&/^https?:/.test(location.protocol)&&!/claude\.ai|claudeusercontent/.test(location.host)) navigator.serviceWorker.register('sw.js').catch(()=>{});
-fitView();
+(async()=>{ if(!(await loadExample('niobrara'))){ loadPresets(); fitView(); } undoProject=null; HIST.undo=[]; HIST.redo=[]; HIST.last=editSnapshot(); })();
+
+/* ---------- About, popouts and theme ---------- */
+function placePop(pop,anchor){ pop.hidden=false; const r=anchor.getBoundingClientRect(); pop.style.top=(r.bottom+8)+'px'; pop.style.left=Math.max(16,Math.min(r.right-pop.offsetWidth,innerWidth-pop.offsetWidth-16))+'px'; }
+$('btnAbout').onclick=e=>{ e.stopPropagation(); const p=$('aboutPop'); p.hidden?placePop(p,e.currentTarget):(p.hidden=true); };
+document.addEventListener('click',e=>{ if(e.target.closest('[data-close]')){ e.target.closest('.pop').hidden=true; return; }
+  if(e.target.closest('#btnNotes,#btnAbout')) return;
+  document.querySelectorAll('.pop:not([hidden])').forEach(p=>{ if(!p.contains(e.target)) p.hidden=true; }); });
+document.addEventListener('keydown',e=>{ if(e.key==='Escape') document.querySelectorAll('.pop:not([hidden])').forEach(p=>p.hidden=true); });
+function setTheme(t){ if(t==='dark') document.documentElement.dataset.theme='dark'; else delete document.documentElement.dataset.theme; try{ localStorage.setItem('weller.theme',t); }catch(e){} }
+$('btnTheme').onclick=()=>{ setTheme(document.documentElement.dataset.theme==='dark'?'light':'dark'); render(); };

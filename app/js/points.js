@@ -126,12 +126,12 @@ function placePointSeries(m) {
 }
 
 /* ---------- Drawing and readout ---------- */
-function drawPoints(svg, cfg, curve, sx, y, o, top, bot) {
+function drawPoints(svg, cfg, curve, sx, y, F, top, bot) {
   const g = svg.append('g');
   for (let k = 0; k < curve.md.length; k++) {
-    const md = curve.md[k], v = curve.data[k];
-    if (md < top + o || md > bot + o || !Number.isFinite(v) || (cfg.log && v <= 0)) continue;
-    g.append('circle').attr('cx', sx(v)).attr('cy', y(md - o)).attr('r', cfg.size || 3.5)
+    const md = curve.md[k], v = curve.data[k], z = F.z(md);
+    if (z < top || z > bot || !Number.isFinite(v) || (cfg.log && v <= 0)) continue;
+    g.append('circle').attr('cx', sx(v)).attr('cy', y(z)).attr('r', cfg.size || 3.5)
       .attr('fill', cfg.color || 'var(--ink)').attr('stroke', 'var(--paper)').attr('stroke-width', 1)
       .append('title').text(`${curve.mnemonic} ${fmtVal(v, cfg)} ${curve.unit} at ${md} ft${curve.labels?.[k] ? ' · ' + curve.labels[k] : ''}`);
   }
