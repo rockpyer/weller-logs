@@ -21,7 +21,8 @@ function zoneColorMap() {
   for (const w of S.wells) for (const z of zonesOf(w)) { const a = acc.get(z.name) || [0, 0]; acc.set(z.name, [a[0] + z.top, a[1] + 1]); }
   const names = [...acc].sort((a, b) => a[1][0] / a[1][1] - b[1][0] / b[1][1]).map(a => a[0]);
   const pal = ZONE_COLORS[isDark() ? 'dark' : 'light'];
-  return new Map(names.map((n, i) => [n, i < pal.length ? pal[i] : cssVar('--muted')]));
+  // Your top colors (Tops panel) win over the palette; zones above the first top keep the palette.
+  let k = 0; return new Map(names.map(n => [n, S.topColors?.[n] || (k < pal.length ? pal[k++] : cssVar('--muted'))]));
 }
 
 function statCurves() {
@@ -111,11 +112,11 @@ function renderStats() {
   const petro = rows.some(r => r.basis === 'flags'), grOnly = rows.some(r => r.basis === 'gr');
   $('stCutoffWrap').hidden = !grOnly;
   const pc = (v, d = 0) => v == null ? '—' : (100 * v).toFixed(d) + '%'; const PH = S.interp?.swPhi === 'total' ? 'PHIT' : 'PHIE';
-  const head = `<tr><th>Zone</th><th>Well</th><th class="num">Top MD</th><th class="num">Base MD</th><th class="num" title="True vertical thickness in deviated wells">Gross ft</th><th class="num">Net ft</th><th class="num">N/G</th>`
-    + (petro ? `<th class="num">Pay ft</th><th class="num" title="Average ${PH} over net reservoir">${PH} net</th><th class="num" title="Average Sw over net pay">Sw pay</th><th class="num" title="Sum of ${PH} x h over net reservoir">φ·h ft</th><th class="num" title="Sum of ${PH} x (1 - Sw) x h over net pay">HC·h ft</th>` : '')
+  const U = dispU(); const head = `<tr><th>Zone</th><th>Well</th><th class="num">Top MD</th><th class="num">Base MD</th><th class="num" title="True vertical thickness in deviated wells">Gross ${U}</th><th class="num">Net ${U}</th><th class="num">N/G</th>`
+    + (petro ? `<th class="num">Pay ${U}</th><th class="num" title="Average ${PH} over net reservoir">${PH} net</th><th class="num" title="Average Sw over net pay">Sw pay</th><th class="num" title="Sum of ${PH} x h over net reservoir">φ·h ${U}</th><th class="num" title="Sum of ${PH} x (1 - Sw) x h over net pay">HC·h ${U}</th>` : '')
     + curves.map(c => `<th class="num" title="${c.log ? 'Geometric mean' : 'Depth-weighted mean'}${c.unit ? ', ' + esc(c.unit) : ''}">${esc(c.label)}${c.log ? ' <small>g</small>' : ''}</th>`).join('') + '</tr>';
-  const body = rows.map((r, k) => `<tr${k && rows[k - 1].zone.name !== r.zone.name ? ' class="grp"' : ''}><td>${k && rows[k - 1].zone.name === r.zone.name ? '' : `<i class="zsw" style="background:${colors.get(r.zone.name)}"></i>${esc(r.zone.name)}`}</td><td>${esc(r.well.name)}</td><td class="num">${fmtDepth(r.zone.top)}</td><td class="num">${fmtDepth(r.zone.base)}</td><td class="num">${fmtDepth(r.gross)}</td><td class="num">${r.net == null ? '—' : fmtDepth(r.net)}${r.basis === 'gr' ? '<small title="GR cutoff">*</small>' : ''}</td><td class="num">${pc(r.ntg)}</td>`
-    + (petro ? `<td class="num">${r.pay == null ? '—' : fmtDepth(r.pay)}</td><td class="num">${pc(r.phiNet, 1)}</td><td class="num">${pc(r.swPay)}</td><td class="num">${r.phih == null ? '—' : r.phih.toFixed(1)}</td><td class="num">${r.hch == null ? '—' : r.hch.toFixed(1)}</td>` : '')
+  const body = rows.map((r, k) => `<tr${k && rows[k - 1].zone.name !== r.zone.name ? ' class="grp"' : ''}><td>${k && rows[k - 1].zone.name === r.zone.name ? '' : `<i class="zsw" style="background:${colors.get(r.zone.name)}"></i>${esc(r.zone.name)}`}</td><td>${esc(r.well.name)}</td><td class="num">${fmtD(r.zone.top, r.well)}</td><td class="num">${fmtD(r.zone.base, r.well)}</td><td class="num">${fmtD(r.gross, r.well)}</td><td class="num">${r.net == null ? '—' : fmtD(r.net, r.well)}${r.basis === 'gr' ? '<small title="GR cutoff">*</small>' : ''}</td><td class="num">${pc(r.ntg)}</td>`
+    + (petro ? `<td class="num">${r.pay == null ? '—' : fmtD(r.pay, r.well)}</td><td class="num">${pc(r.phiNet, 1)}</td><td class="num">${pc(r.swPay)}</td><td class="num">${r.phih == null ? '—' : fmtD(r.phih, r.well, 1)}</td><td class="num">${r.hch == null ? '—' : fmtD(r.hch, r.well, 1)}</td>` : '')
     + curves.map(c => { const b = r.by[c.label]; const s = b?.s; return `<td class="num" title="${s?.n ? `${b.curve.mnemonic}: n ${s.n}, P10 ${f3(s.p10, c.log)}, P50 ${f3(s.p50, c.log)}, P90 ${f3(s.p90, c.log)}, ${s.nullPct.toFixed(0)}% null` : 'no data'}">${s?.n ? f3(s.mean, c.log) : '—'}</td>`; }).join('') + '</tr>').join('');
   $('stSummary').innerHTML = `<thead>${head}</thead><tbody>${body}</tbody>`;
   const I = S.interp;

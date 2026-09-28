@@ -206,9 +206,36 @@ button.link{border:0;background:none;padding:2px 4px;color:var(--muted)}button.l
 .tip{position:fixed;z-index:55;pointer-events:none;background:var(--panel);color:var(--ink);border:1px solid var(--line);border-radius:4px;box-shadow:0 4px 14px rgba(0,0,0,.18);padding:6px 8px;font-size:12px;max-width:280px}
 .tip .lr{display:flex;gap:6px;align-items:center;white-space:nowrap}.tip .lr i{width:10px;height:10px;border-radius:2px;flex:none;border:1px solid var(--line)}
 .tip .lr.on{font-weight:600}.tip .lr small{color:var(--muted)}
+.tip .tiph{margin-bottom:4px;color:var(--muted)}.tip .lr.on+.tipv,.tip .tipv{margin-top:3px;font:12px "IBM Plex Mono",monospace}.tip .tipr{color:var(--muted);font-size:11px}.tip .tipd{margin-top:3px;font:11px "IBM Plex Mono",monospace;color:var(--muted)}
+.tip .tipt{border-collapse:collapse;font-size:12px}.tip .tipt td{padding:1px 0;vertical-align:top}.tip .tipt td:first-child{color:var(--muted);padding-right:10px;white-space:nowrap}
+.tip .tiph:first-child:has(+.tipt){font:600 13px "IBM Plex Sans Condensed",sans-serif;color:var(--ink)}
+.dchips{display:flex;gap:2px;margin-top:3px;justify-content:center}
+.dchips button{padding:0 4px;font:500 9.5px "IBM Plex Mono",monospace;border-radius:3px;line-height:15px;color:var(--muted)}
+.dchips button[aria-pressed=true]{background:var(--ink);color:var(--panel);border-color:var(--ink)}
+.dchips button:disabled{opacity:.4;cursor:not-allowed}
+.track svg .depth.ss{fill:var(--focus)}
+.colhead .wname{cursor:help}.colhead [data-selwell]{cursor:pointer}
+.column.sel{outline:2px solid var(--focus);outline-offset:-1px}
+ul.list li .grip{color:var(--muted);cursor:grab;font-size:11px;letter-spacing:-2px;flex:none;opacity:.5}
+ul.list li:hover .grip{opacity:1}
+ul.list li.dragsrc{opacity:.45}
+ul.list li.dropb{box-shadow:inset 0 2px 0 var(--accent)}ul.list li.dropa{box-shadow:inset 0 -2px 0 var(--accent)}
+ul.list button.dot{padding:0;cursor:pointer;background:transparent}
+ul.list button.dot:hover{box-shadow:0 0 0 3px var(--grid)}
+ul.list .wn{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;flex:1}
+.tops input[type=number]{width:6.2em;padding:1px 4px;font-size:12px;text-align:right}
+.tops td.tn{font-family:"IBM Plex Sans",sans-serif;width:100%}
+.swatchbtn.tiny{width:14px;height:14px;border-radius:3px;box-shadow:none}
+.gutter{width:6px;flex:none;cursor:col-resize;background:transparent;margin-left:-3px;margin-right:-3px;position:relative;z-index:5}
+.gutter:hover,.gutter.on{background:var(--focus);opacity:.4}
+#mwDlg td input{font-size:12.5px;padding:2px 5px}#mwDlg td input[type=text]{width:100%;min-width:6.5em}#mwDlg td input.mw-name{min-width:12em}#mwDlg td input.mw-state{min-width:4em}#mwDlg td input[type=number]{width:5em}
+#mwDlg td.num{text-align:right;font-family:"IBM Plex Mono",monospace;color:var(--muted)}
+.dlg .sp{flex:1}
+#wdCurves{font-size:12px;line-height:1.6}#wdCurves small{color:var(--muted)}
 @media (max-width:760px){
   .shell{flex-direction:column}
-  .side{width:auto;border-right:0;border-bottom:1px solid var(--line);max-height:45vh}
+  .side{width:auto!important;border-right:0;border-bottom:1px solid var(--line);max-height:45vh}
+  .gutter{display:none}
 }
 @media (prefers-reduced-motion:no-preference){ .banner{animation:drop .25s ease-out} @keyframes drop{from{transform:translateY(-6px);opacity:0}} }
 </style>
@@ -227,13 +254,14 @@ button.link{border:0;background:none;padding:2px 4px;color:var(--muted)}button.l
       <button id="btnOpen" class="primary" title="LAS, project, tops CSV or point-data CSV (Cmd+O). You can also drop files anywhere.">Open…</button>
       <button id="btnSave" title="Save project (Cmd+S)">Save</button>
       <button id="btnPng" title="Export the current view as PNG (Cmd+E)">Export PNG</button>
+      <div class="seg" role="group" aria-label="Units" title="Display units for depths, thicknesses and distances"><button class="small" data-units="imperial" aria-pressed="true">ft</button><button class="small" data-units="metric" aria-pressed="false">m</button></div>
       <button id="btnTheme" class="link" title="Dark or light theme" aria-label="Toggle dark theme">◐</button>
       <button id="btnAbout" class="link" aria-haspopup="dialog">About</button>
     </div>
   </header>
   <div id="aboutPop" class="pop about" role="dialog" aria-labelledby="aboutH" hidden>
     <h4 id="aboutH">About Weller Logs <button class="x" data-close aria-label="Close">×</button></h4>
-    <p>A free, open well-log viewer for quick correlation and zone petrophysics in the browser. I built it because opening a LAS file and hanging a cross section shouldn't need a license server. Your files stay on your machine.</p>
+    <p>Built by <a href="https://ryweller.com" target="_blank" rel="noopener">Ryan Weller</a>. A free, open well-log viewer for quick correlation and zone petrophysics in the browser. I built it because opening a LAS file and hanging a cross section shouldn't need a license server. Your files stay on your machine.</p>
     <p><b>Built with</b></p>
     <ul>
       <li>D3 and Leaflet; USGS National Map basemaps</li>
@@ -259,8 +287,10 @@ button.link{border:0;background:none;padding:2px 4px;color:var(--muted)}button.l
         <p class="hint" id="mapHint"></p>
       </details>
       <details open><summary><h2>Wells <span class="pill" id="wellCount"></span></h2></summary>
+        <div class="tools"><button class="small" id="btnManageWells" title="Rename, fill header fields, remove or clear wells">Manage wells</button></div>
         <ul class="list" id="wellList"></ul>
-        <div class="row"><select id="exampleSel" aria-label="Load example data"><option value="">Load example data…</option><option value="niobrara">Denver Basin Niobrara (real logs)</option><option value="labasin">LA Basin (synthetic)</option></select></div>
+        <p class="hint">Click a well to select it. The dot adds it to the correlation section; drag ⋮⋮ to reorder. Hover a name for its header.</p>
+        <div class="row"><select id="exampleSel" aria-label="Load example data"><option value="">Load example data…</option><option value="niobrara">Denver Basin Niobrara</option><option value="labasin">LA Basin (synthetic)</option></select></div>
       </details>
       <details open><summary><h2>Tracks</h2></summary>
         <div class="tools"><label class="mini"><input type="checkbox" id="showEmpty"> show empty</label><button class="small" id="btnAddTrack">+ track</button></div>
@@ -272,16 +302,19 @@ button.link{border:0;background:none;padding:2px 4px;color:var(--muted)}button.l
       <details open><summary><h2>Interpretation</h2></summary>
         <div id="interpForm" class="interp"></div>
       </details>
-      <details open><summary><h2>Tops <span id="topsWell" class="pill"></span></h2></summary>
+      <details open><summary><h2>Tops</h2></summary>
+        <div class="row" style="margin:0 0 6px"><select id="topsWellSel" aria-label="Well to edit" style="flex:1;min-width:0"></select><span class="mini" id="topsUnit"></span></div>
         <table class="tops" id="topsTable"></table>
         <div class="row">
           <input type="text" id="topName" placeholder="Top name" list="topNames">
           <datalist id="topNames"></datalist>
           <button class="small" id="btnPick">Pick on log</button>
         </div>
-        <p class="hint">Type a name, press Pick, click the depth. A tops CSV (well, top, md) opens with Open.</p>
+        <p class="hint">Type a name, press Pick, click the depth; or drag a top line, or type its MD. The swatch sets that top's color in every well. A tops CSV (well, top, md) opens with Open.</p>
+        <div class="row"><button class="small" id="btnTopColorsSave" title="Use these top colors in new projects">Save colors as my default</button><button class="small" id="btnTopColorsReset">Reset colors</button></div>
       </details>
     </aside>
+    <div class="gutter" id="sideGutter" role="separator" aria-orientation="vertical" aria-label="Resize sidebar" title="Drag to resize the sidebar; double-click to reset"></div>
     <main class="main">
       <div id="logView" class="view">
       <div class="viewbar">
@@ -295,13 +328,11 @@ button.link{border:0;background:none;padding:2px 4px;color:var(--muted)}button.l
         <label id="spacingWrap" hidden>Spacing
           <select id="spacing"><option value="equal">Equal</option><option value="distance">By distance</option></select>
         </label>
-        <label>Top <input type="number" id="winTop" step="50"></label>
-        <label>Bottom <input type="number" id="winBot" step="50"></label>
-        <button class="small" id="btnFit">Fit</button>
+        <button class="small" id="btnFit" title="Fit the logs to the window">Fit</button>
         <span class="sp"></span>
-        <label>Scale <span id="scaleLbl" style="font-family:'IBM Plex Mono',monospace"></span></label>
-        <button class="small" id="zoomOut">−</button>
-        <button class="small" id="zoomIn">+</button>
+        <label title="Vertical scale. 1:240 means one inch on screen is 240 inches (20 ft) of hole: 5 in per 100 ft, the common detail print. 1:600 is 2 in per 100 ft, the common correlation print. Screen sizes assume 96 px per inch. Ctrl or Cmd + scroll zooms freely.">Scale <select id="scaleSel" aria-label="Vertical scale"></select></label>
+        <button class="small" id="zoomOut" title="Smaller scale">−</button>
+        <button class="small" id="zoomIn" title="Larger scale">+</button>
       </div>
       <div class="logscroll" id="logScroll">
         <div id="logPanel"><svg id="overlay"></svg><div id="cursor"></div></div>
@@ -362,11 +393,16 @@ button.link{border:0;background:none;padding:2px 4px;color:var(--muted)}button.l
       <label>Name <input type="text" id="tdName"></label>
       <label>Width <input type="number" id="tdWidth" min="60" max="600" step="10"></label>
     </div>
-    <div class="tblwrap"><table>
-      <thead><tr><th>Curve</th><th>Left</th><th>Right</th><th>Log</th><th>Line</th><th>Dash</th><th>Fill</th><th>Fill colors</th><th>Opacity</th><th></th></tr></thead>
+    <div id="tdLith" hidden>
+      <p class="hint">Vshale comes from GR, or from SP in wells without GR (set in the Interpretation panel). Where the well has a PE log, PE separates carbonate, marl and clean sand. Rules run top to bottom; the first that fits wins.</p>
+      <div class="tblwrap"><table><thead><tr><th>Lithology</th><th>Rule</th></tr></thead><tbody id="tdLithBody"></tbody></table></div>
+      <div class="row"><button class="small" id="tdLithReset">Reset cutoffs and colors</button></div>
+    </div>
+    <div class="tblwrap" id="tdCurveWrap"><table>
+      <thead><tr id="tdHead"></tr></thead>
       <tbody id="tdCurves"></tbody>
     </table></div>
-    <div class="row"><button class="small" id="tdAddCurve">+ curve</button><span class="hint">Styles apply to this track in every well. Reversed scales (left &gt; right) are fine: that is how NPHI and DT are read. Color by value shades each depth by its reading, from the first color at the left scale value to the second at the right.</span></div>
+    <div class="row" id="tdAddRow"><button class="small" id="tdAddCurve">+ curve</button><span class="hint" id="tdHint"></span></div>
     <div class="foot"><button id="tdDelete">Delete track</button><button id="tdSaveDefaults" title="Use the current track set as the default for new projects">Save all tracks as my defaults</button><button id="tdResetDefaults">Reset to built-in</button><span style="flex:1"></span><button id="tdCancel">Cancel</button><button class="primary" id="tdSave">Apply</button></div>
   </div>
 </div>
@@ -375,11 +411,27 @@ button.link{border:0;background:none;padding:2px 4px;color:var(--muted)}button.l
   <div class="dlg" role="dialog" aria-labelledby="wdTitle">
     <h3 id="wdTitle">Well settings</h3>
     <p class="hint">Mud-log headers often lack these. Values here are stored in the project and used for the map and TVDSS.</p>
-    <div class="row"><label>Name <input type="text" id="wdName"></label><label>API <input type="text" id="wdApi"></label><label>Field <input type="text" id="wdField"></label></div>
+    <div class="row"><label>Name <input type="text" id="wdName"></label><label>API <input type="text" id="wdApi"></label><label>Operator <input type="text" id="wdOp"></label></div>
+    <div class="row"><label>Field <input type="text" id="wdField"></label><label>County <input type="text" id="wdCounty"></label><label>State <input type="text" id="wdState"></label></div>
     <div class="row"><label>KB elev <input type="number" id="wdKb" step="0.1"></label><label>GL elev <input type="number" id="wdGl" step="0.1"></label><label>Depth unit <select id="wdUnit"><option value="ft">ft</option><option value="m">m</option></select></label></div>
     <div class="row"><label>Latitude <input type="number" id="wdLat" step="0.000001" style="width:9em"></label><label>Longitude <input type="number" id="wdLon" step="0.000001" style="width:9em"></label><label>CRS <input type="text" id="wdCrs" placeholder="NAD27 / NAD83 / State Plane Zone 5"></label></div>
     <p class="hint" id="wdNotes"></p>
+    <div id="wdCurves"></div>
     <div class="foot"><button id="wdRemove">Remove well</button><span style="flex:1"></span><button id="wdCancel">Cancel</button><button class="primary" id="wdSave">Apply</button></div>
+  </div>
+</div>
+
+<div id="mwDlg" class="modal" hidden>
+  <div class="dlg" role="dialog" aria-labelledby="mwTitle">
+    <h3 id="mwTitle">Manage wells</h3>
+    <div class="row"><button class="small" id="mwAll">Select all</button><span class="hint" id="mwCount"></span><span class="sp"></span><button class="small" id="mwSort" title="Order the list, and the section, west to east">Order west → east</button></div>
+    <div class="row"><label>Set <select id="mwField"><option value="company">Operator</option><option value="field">Field</option><option value="county">County</option><option value="state">State</option><option value="kb">KB</option><option value="gl">GL</option></select></label><label>to <input type="text" id="mwVal"></label><button class="small" id="mwSet">Set for selected</button><span class="sp"></span><button class="small" id="mwRemove">Remove selected</button><button class="small" id="mwClear">Clear all wells</button></div>
+    <div class="tblwrap"><table>
+      <thead><tr><th></th><th>Name</th><th>API</th><th>Operator</th><th>Field</th><th>County</th><th>State</th><th>KB</th><th>GL</th><th title="Logged curves; the list is in each well's settings">Curves</th></tr></thead>
+      <tbody id="mwBody"></tbody>
+    </table></div>
+    <p class="hint">Nothing changes until Apply. Undo (Cmd/Ctrl+Z) reverses it afterwards.</p>
+    <div class="foot"><button id="mwCancel">Cancel</button><button class="primary" id="mwSave">Apply</button></div>
   </div>
 </div>
 

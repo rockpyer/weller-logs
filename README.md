@@ -23,10 +23,13 @@ Methods, equations, defaults and limits: [docs/PETROPHYSICS.md](docs/PETROPHYSIC
 - **Interpretation.** Vshale (linear, Larionov, Clavier), neutron-density porosity, Archie or Simandoux Sw on
   effective or total porosity with Rw corrected for temperature, Passey ΔlogR TOC, bad-hole flags, and net
   reservoir and net pay from cutoffs. Every parameter is in the Interpretation panel and saved with the project.
-- **Correlation.** Click wells on the map in section order. Hang on MD, sea level (TVDSS) or flatten on any top.
+- **Correlation.** The dot beside each well (or a click on the map) adds it to the section; the section follows the Wells
+  list order, which you drag to change and which starts west to east. Hang on MD, sea level (TVDSS) or flatten on any top.
+  The depth track always labels real MD and subsea TVD (KB minus TVD, negative below sea level), whatever the hang.
   Deviated and horizontal wells use TVD from the directional survey in the LAS file. Zones are filled in the same
   colors as the stats tab. Gaps can be equal or scaled to wellhead distance, which is labeled. Drag any top line to
-  move it. The app warns when tops cross between wells or are missing from one.
+  move it, or type its MD in the Tops panel, where each top's color is set and can be saved as your default. The app
+  warns when tops cross between wells or are missing from one.
 - **Zone stats.** Box plots by zone and well, and crossplots: neutron-density with lithology lines, Pickett with Sw
   lines, PE-density with matrix points, or any two curves, colored by zone, GR band or well. The summary table gives
   gross, net, net-to-gross, net pay, average porosity and Sw, porosity-feet and hydrocarbon-feet per zone, with true
@@ -43,7 +46,13 @@ Methods, equations, defaults and limits: [docs/PETROPHYSICS.md](docs/PETROPHYSIC
 - **Save** (Cmd+S) writes the `.lasproj`. Brave and Chrome save back to the same file; Firefox downloads a copy.
 - **Export PNG** (Cmd+E) renders the log view, or the crossplot on the stats tab.
 - **Undo / redo**: Cmd+Z and Shift+Cmd+Z (Ctrl on Windows and Linux) step through edits to tops, tracks, parameters and the section.
-- ◐ in the top bar switches to a dark theme.
+- **ft / m** in the top bar switches display units; data stay in each file's own unit. ◐ switches to a dark theme.
+- **Scale** is a print ratio: 1:240 is 5 in per 100 ft, 1:600 is 2 in per 100 ft (nominal on screen at 96 px per inch).
+  **Fit** fits the logs to the window. Logs and Correlation keep their own zoom and scroll.
+- **Manage wells** renames wells, fills operator, field, county, state and elevations for several at once, and removes
+  or clears wells. Hover a well name for its header: operator, location, API, log date, elevations, TD.
+- The lithology track's gear edits its Vshale and PE cutoffs and colors. Hover the lithology or flag tracks for the
+  class at that depth, the values behind it and MD / ssTVD; hover their header swatches for the full legend.
 - **Load example data** in the Wells panel switches between the Niobrara set and a synthetic LA Basin set.
 - Reopening the app offers to resume the last session; opened LAS files are cached in the browser.
 - In Brave or Chrome, the address-bar *Install* icon adds it to the Dock and it works offline.
