@@ -347,7 +347,7 @@ function renderSidebar(){
   const dsel=$('datum'); const cur=S.datum; dsel.innerHTML=`<option value="MD">Measured depth</option><option value="TVDSS">Sea level (TVDSS)</option>`+names.map(n=>`<option value="${esc(n)}">Flatten on ${esc(n)}</option>`).join(''); dsel.value=names.includes(cur)||cur==='MD'||cur==='TVDSS'?cur:'MD';
   $('spacing').value=S.corr.spacing; $('showEmpty').checked=S.showEmpty;
   document.querySelectorAll('[data-units]').forEach(b=>b.setAttribute('aria-pressed',b.dataset.units===S.units));
-  const sw=wellById(S.selected); $('stFile').innerHTML=sw?`<b>${esc(sw.fileName||sw.name+'.las (synthetic)')}</b> · ${sw.rows||depthOf(sw).length} rows · KB ${Number.isFinite(sw.elevation.kb)?fmtD(sw.elevation.kb,sw)+' '+dispU():'?'} · null ${sw.nullv??-999.25}${sw.wrap?' · wrapped':''}`:'';
+  const sw=wellById(S.selected); $('stFile').innerHTML=sw?`<b title="${esc(sourcesOf(sw).join('\n'))}">${esc(sourcesOf(sw).length>1?sourcesOf(sw).length+' LAS files':sw.fileName||sw.name+'.las (synthetic)')}</b> · ${sw.rows||depthOf(sw).length} rows · KB ${Number.isFinite(sw.elevation.kb)?fmtD(sw.elevation.kb,sw)+' '+dispU():'?'} · null ${sw.nullv??-999.25}${sw.wrap?' · wrapped':''}`:'';
 }
 /* Well list: drag a row to reorder wells, and with them the section. */
 { const list=$('wellList'); let dragId=null;
@@ -454,10 +454,12 @@ function openWellDlg(id){ const w=wellById(id); if(!w) return; wellEditing=w; $(
   $('wdOp').value=w.company||''; $('wdCounty').value=w.county||''; $('wdState').value=w.state||'';
   const logs=w.curves.slice(1).filter(c=>!c.sparse&&!c.computed), comp=w.curves.filter(c=>c.computed), pts=w.curves.filter(c=>c.sparse);
   $('wdCurves').innerHTML=`<b>${logs.length} logged curves</b>: ${logs.map(c=>`<span title="${esc(c.description||'')}">${esc(c.mnemonic)}${c.unit?` <small>${esc(c.unit)}</small>`:''}</span>`).join(', ')}`+(comp.length?`<br><b>${comp.length} computed</b>: ${comp.map(c=>esc(c.mnemonic)).join(', ')}`:'')+(pts.length?`<br><b>${pts.length} point series</b>: ${pts.map(c=>esc(c.mnemonic)).join(', ')}`:'');
+  const src=sourcesOf(w); $('wdSources').innerHTML=src.length>1?`<b>${src.length} source files</b>, merged on one depth grid: ${src.map(esc).join(', ')}`:''; $('wdSplit').hidden=src.length<2;
   $('wellDlg').hidden=false; }
 $('wdSave').onclick=()=>{ const w=wellEditing; const n=v=>v===''?undefined:+v; w.name=$('wdName').value; w.api=$('wdApi').value; w.field=$('wdField').value; w.elevation.kb=n($('wdKb').value); w.elevation.gl=n($('wdGl').value); w.depthUnit=$('wdUnit').value;
   w.location.lat=n($('wdLat').value); w.location.lon=n($('wdLon').value); w.location.crs=$('wdCrs').value; w.company=$('wdOp').value; w.county=$('wdCounty').value; w.state=$('wdState').value; w._ss=null; $('wellDlg').hidden=true; render(); };
 $('wdCancel').onclick=()=>{ $('wellDlg').hidden=true; };
+$('wdSplit').onclick=()=>{ const out=splitWell(wellEditing); $('wellDlg').hidden=true; render(); $('stNote').textContent=`Split into ${out.length} wells: ${out.map(w=>w.name).join(', ')}`; };
 $('wdRemove').onclick=()=>{ removeWells([wellEditing]); $('wellDlg').hidden=true; };
 function removeWells(list){ S.wells=S.wells.filter(w=>!list.includes(w)); S.panel=S.panel.filter(id=>wellById(id)); if(!wellById(S.selected)) S.selected=S.wells[0]?.id||null; render(); }
 
@@ -465,21 +467,36 @@ function removeWells(list){ S.wells=S.wells.filter(w=>!list.includes(w)); S.pane
 const MW_FIELDS=[['name','Name','text'],['api','API','text'],['company','Operator','text'],['field','Field','text'],['county','County','text'],['state','State','text'],['kb','KB','number'],['gl','GL','number']];
 let mwRows=null;
 function mwGet(w,k){ return k==='kb'||k==='gl'?w.elevation[k]:w[k]; }
-function openManageWells(){ mwRows=S.wells.map(w=>({w,sel:false,gone:false,v:Object.fromEntries(MW_FIELDS.map(([k])=>[k,mwGet(w,k)??'']))})); drawMW(); $('mwDlg').hidden=false; }
-function drawMW(){ $('mwBody').innerHTML=mwRows.map((r,i)=>r.gone?'':`<tr><td><input type="checkbox" data-mwsel="${i}"${r.sel?' checked':''} aria-label="Select ${esc(r.w.name)}"></td>${MW_FIELDS.map(([k,,t])=>`<td><input type="${t}" data-mw="${i}" data-k="${k}" value="${esc(r.v[k])}"${t==='number'?' step="0.1"':''} class="mw-${k}"></td>`).join('')}<td class="num">${r.w.curves.filter(c=>!c.sparse&&!c.computed).length-1}</td></tr>`).join('')
-    ||'<tr><td colspan="10" class="hint">No wells. Apply to clear the project.</td></tr>';
-  const n=mwRows.filter(r=>r.sel&&!r.gone).length; $('mwCount').textContent=n?`${n} selected`:'Select rows to edit or remove several at once'; $('mwSet').disabled=$('mwRemove').disabled=!n; }
+function openManageWells(){ $('mwAuto').checked=lsGet('weller.autoMerge',true); mwRows=S.wells.map(w=>({w,sel:false,gone:false,into:null,split:false,v:Object.fromEntries(MW_FIELDS.map(([k])=>[k,mwGet(w,k)??'']))})); drawMW(); $('mwDlg').hidden=false; }
+function drawMW(){ $('mwBody').innerHTML=mwRows.map((r,i)=>r.gone?'':`<tr><td><input type="checkbox" data-mwsel="${i}"${r.sel?' checked':''} aria-label="Select ${esc(r.w.name)}"></td>${MW_FIELDS.map(([k,,t])=>`<td><input type="${t}" data-mw="${i}" data-k="${k}" value="${esc(r.v[k])}"${t==='number'?' step="0.1"':''} class="mw-${k}"></td>`).join('')}<td class="num">${r.w.curves.filter(c=>!c.sparse&&!c.computed).length-1}</td><td class="num">${mwFiles(r,i)}</td></tr>`).join('')
+    ||'<tr><td colspan="11" class="hint">No wells. Apply to clear the project.</td></tr>';
+  const n=mwRows.filter(r=>r.sel&&!r.gone).length; $('mwCount').textContent=n?`${n} selected`:'Select rows to edit or remove several at once'; $('mwSet').disabled=$('mwRemove').disabled=!n; $('mwMerge').disabled=n<2; }
+function mwFiles(r,i){ const merged=mwRows.filter(x=>x.into===r), k=sourcesOf(r.w).length+merged.reduce((a,x)=>a+sourcesOf(x.w).length,0);
+  const tip=[...sourcesOf(r.w),...merged.flatMap(x=>sourcesOf(x.w))].join('\n');
+  return `<span title="${esc(tip)}">${k||'—'}</span>`+(merged.length?` <button class="small" data-mwunmerge="${i}" title="Undo this merge">unmerge</button>`:sourcesOf(r.w).length>1?` <button class="small" data-mwsplit="${i}" title="One well per file">${r.split?'will split':'split'}</button>`:''); }
 $('mwDlg').addEventListener('input',e=>{ const t=e.target; if(t.dataset.mw!==undefined) mwRows[+t.dataset.mw].v[t.dataset.k]=t.value; });
 $('mwDlg').addEventListener('change',e=>{ const t=e.target; if(t.dataset.mwsel!==undefined){ mwRows[+t.dataset.mwsel].sel=t.checked; drawMW(); } });
+$('mwBody').addEventListener('click',e=>{ const t=e.target;
+  if(t.dataset.mwsplit!==undefined){ const r=mwRows[+t.dataset.mwsplit]; r.split=!r.split; drawMW(); }
+  if(t.dataset.mwunmerge!==undefined){ const r=mwRows[+t.dataset.mwunmerge]; mwRows.forEach(x=>{ if(x.into===r){ x.into=null; x.gone=false; } }); drawMW(); } });
+// Merge: the first selected row keeps its name and header; the others' curves are spliced in on Apply.
+$('mwMerge').onclick=()=>{ const sel=mwRows.filter(r=>r.sel&&!r.gone); if(sel.length<2) return; const [t,...rest]=sel;
+  const keys=[...new Set(sel.map(r=>apiOf({api:r.v.api})?.key).filter(Boolean))];
+  rest.forEach(r=>{ r.gone=true; r.into=t; r.sel=false; }); t.sel=false; drawMW();
+  $('mwCount').textContent=`${rest.length+1} wells will merge into ${t.v.name}`+(keys.length>1?`. Their APIs differ (${keys.join(', ')}): check they are the same borehole.`:''); };
+$('mwAuto').onchange=e=>lsSet('weller.autoMerge',e.target.checked);
 $('mwAll').onclick=()=>{ const on=mwRows.some(r=>!r.sel&&!r.gone); mwRows.forEach(r=>r.sel=on); drawMW(); };
 $('mwSort').onclick=()=>{ const order=sortWestEast(mwRows.map(r=>r.w)); mwRows.sort((a,b)=>order.indexOf(a.w)-order.indexOf(b.w)); drawMW(); };
 $('mwSet').onclick=()=>{ const k=$('mwField').value, v=$('mwVal').value; mwRows.forEach(r=>{ if(r.sel&&!r.gone) r.v[k]=v; }); drawMW(); };
-$('mwRemove').onclick=()=>{ mwRows.forEach(r=>{ if(r.sel) r.gone=true; }); drawMW(); };
-$('mwClear').onclick=()=>{ mwRows.forEach(r=>r.gone=true); drawMW(); };
+$('mwRemove').onclick=()=>{ mwRows.forEach(r=>{ if(r.sel){ r.gone=true; r.into=null; } }); drawMW(); };
+$('mwClear').onclick=()=>{ mwRows.forEach(r=>{ r.gone=true; r.into=null; }); drawMW(); };
 $('mwCancel').onclick=()=>{ $('mwDlg').hidden=true; };
 $('mwSave').onclick=()=>{ const keep=mwRows.filter(r=>!r.gone), n=v=>v===''||v==null?undefined:+v;
   for(const {w,v} of keep){ for(const [k] of MW_FIELDS){ if(k==='kb'||k==='gl') w.elevation[k]=n(v[k]); else w[k]=String(v[k]).trim()||(k==='name'?w.name:''); } w._ss=null; }
-  S.wells=keep.map(r=>r.w); $('mwDlg').hidden=true; removeWells([]); $('stNote').textContent=`${S.wells.length} well${S.wells.length===1?'':'s'}`; };
+  S.wells=[...keep.map(r=>r.w),...mwRows.filter(r=>r.into).map(r=>r.w)]; const msg=[];
+  for(const r of keep){ const others=mwRows.filter(x=>x.into===r).map(x=>x.w); if(others.length){ const nw=mergeInto(r.w,others); msg.push(`merged ${others.length+1} into ${nw.name}`); } }
+  for(const r of keep) if(r.split){ const w=wellById(r.w.id); if(w) msg.push(`split ${w.name} into ${splitWell(w).length}`); }
+  $('mwDlg').hidden=true; removeWells([]); $('stNote').textContent=`${S.wells.length} well${S.wells.length===1?'':'s'}`+(msg.length?' · '+msg.join(' · '):''); };
 $('btnManageWells').onclick=e=>{ e.preventDefault(); e.stopPropagation(); openManageWells(); };
 
 /* ---------- Well header on hover: the key facts from the LAS header ---------- */
@@ -589,34 +606,111 @@ const lasCache={ db:null,
 
 /* ---------- Files: one Open for LAS, projects, tops CSV and point-data CSV; drag and drop anywhere ---------- */
 const OPEN_TYPES=[{description:'Well data',accept:{'text/plain':['.las','.LAS','.txt','.csv'],'application/json':['.lasproj','.json']}}];
-$('btnOpen').onclick=async()=>{ if(window.showOpenFilePicker){ try{ const hs=await showOpenFilePicker({multiple:true,types:OPEN_TYPES}); const files=[]; for(const h of hs){ const f=await h.getFile(); files.push({name:f.name,text:await f.text(),handle:h}); } openFiles(files); }catch(e){} } else $('fileIn').click(); };
-$('fileIn').onchange=async e=>{ const files=[]; for(const f of e.target.files) files.push({name:f.name,text:await f.text()}); openFiles(files); e.target.value=''; };
-function kindOf(f){ const t=f.text.trimStart(); if(/\.(lasproj|json)$/i.test(f.name)||t[0]==='{') return 'project'; if(t[0]==='~'||/\.las$/i.test(f.name)||/^#[^\n]*\n\s*~/.test(t)) return 'las'; return isTopsCSV(f.text)?'tops':'points'; }
-async function openFiles(files){ const by={project:[],las:[],tops:[],points:[]}; for(const f of files) by[kindOf(f)].push(f); const notes=[];
-  for(const f of by.project){ try{ await loadProject(JSON.parse(f.text)); if(f.handle) S.fileHandle=f.handle; notes.push('Project '+f.name+' loaded'); }catch(err){ notes.push(`${f.name}: ${err.message}`); } }
-  if(by.las.length) notes.push(...addLASFiles(by.las));
-  for(const f of by.tops){ try{ notes.push(importTopsCSV(f.text)); }catch(err){ notes.push(`${f.name}: ${err.message}`); } }
-  for(const f of by.points){ try{ notes.push('Points: '+importPointsCSV(f.text,f.name)); }catch(err){ notes.push(`${f.name}: ${err.message}`); } }
-  render(); $('stNote').textContent=notes.filter(Boolean).join(' · '); }
-function addLASFiles(files){ let first=null; const notes=[], added=[];
-  for(const f of files){ try{ const p=parseLAS(f.text); if(!p.curves.length||!p.rows) throw new Error('no curve data found'); const w=normalizeWell(p,f.name); if(f.demo) w.demo=f.demo; added.push(w); S.wells.push(w); if(!f.demo) lasCache.put(f.name,f.text); computeInterp(w);
-      if(!Number.isFinite(w.location.lat)) notes.push(`${w.name}: no location in header, not on map`); if(w.elevation.kb===undefined) notes.push(`${w.name}: no KB elevation, TVDSS unavailable`); const conv=w.curves.filter(c=>c.note).map(c=>c.mnemonic+' '+c.note); if(conv.length) notes.push(`${w.name}: ${conv.join(', ')}`); if(w.notes?.length) notes.push(`${w.name}: ${w.notes.join(', ')}`);
-    }catch(err){ notes.push(`${f.name}: could not read (${err.message})`); } }
+$('btnOpen').onclick=async()=>{ if(window.showOpenFilePicker){ try{ const hs=await showOpenFilePicker({multiple:true,types:OPEN_TYPES}); const files=[]; for(const h of hs) files.push({...await readPicked(await h.getFile()),handle:h}); openFiles(files); }catch(e){} } else $('fileIn').click(); };
+$('fileIn').onchange=async e=>{ const files=[]; for(const f of e.target.files) files.push(await readPicked(f)); openFiles(files); e.target.value=''; };
+async function readPicked(f){ return {name:f.name,text:await f.text(),bytes:new Uint8Array(await f.slice(0,16).arrayBuffer())}; }
+// Binary files and log formats (DLIS, PDF, TIFF…) go to the LAS reader, which says what they are instead of failing as CSV.
+function kindOf(f){ const t=f.text.trimStart(); if(/\.(lasproj|json)$/i.test(f.name)||t[0]==='{') return 'project';
+  if(t[0]==='~'||/\.(las|dlis|lis|tif|tiff|pdf|xlsx?|zip)$/i.test(f.name)||/^#[^\n]*\n\s*~/.test(t)||WellerLAS.sniffBinary(f.text,f.name,f.bytes)) return 'las'; return isTopsCSV(f.text)?'tops':'points'; }
+async function openFiles(files){ const by={project:[],las:[],tops:[],points:[]}; for(const f of files) by[kindOf(f)].push(f); const report=[];
+  const other=(f,fn)=>{ try{ report.push({file:f.name,status:'loaded',note:fn(),problems:[]}); }catch(err){ report.push({file:f.name,status:'failed',problems:[{level:'error',cat:'Parsing',title:err.message}]}); } };
+  for(const f of by.project){ try{ await loadProject(JSON.parse(f.text)); if(f.handle) S.fileHandle=f.handle; report.push({file:f.name,status:'loaded',note:'Project loaded',problems:[]}); }
+    catch(err){ report.push({file:f.name,status:'failed',problems:[{level:'error',cat:err instanceof SyntaxError?'Parsing':'File type',title:err instanceof SyntaxError?'Not valid JSON: '+err.message:err.message,fix:'Open a .lasproj saved by Weller Logs.'}]}); } }
+  if(by.las.length) report.push(...addLASFiles(by.las));
+  for(const f of by.tops) other(f,()=>importTopsCSV(f.text));
+  for(const f of by.points) other(f,()=>'Points: '+importPointsCSV(f.text,f.name));
+  render(); showImportSummary(report); }
+
+/* ---------- Wells built from several LAS files. w.parts holds the normalized files; a one-file well is its own part. ---------- */
+const partsOf=w=>w.parts||[w];
+const sourcesOf=w=>partsOf(w).map(p=>p.fileName).filter(Boolean);
+const apiOf=w=>WellerLAS.apiKey(w?.api);
+const HEAD_KEYS=['name','api','field','company','county','state'];
+// prefer 'prev': header values edited in the app win (merging). 'parts': the files win (re-opening a corrected file).
+function rebuildWell(prev,parts,prefer='prev'){ const m=WellerLAS.mergeWells(parts); for(const k of Object.keys(m)) if(k[0]==='_') delete m[k];
+  delete m.parts; delete m.demo; m.interpNotes=[]; m.fileName=parts[0].fileName; if(parts.length===1&&parts[0].demo) m.demo=parts[0].demo;
+  if(prev){ m.id=prev.id; const ok=v=>v!==undefined&&v!==null&&v!==''&&!(typeof v==='number'&&!Number.isFinite(v));
+    for(const k of HEAD_KEYS) if(ok(prev[k])&&(prefer==='prev'||!ok(m[k]))) m[k]=prev[k];
+    for(const g of ['location','elevation']) for(const [k,v] of Object.entries(prev[g]||{})) if(ok(v)&&(prefer==='prev'||!ok(m[g][k]))) m[g][k]=v;
+    const tops=[...(prev.tops||[])]; for(const t of m.tops) if(!tops.some(x=>x.name===t.name)) tops.push(t); m.tops=tops;
+    m.curves.push(...prev.curves.filter(c=>c.sparse&&!m.curves.some(x=>x.mnemonic===c.mnemonic))); }
+  if(parts.length>1) m.parts=parts; return m; }
+function replaceWell(old,nw){ const i=S.wells.indexOf(old); if(i>=0) S.wells[i]=nw; else S.wells.push(nw); }
+function mergeInto(target,others){ const nw=rebuildWell(target,[...partsOf(target),...others.flatMap(partsOf)],'prev');
+  S.wells=S.wells.filter(w=>!others.includes(w)); replaceWell(target,nw); S.panel=S.panel.filter(id=>wellById(id)); if(!wellById(S.selected)) S.selected=nw.id; computeInterp(nw); return nw; }
+// Split a merged well back into one well per file (e.g. a sidetrack filed under the original hole's API).
+function splitWell(w){ const parts=partsOf(w); if(parts.length<2) return [w]; const ids=new Set(S.wells.map(x=>x.id));
+  const out=parts.map((p,i)=>{ const nw=rebuildWell(null,[p]); nw.id=i===0?w.id:(!ids.has(p.id)&&p.id!==w.id?p.id:'u'+Math.random().toString(36).slice(2,8)); ids.add(nw.id); computeInterp(nw); return nw; });
+  const i=S.wells.indexOf(w); S.wells.splice(i,1,...out); return out; }
+
+function addLASFiles(files){ const report=[], touched=[], fresh=new Set(), auto=lsGet('weller.autoMerge',true);
+  for(const f of files){ const r={file:f.name,problems:[]}; report.push(r);
+    try{ const dx=WellerLAS.diagnoseLAS(f.text,f.name,f.bytes); r.problems=dx.problems; if(dx.problems.some(p=>p.level==='error')){ r.status='failed'; continue; }
+      const part=normalizeWell(dx.parsed,f.name); if(f.demo) part.demo=f.demo; if(!f.demo) lasCache.put(f.name,f.text);
+      const key=WellerLAS.apiKey(part.api), same=S.wells.find(w=>sourcesOf(w).includes(f.name)); let w;
+      if(same){ w=rebuildWell(same,partsOf(same).map(p=>p.fileName===f.name?part:p),'parts'); replaceWell(same,w); r.status='reloaded';
+        r.problems.push({level:'info',cat:'Merge',title:`Replaced the earlier copy of ${f.name} in ${w.name}`}); }
+      else{ const target=auto&&key&&S.wells.find(w=>apiOf(w)?.key===key.key);
+        if(target){ w=rebuildWell(target,[...partsOf(target),part],'prev'); replaceWell(target,w); r.status='merged';
+          const mine=(w.notes||[]).filter(n=>n.includes(f.name));
+          r.problems.push({level:'info',cat:'Merge',title:`Merged into ${w.name} (${sourcesOf(w).length} files): same borehole, API ${WellerLAS.fmtApi(key)}`,detail:mine.join(' · ')||'',fix:'Wrong hole? Split it in Manage wells.'}); }
+        else{ w=part; w.sources=[f.name]; S.wells.push(w); fresh.add(w.id); r.status='loaded';
+          const sib=key?.us&&S.wells.find(o=>o!==w&&apiOf(o)?.well===key.well);
+          if(sib){ const kb=apiOf(sib).bore; if(sib.name===w.name&&key.bore!=='00'&&!/\bST\s*\d|SIDETRACK/i.test(w.name)) w.name+=' ST'+key.bore;
+            r.problems.push({level:'info',cat:'Merge',title:`Kept apart from ${sib.name}: wellbore ${key.bore} vs ${kb}`,detail:`Same well (API ${key.well}), different borehole code, so a sidetrack or re-drill${key.explicitBore?'':'; a 10-digit API counts as the original hole (00)'}.`,fix:'Same hole after all? Select both in Manage wells and Merge.'}); }
+          else if(!key) r.problems.push({level:'info',cat:'Header',title:'No API or UWI in ~Well, so this file will not merge with other runs of the well automatically',fix:'Set the API in well settings, or merge by hand in Manage wells.'}); } }
+      touched.push(w.id); r.well=w.name; computeInterp(w);
+      if(!Number.isFinite(w.location.lat)) r.problems.push({level:'info',cat:'Header',title:'No location in header, not on map'});
+      if(w.elevation.kb===undefined) r.problems.push({level:'info',cat:'Header',title:'No KB elevation, TVDSS unavailable'});
+      const conv=part.curves.filter(c=>c.note).map(c=>c.mnemonic+' '+c.note); if(conv.length) r.problems.push({level:'info',cat:'Parsing',title:conv.join(', ')});
+      if(part.notes?.length) r.problems.push({level:'warn',cat:'Header',title:part.notes.join(', ')});
+    }catch(err){ r.status='failed'; r.problems.push({level:'error',cat:'Parsing',title:'Unexpected error while reading: '+err.message,fix:'Please report this file; it passed the checks but the reader failed.'}); } }
   // New wells join the list west to east, after the wells already open.
-  if(added.length){ const sorted=sortWestEast(added); S.wells=[...S.wells.filter(w=>!added.includes(w)),...sorted]; first=sorted[0].id; S.selected=first; if(S.mode==='corr') S.panel.push(first); if(S.mode!=='stats') fitView(); } return notes; }
+  const added=S.wells.filter(w=>fresh.has(w.id));
+  if(added.length){ const sorted=sortWestEast(added); S.wells=[...S.wells.filter(w=>!fresh.has(w.id)),...sorted]; }
+  const first=touched.map(wellById).find(Boolean);
+  if(first){ S.selected=first.id; if(S.mode==='corr'&&!S.panel.includes(first.id)) S.panel.push(first.id); if(S.mode!=='stats') fitView(); }
+  return report; }
+
+/* ---------- Import report: per file, what loaded, what merged, and why anything failed ---------- */
+let lastReport=[];
+const STATUS={loaded:'Loaded',merged:'Merged',reloaded:'Reloaded',failed:'Not loaded'};
+function showImportSummary(report){ lastReport=report; if(!report.length) return;
+  const n=k=>report.filter(r=>r.status===k).length, fail=n('failed'), warn=report.some(r=>r.problems.some(p=>p.level==='warn'));
+  const parts=[['loaded','loaded'],['merged','merged into open wells'],['reloaded','reloaded'],['failed','not loaded']].filter(([k])=>n(k)).map(([k,l])=>`${n(k)} ${l}`);
+  const single=report.length===1&&!fail&&!warn&&report[0].status!=='merged'?(report[0].note||`${report[0].file} loaded`):null;
+  $('stNote').innerHTML=esc(single||`${report.length} file${report.length>1?'s':''}: ${parts.join(', ')}`)+(single&&!report[0].problems.length?'':' <button class="small" id="btnImpDetails">Details</button>');
+  if(fail) openImportReport(); }
+function snipHTML(sn){ return `<pre class="snip">${sn.map(x=>{ const t=esc(String(x.text??'').replace(/\t/g,' ').slice(0,160)); const body=x.mark?t.replace(esc(x.mark),`<mark>${esc(x.mark)}</mark>`):t; return `<span class="ln">${x.line??''}</span>${body}`; }).join('\n')}</pre>`; }
+function openImportReport(){ const LV={error:'Error',warn:'Warning',info:'Note'};
+  $('impBody').innerHTML=lastReport.map(r=>`<section class="imp ${r.status}"><div class="imph"><span class="chip ${r.status}">${STATUS[r.status]||r.status}</span><b>${esc(r.file)}</b>${r.well?` <span class="hint">→ ${esc(r.well)}</span>`:''}${r.note&&!r.well?` <span class="hint">${esc(r.note)}</span>`:''}</div>
+    ${r.problems.map(p=>`<div class="prob ${p.level}"><div><span class="lv">${LV[p.level]}</span><span class="cat">${esc(p.cat||'')}</span> <b>${esc(p.title)}</b>${p.line?` <span class="hint">line ${p.line}</span>`:''}</div>${p.detail?`<div class="hint">${esc(p.detail)}</div>`:''}${p.snippet?.length?snipHTML(p.snippet):''}${p.fix?`<div class="fix"><b>Fix:</b> ${esc(p.fix)}${p.template?' See the minimal LAS below.':''}</div>`:''}</div>`).join('')}</section>`).join('');
+  const tpl=lastReport.some(r=>r.problems.some(p=>p.template||p.level==='error')); $('impTpl').hidden=!tpl; if(tpl) $('impTpl').open=lastReport.some(r=>r.problems.some(p=>p.template));
+  $('impDlg').hidden=false; }
+$('impTplText').textContent=WellerLAS.LAS_TEMPLATE;
+$('impClose').onclick=()=>{ $('impDlg').hidden=true; };
+document.addEventListener('click',e=>{ if(e.target.id==='btnImpDetails') openImportReport(); });
 let dragDepth=0;
 addEventListener('dragenter',e=>{ if(e.dataTransfer?.types?.includes('Files')){ dragDepth++; document.body.classList.add('dropping'); } });
 addEventListener('dragleave',()=>{ if(--dragDepth<=0){ dragDepth=0; document.body.classList.remove('dropping'); } });
 addEventListener('dragover',e=>e.preventDefault());
-addEventListener('drop',async e=>{ e.preventDefault(); dragDepth=0; document.body.classList.remove('dropping'); const files=[]; for(const f of e.dataTransfer.files) files.push({name:f.name,text:await f.text()}); if(files.length) openFiles(files); });
+addEventListener('drop',async e=>{ e.preventDefault(); dragDepth=0; document.body.classList.remove('dropping'); const files=[]; for(const f of e.dataTransfer.files) files.push(await readPicked(f)); if(files.length) openFiles(files); });
 
 /* ---------- Project save / load / autosave ---------- */
 function projectJSON(){ return { version:3, app:'weller-logs', savedAt:new Date().toISOString(), mode:S.mode, selected:S.selected, panel:S.panel, datum:S.datum, views:S.views, tracks:S.tracks, hiddenPoints:S.hiddenPoints, stats:S.stats, basemap:S.basemap, interp:S.interp, corr:S.corr, topColors:S.topColors,
-  wells:S.wells.map(w=>({id:w.id,name:w.name,api:w.api,field:w.field,company:w.company,county:w.county,state:w.state,preset:w.preset,demo:w.demo,fileName:w.fileName,location:w.location,elevation:w.elevation,depthUnit:w.depthUnit,tops:w.tops,points:pointsJSON(w),curveList:w.curves.filter(c=>!c.sparse).map(c=>c.mnemonic)})) }; }
+  wells:S.wells.map(w=>({id:w.id,name:w.name,api:w.api,field:w.field,company:w.company,county:w.county,state:w.state,preset:w.preset,demo:w.demo,fileName:w.fileName,files:partsOf(w).length>1?partsOf(w).map(p=>({fileName:p.fileName,demo:p.demo})):undefined,location:w.location,elevation:w.elevation,depthUnit:w.depthUnit,tops:w.tops,points:pointsJSON(w),curveList:w.curves.filter(c=>!c.sparse).map(c=>c.mnemonic)})) }; }
 async function loadProject(p){ if(!p||p.app!=='weller-logs') throw new Error('not a Weller Logs project'); const missing=[];
-  const fromCache={}; for(const r of p.wells){ if(r.preset||S.wells.some(w=>w.fileName===r.fileName)) continue; const text=r.demo?await fetchText('data/'+r.demo):await lasCache.get(r.fileName); if(text){ try{ fromCache[r.fileName]=normalizeWell(parseLAS(text),r.fileName); }catch(e){} } }
+  // A file may be a well on its own or one part of a merged well; find it wherever it is now.
+  const findPart=fn=>{ for(const w of S.wells){ const ps=partsOf(w); if(ps.length===1&&w.fileName===fn) return w; const q=ps.find(q=>q.fileName===fn); if(q) return q; } return null; };
+  const fromCache={}; for(const r of p.wells){ if(r.preset) continue; for(const f of r.files||[{fileName:r.fileName,demo:r.demo}]){ if(!f.fileName||findPart(f.fileName)||fromCache[f.fileName]) continue;
+    const text=f.demo?await fetchText('data/'+f.demo):await lasCache.get(f.fileName); if(text){ try{ const w=normalizeWell(parseLAS(text),f.fileName); if(f.demo) w.demo=f.demo; fromCache[f.fileName]=w; }catch(e){} } } }
+  const getPart=fn=>findPart(fn)||fromCache[fn];
+  const byFiles=fs=>S.wells.find(w=>sourcesOf(w).join('\n')===fs.join('\n'));
   S.wells=p.wells.map(ref=>{ if(ref.preset){ const cfg=WellerSynth.PRESET_WELLS.find(c=>c.id===ref.preset); const w=presetWell(cfg); w.tops=ref.tops; w.elevation=ref.elevation; restorePoints(w,ref.points); return w; }
-    const live=S.wells.find(w=>w.fileName===ref.fileName)||fromCache[ref.fileName]; if(live){ if(ref.demo) live.demo=ref.demo; Object.assign(live,{tops:ref.tops,elevation:ref.elevation,location:ref.location,name:ref.name,api:ref.api,field:ref.field,id:ref.id}); for(const k of ['company','county','state']) if(ref[k]!==undefined) live[k]=ref[k]; restorePoints(live,ref.points); return live; } missing.push(ref.fileName||ref.name); return null; }).filter(Boolean);
+    let live;
+    if(ref.files){ const fs=ref.files.map(f=>f.fileName); live=byFiles(fs); if(!live){ const parts=fs.map(getPart); if(parts.some(x=>!x)){ missing.push(...fs.filter((f,i)=>!parts[i])); return null; } live=rebuildWell(null,parts); } }
+    else live=byFiles([ref.fileName])||getPart(ref.fileName);
+    if(live){ if(ref.demo) live.demo=ref.demo; Object.assign(live,{tops:ref.tops,elevation:ref.elevation,location:ref.location,name:ref.name,api:ref.api,field:ref.field,id:ref.id}); for(const k of ['company','county','state']) if(ref[k]!==undefined) live[k]=ref[k]; restorePoints(live,ref.points); return live; } missing.push(ref.fileName||ref.name); return null; }).filter(Boolean);
   S.tracks=migrateTracks(p.tracks); S.views=p.views||newViews(); S.view=S.views[viewKey(S.mode)]||S.views.single; S.datum=p.datum||'MD'; S.topColors=p.topColors||S.topColors; S.hiddenPoints=p.hiddenPoints||[]; S.stats={...statsDefaults(),...(p.stats||{})}; S.interp={...interpDefaults(),...(p.interp||{})}; S.corr={...S.corr,...(p.corr||{})}; if(!p.tracks.some(t=>t.id==='t8')) S.tracks=[...p.tracks,...defaultTracks().filter(t=>['t8','t9','t10','t11','t12'].includes(t.id))]; setBasemap(p.basemap||'map'); if((p.version||1)<2) pointSeriesNames().forEach(placePointSeries); S.panel=(p.panel||[]).filter(id=>wellById(id));
   // Older projects kept section order separately: move those wells into that order within the list.
   if((p.version||1)<3){ const pos=S.wells.map((w,i)=>S.panel.includes(w.id)?i:-1).filter(i=>i>=0); S.panel.forEach((id,k)=>{ S.wells[pos[k]]=wellById(id); }); } S.selected=wellById(p.selected)?p.selected:(S.wells[0]?.id||null);
@@ -658,7 +752,8 @@ async function loadExample(name){
   // (USGS data release doi:10.5066/P14CRSQQ); late-time samples approach formation water, giving Rw 0.16 ohm.m at 77 F.
   S.interp={...interpDefaults(),matrix:'auto',swPhi:'total',rw:0.16,rwTemp:77,
     source:'Example Rw 0.16 Ω·m at 77 °F, from Weld County Niobrara produced water (USGS doi:10.5066/P14CRSQQ)', sourceSw:'Sw on total porosity, usual for chalk-marl source rocks'};
-  const notes=addLASFiles(NIOBRARA_FILES.map((f,i)=>({name:f,text:texts[i],demo:'niobrara/'+f})));
+  const rep=addLASFiles(NIOBRARA_FILES.map((f,i)=>({name:f,text:texts[i],demo:'niobrara/'+f}))); lastReport=rep;
+  const notes=rep.filter(r=>r.status==='failed').map(r=>`${r.file}: ${r.problems[0]?.title}`);
   const tops=await fetchText('data/niobrara/tops.csv'); if(tops) importTopsCSV(tops);
   computeAllInterp();
   // Verticals west to east through the pad, then the Weld County horizontal, which lies ~30 mi south.
