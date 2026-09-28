@@ -7,6 +7,16 @@
   const LABEL_WORDS = /^(WELL|COMPANY|FIELD|LOCATION|COUNTY|STATE|PROVINCE|COUNTRY|NATION|SERVICE COMPANY|LATITUDE|LONGITUDE|API NUMBER|UWI|UNIQUE WELL ID|LOG DATE|DATE|LICENSE|LICENCE NUMBER|RANGE|TOWNSHIP|SECTION)$/;
 
   function median(a) { const v = Array.from(a).filter(Number.isFinite).sort((x, y) => x - y); if (!v.length) return NaN; const m = v.length >> 1; return v.length % 2 ? v[m] : (v[m - 1] + v[m]) / 2; }
+  // "41.31", "041° 02' 31.040\" N", "104 26 37.66 W", "-104.4438". Returns signed decimal degrees and whether a hemisphere was given.
+  function parseCoord(s) {
+    const t = String(s ?? '').replace(/\uFFFD/g, ' ').trim(); if (!t) return undefined;
+    const hemi = (t.match(/\b([NSEW])\b\s*$/i) || t.match(/^\s*([NSEW])\b/i) || [])[1]?.toUpperCase();
+    const nums = (t.match(/[-+]?\d+(?:\.\d+)?/g) || []).map(Number); if (!nums.length) return undefined;
+    const dms = nums.length >= 2 && /['’′"”″°º]|\d\s+\d/.test(t) && nums[1] < 60 && (nums[2] ?? 0) < 60;
+    let v = dms ? Math.abs(nums[0]) + nums[1] / 60 + (nums[2] ?? 0) / 3600 : Math.abs(nums[0]);
+    if (nums[0] < 0 || hemi === 'S' || hemi === 'W') v = -v;
+    return { v, hemi: !!hemi || nums[0] < 0, dms };
+  }
   function leadingNumber(s) { const m = String(s ?? '').trim().match(/^[-+]?\d*\.?\d+(?:[eE][-+]?\d+)?/); return m ? parseFloat(m[0]) : undefined; }
 
   // "MNEM.UNIT  DATA : DESCRIPTION". The description follows the last colon, so values may contain colons (times, "Lat:34").
@@ -196,6 +206,8 @@
     const bore = d.slice(10, 12) || '00';
     return { well: d.slice(0, 10), bore, key: d.slice(0, 10) + '-' + bore, us: true, explicitBore: d.length >= 12 };
   }
+  // Well names compare without case, spaces or punctuation: "CARPENTER 126-0408H" = "Carpenter 126 0408H".
+  function nameKey(n) { return String(n || '').toUpperCase().replace(/[^A-Z0-9]/g, ''); }
   function fmtApi(k) { return k?.us ? `${k.well.slice(0, 2)}-${k.well.slice(2, 5)}-${k.well.slice(5)}-${k.bore}` : (k?.key || ''); }
 
   /* ---------- Merge files of one well onto one depth grid ---------- */
@@ -215,6 +227,7 @@
     }
     return out;
   }
+  const unitKey = u => { const x = String(u || '').toUpperCase().replace(/[^A-Z/%]/g, ''); return /^(UNITS?|U|)$/.test(x) ? '' : /^(API|GAPI|APIGR)$/.test(x) ? 'API' : /^(FTHR|FT\/HR|FT\/H)$/.test(x) ? 'FT/HR' : x; };
   const UNIT_K = { ft: { ft: 1, m: 0.3048 }, m: { m: 1, ft: 1 / 0.3048 } };
   // parts: normalized wells, first one wins headers and overlapping values. Pure: parts are not modified.
   function mergeWells(parts) {
@@ -228,25 +241,28 @@
     while ((bot - top) / step > 2e6) step *= 2;
     const n = Math.round((bot - top) / step) + 1, grid = new Float64Array(n);
     for (let i = 0; i < n; i++) grid[i] = +(top + i * step).toFixed(6);
-    const out = new Map(); const byMnem = {};
+    const out = new Map(); const byMnem = {}, spliced = {};
     parts.forEach((p, j) => {
       if (j && (p.depthUnit || 'ft') !== unit) notes.push(`${p.fileName} depths converted ${p.depthUnit} → ${unit}`);
       const maxGap = Math.max(medianStep(deps[j]) * 3, step * 1.5);
       for (const c of logs(p)) {
-        const m = c.mnemonic.toUpperCase().replace(/:\d+$/, ''), u = String(c.unit || '').toUpperCase(), key = m + '|' + u;
+        const m = c.mnemonic.toUpperCase().replace(/:\d+$/, ''), u = unitKey(c.unit), key = m + '|' + u + '|' + (c.cased ? 'c' : '');
         const data = resample(deps[j], c.data, grid, maxGap);
-        let t = out.get(key);
+        // Same curve, same unit: splice when the runs barely overlap (run 1 above run 2). Where they overlap a lot they
+        // are different tools or passes (mud-log vs wireline GR), so both are kept and the user picks.
+        let t = out.get(key), overlap = 0, have = 0, add = 0;
+        if (t) { for (let i = 0; i < n; i++) { const a = Number.isFinite(t.data[i]), b = Number.isFinite(data[i]); if (a) have++; if (b) add++; if (a && b) overlap++; }
+          if (overlap > Math.max(20, 0.1 * Math.min(have, add))) { notes.push(`${c.mnemonic.replace(/:\d+$/, '')} in ${p.fileName} overlaps ${t.mnemonic} from ${t.sources[0]} over ${(overlap * step).toFixed(0)} ${unit}: kept both`); t = null; } }
         if (!t) {
           byMnem[m] = (byMnem[m] || 0) + 1;
-          t = { mnemonic: byMnem[m] > 1 ? c.mnemonic.replace(/:\d+$/, '') + ':' + byMnem[m] : c.mnemonic.replace(/:\d+$/, ''), unit: c.unit, description: c.description, note: c.note, data, sources: [p.fileName] };
-          out.set(key, t); continue;
+          t = { mnemonic: byMnem[m] > 1 ? c.mnemonic.replace(/:\d+$/, '') + ':' + byMnem[m] : c.mnemonic.replace(/:\d+$/, ''), unit: c.unit, description: c.description, note: c.note, cased: c.cased, data, sources: [p.fileName] };
+          out.set(out.has(key) ? key + '#' + byMnem[m] : key, t); continue;
         }
-        let filled = 0, overlap = 0;
-        for (let i = 0; i < n; i++) { if (!Number.isFinite(data[i])) continue; if (Number.isFinite(t.data[i])) overlap++; else { t.data[i] = data[i]; filled++; } }
-        if (filled) t.sources.push(p.fileName);
-        if (overlap > 2) notes.push(`${t.mnemonic}: ${p.fileName} overlaps ${(overlap * step).toFixed(0)} ${unit} of ${t.sources[0]}; kept ${t.sources[0]}`);
+        for (let i = 0; i < n; i++) if (Number.isFinite(data[i]) && !Number.isFinite(t.data[i])) t.data[i] = data[i];
+        t.sources.push(p.fileName); const sk = p.fileName + '|' + t.sources[0]; (spliced[sk] = spliced[sk] || { a: t.sources[0], b: p.fileName, list: [], ov: 0 }).list.push(t.mnemonic); spliced[sk].ov = Math.max(spliced[sk].ov, overlap * step);
       }
     });
+    for (const x of Object.values(spliced)) notes.push(`spliced ${x.list.join(', ')} from ${x.b} onto ${x.a}${x.ov > step * 2 ? ` (${x.ov.toFixed(0)} ${unit} overlap, ${x.a} kept)` : ''}`);
     const curves = [{ ...base.curves[0], data: grid, nulls: 0 }, ...[...out.values()].map(c => { let nulls = 0; for (const v of c.data) if (!Number.isFinite(v)) nulls++; return { ...c, nulls }; })];
     const blank = v => v === undefined || v === null || v === '' || (typeof v === 'number' && !Number.isFinite(v));
     const fill = (a, b) => { const r = { ...a }; for (const [key, v] of Object.entries(b || {})) if (blank(r[key]) && !blank(v)) r[key] = v; return r; };
@@ -328,7 +344,12 @@
       const m = c.mnemonic.toUpperCase().replace(/:\d+$/, ''), u = (c.unit || '').toUpperCase();
       if (/^(NPHI|TNPH|NPOR|PHIN|CNC|HNPO|NPHS|NPHL|TNPS)/.test(m)) { const med = median(c.data); if (/PU|%/.test(u) || med > 1.5) { c.data = c.data.map(v => v / 100); c.unit = 'V/V'; c.note = 'converted from pu'; } }
       if (/^(DT|DTC|DTCO|AC)$/.test(m) && /US\/M|USEC\/M/.test(u)) { c.data = c.data.map(v => v / 3.28084); c.unit = 'US/F'; c.note = 'converted from us/m'; }
+      // Mud loggers often record drill time (minutes per foot) under ROP; tracks expect ft/hr.
+      if (/^ROP/.test(m) && /^MIN/.test(u.replace(/[_\s]/g, ''))) { c.data = c.data.map(v => v > 0 ? 60 / v : NaN); c.unit = depthUnit === 'm' ? 'm/hr' : 'ft/hr'; c.note = 'converted from drill time (min/' + depthUnit + ')'; }
     }
+    // A cement-bond or casing-inspection run logs gamma ray through casing, which reads low and shifted.
+    const casedHole = p.curves.some(c => /^(CCL|CBL|BONDIX|BI|VDL|AMP|AMP3FT|AMPS\d|TT3FT|TT)$/i.test(c.mnemonic.replace(/:\d+$/, '')));
+    if (casedHole) for (const c of p.curves) if (/^(GR|GRC|SGR|CGR|GRCO|GAMMA)/i.test(c.mnemonic)) { c.cased = true; c.description = ((c.description || '') + ' (cased hole)').trim(); }
     const tops = [
       ...Object.values(P).filter(x => /^TOP_/.test(x.mnem.toUpperCase())).map(x => ({ name: x.mnem.slice(4).replace(/_/g, ' ').replace(/\w\S*/g, s => s[0] + s.slice(1).toLowerCase()), md: leadingNumber(x.value), source: 'import' })),
       ...p.header.tops.map(t => ({ ...t, source: 'import' })),
@@ -340,16 +361,27 @@
     // A land rig floor sits a few to ~40 ft above ground. Anything outside 0-60 ft (0-18 m) is a header error.
     let kbSuspect = false;
     if (kb !== undefined && gl !== undefined) { const lim = depthUnit === 'm' ? 18 : 60; if (kb - gl < 0 || kb - gl > lim) { notes.push(`KB ${kb} is ${Math.round(kb - gl)} ${depthUnit} from GL ${gl}; ignored, depths hung on GL until corrected`); kbSuspect = true; } }
-    let lat = num('LATI', 'LAT', 'LATITUDE'), lon = num('LONG', 'LON', 'LONGITUDE');
+    const coord = (...ks) => { for (const k of ks) { const c = parseCoord(g(k)); if (c) return c; } return undefined; };
+    const cLat = coord('LATI', 'LAT', 'LATITUDE'), cLon = coord('LONG', 'LON', 'LONGITUDE');
+    let lat = cLat?.v, lon = cLon?.v;
+    if (cLat?.dms || cLon?.dms) notes.push('location read from degrees-minutes-seconds');
     if (lat === undefined) { const m = all.match(/LAT[A-Z]*\s*[:=]?\s*(-?\d+\.\d+)/i); if (m) lat = parseFloat(m[1]); }
     if (lon === undefined) { const m = all.match(/LON[A-Z]*\s*[:=]?\s*(-?\d+\.\d+)/i); if (m) lon = parseFloat(m[1]); }
     const westUS = /CALIFORNIA|COLORADO|WYOMING|UTAH|TEXAS|OKLAHOMA|KANSAS|NEW MEXICO|NORTH DAKOTA|MONTANA|\b(CA|CO|WY|UT|TX|OK|KS|NM|ND|MT)\b|UNITED STATES|USA/i.test(all);
-    if (lon !== undefined && lon > 0 && westUS) { lon = -lon; notes.push('longitude sign corrected to west'); }
+    if (lon !== undefined && lon > 0 && westUS && !cLon?.hemi) { lon = -lon; notes.push('longitude sign corrected to west'); }
     const crsM = all.match(/NAD\s*(27|83)/i); const zoneM = all.match(/ZONE\s*(\d)/i);
     const crs = g('GDAT') || (crsM ? `NAD${crsM[1]}${zoneM ? ' · State Plane Zone ' + zoneM[1] : ''}` : 'unknown');
     const matr = String(g('MATR') || g('NMAT') || g('DPOR') || '').toUpperCase();
     const neutronMatrix = /SAND|SS|QUARTZ/.test(matr) ? 'sandstone' : /DOL/.test(matr) ? 'dolomite' : /LIME|LS|CALC/.test(matr) ? 'limestone' : null;
-    const survey = parseSurvey(p.header.other);
+    let survey = parseSurvey(p.header.other);
+    // No survey but a TVD curve (common in MWD deliverables): use it for TVD. Inclination follows from dTVD/dMD.
+    const tvdC = !survey && p.curves.find(c => /^(TVD|TVDM|TVD_MD)$/i.test(c.mnemonic));
+    if (tvdC) { const md = [], tvd = [], d = p.curves[0].data, stride = Math.max(1, Math.floor(d.length / 2000));
+      for (let i = 0; i < d.length; i += stride) if (Number.isFinite(tvdC.data[i]) && tvdC.data[i] <= d[i] + 1) { md.push(d[i]); tvd.push(tvdC.data[i]); }
+      if (md.length > 2 && tvd[tvd.length - 1] < md[md.length - 1] - 1) {
+        const inc = md.map((m, i) => { const j = Math.min(i + 1, md.length - 1), k = j === i ? i - 1 : i; const dm = md[j] - md[k]; return dm > 0 ? Math.acos(Math.max(-1, Math.min(1, (tvd[j] - tvd[k]) / dm))) * 180 / Math.PI : 0; });
+        survey = { md: Float64Array.from(md), tvd: Float64Array.from(tvd), inc: Float64Array.from(inc), azi: new Float64Array(md.length), fromCurve: tvdC.mnemonic };
+        notes.push(`TVD from the ${tvdC.mnemonic} curve`); } }
     const clean = s => String(s || '').replace(/^(WELL|COMPANY|FIELD|API NUMBER):\s*/i, '').trim();
     const api = clean(g('API') || g('APIN') || g('UWI'));
     return {
@@ -359,7 +391,7 @@
       field: clean(g('FLD')), company: clean(g('COMP')), county: clean(g('CNTY') || g('COUN')), state: clean(g('STAT') || g('PROV')),
       meta: { location: clean(g('LOC')), spud: clean(g('SPUD') || g('SPD') || g('SPDT')), logDate: clean(g('DATE')), service: clean(g('SRVC')), country: clean(g('CTRY')) },
       notes, depthUnit, curves: p.curves, tops, wrap: p.wrap, nullv: p.nullv, rows: p.rows, reversed: p.reversed,
-      neutronMatrix, survey,
+      neutronMatrix, survey, casedHole,
       params: { bht: num('BHT', 'MXT', 'BHTEMP'), td: num('TDL', 'TDD', 'TD'), bitSize: num('BS', 'BIT'), rmf: num('RMF'), rm: num('RM', 'RMS') },
     };
   }
@@ -367,5 +399,5 @@
   // The elevation that depths hang from: KB when plausible, else GL (flagged), else none.
   function datumElevation(w) { const e = w.elevation || {}; return Number.isFinite(e.kb) ? e.kb : Number.isFinite(e.gl) ? e.gl : undefined; }
 
-  root.WellerLAS = { parseLAS, diagnoseLAS, sniffBinary, apiKey, fmtApi, mergeWells, resample, LAS_TEMPLATE, normalizeWell, parseSurvey, minCurvatureTVD, tvdAt, datumElevation, median, leadingNumber, parseHeaderLine };
+  root.WellerLAS = { parseLAS, diagnoseLAS, sniffBinary, apiKey, nameKey, parseCoord, fmtApi, mergeWells, resample, LAS_TEMPLATE, normalizeWell, parseSurvey, minCurvatureTVD, tvdAt, datumElevation, median, leadingNumber, parseHeaderLine };
 })(typeof globalThis !== 'undefined' ? globalThis : this);

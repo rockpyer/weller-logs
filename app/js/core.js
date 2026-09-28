@@ -4,11 +4,12 @@ const {parseLAS,normalizeWell}=WellerLAS;   // app/js/las.js
 /* ---------- Curve aliases and default track presets ---------- */
 // Mnemonic families. Merged with petroplots' alias table so templates resolve the same curves in both tools.
 const A={
-  GR:['GR','GRD','SGR','CGR','GRC','GAMMA','GRGC','GR_EDTC','ECGR','HSGR','GRS','GRR','HGR'], SP:['SP','SPC','SSP','SPR'], CAL:['CALI','CAL','CALS','HCAL','CALX','DCAL'],
+  GR:['GR','GRD','SGR','CGR','GRC','GAMMA','GRGC','GR_EDTC','ECGR','HSGR','GRS','GRR','HGR','GRAX','GR_MWD','GRMWD','MWD_GR','GRAM','GRA','GR_RT','GRAPI','GAM','GRCO'], SP:['SP','SPC','SSP','SPR'], CAL:['CALI','CAL','CALS','HCAL','CALX','DCAL'],
   RD:['RDEEP','RT','RD','ILD','LLD','AT90','AHT90','AF90','RES_DEEP','M2R9','RLA5','RESD','RILD'], RM:['RMED','RM','ILM','LLM','AT30','AT60','AHT60','AF60','RES_MED','RLA3','RILM','M2R6'],
   RS:['RSHAL','RS','LLS','SFL','SFLU','MSFL','AT10','AHT10','AF10','RES_SHAL','RXO','RXOZ','RLA1','SN','M2R1'],
   RHOB:['RHOB','DEN','RHOZ','DENS','ZDEN','RHO'], NPHI:['NPHI','TNPH','NEU','PHIN','CNC','NPOR','HNPO','NPHI_LS'], DT:['DT','DTC','AC','SONIC','DT24','DTCO','DT4P'], PE:['PEF','PE','PEFZ','PDPE'],
-  ROP:['ROP','ROPA','ROP_AVG'], WOB:['WOB','WOBA'], RPM:['RPM'], TG:['TG','TGU','TGAS','GAS','TOTGAS','GASU'], C1:['C1','CH4','METH','METHANE'], C2:['C2','C2H6','ETH'], C3:['C3','C3H8','PROP'],
+  ROP:['ROP','ROPA','ROP_AVG','ROP5','ROPS'],
+  AMP:['AMP3FT','CBL','AMPAVG','AMP','CBLF','AMP3'], TT:['TT3FT','TT','TT3'], BOND:['BONDIX','BI','BOND'], CCL:['CCL','CCLU','CCLC'], WOB:['WOB','WOBA'], RPM:['RPM'], TG:['TG','TGU','TGAS','GAS','TOTGAS','GASU'], C1:['C1','CH4','METH','METHANE'], C2:['C2','C2H6','ETH'], C3:['C3','C3H8','PROP'],
   C4:['C4','NC4','IC4'], C5:['C5','NC5','IC5'], H2S:['H2S'], CO2:['CO2'],
 };
 // Cuttings percentages as logged on mud logs (Petrolog and similar). Order = stacking order, left to right.
@@ -49,15 +50,29 @@ function defaultTracks(){ return [
     {label:'TG',aliases:A.TG,min:1,max:10000,log:true,unit:'units',color:'var(--tg)'},
     {label:'C1',aliases:A.C1,min:1,max:100000,log:true,unit:'ppm',color:'var(--c1)',fill:'left',fillStyle:'gradient',fillColor:'#FCE8D5',fillColor2:'#E4572E',fillOpacity:.75},
     {label:'C2',aliases:A.C2,min:1,max:100000,log:true,unit:'ppm',color:'var(--c2)',dash:'4 2'}]},
+  CBL_TRACK(),
   {id:'t7',name:'Cuttings %',width:110,type:'lithpct',curves:LITH.map(l=>({...l,min:0,max:100,unit:'%'}))},
 ];}
+// Cement bond: amplitude (low = bonded), transit time, bond index, collars.
+function CBL_TRACK(){ return {id:'t13',name:'Cement bond',width:150,curves:[
+    {label:'AMP',aliases:A.AMP,min:0,max:100,unit:'mV',color:'var(--rdeep)',fill:'left',fillColor:'#9AA5AB',fillOpacity:.35},
+    {label:'TT',aliases:A.TT,min:400,max:200,unit:'µs',color:'var(--rmed)',dash:'4 2'},
+    {label:'BI',aliases:A.BOND,min:0,max:1,unit:'',color:'var(--phie)'},
+    {label:'CCL',aliases:A.CCL,min:-10,max:10,unit:'',color:'var(--muted)',dash:'1 2'}]}; }
 function loadTrackDefaults(){ try{ const d=JSON.parse(localStorage.getItem('weller.trackDefaults2')||'null'); if(Array.isArray(d)&&d.length) return migrateTracks(d); }catch(e){} return defaultTracks(); }
 // Older track sets: net pay was red (reads as gas), there was no washout flag, and Vsh had no SP source.
-function migrateTracks(tr){ for(const t of tr){ for(const c of t.curves||[]){ if(c.aliases?.[0]==='NET_PAY'&&/^#c1121f$/i.test(c.color)) c.color='#2E7D32'; if(c.aliases?.[0]==='VSH_GR'&&!c.aliases.includes('VSH_SP')) c.aliases.splice(1,0,'VSH_SP'); }
+function migrateTracks(tr){ if(!tr.some(t=>t.id==='t13')){ const i=tr.findIndex(t=>t.id==='t7'); tr.splice(i<0?tr.length:i,0,CBL_TRACK()); }
+  for(const t of tr){ for(const c of t.curves||[]){ if(c.aliases?.[0]==='NET_PAY'&&/^#c1121f$/i.test(c.color)) c.color='#2E7D32'; if(c.aliases?.[0]==='VSH_GR'&&!c.aliases.includes('VSH_SP')) c.aliases.splice(1,0,'VSH_SP'); }
     if(t.type==='lith') for(const c of t.curves) if(!c.aliases.includes('VSH_SP')) c.aliases.push('VSH_SP');
     if(t.type==='flags'&&!t.curves.some(c=>c.aliases?.includes('FLAG_WO'))){ const i=t.curves.findIndex(c=>c.aliases?.[0]==='FLAG_BH'); t.curves.splice(i<0?t.curves.length:i,0,{label:'Washout',aliases:['FLAG_WO'],color:'#8C7B62'}); } } return tr; }
 const norm=s=>s.toUpperCase().replace(/[:_-]\d+$/,'');
-function resolveCurve(well,cfg){ for(const a of cfg.aliases){ const c=well.curves.find(c=>norm(c.mnemonic)===a.toUpperCase()); if(c) return c; } return null; }
+// Every curve in the well that a track curve's aliases match, best first: open hole before cased hole, then alias order.
+const famKey=cfg=>String(cfg.aliases?.[0]||cfg.label||'').toUpperCase();
+// Among open-hole curves, one covering half again as much depth wins over the alias order (MWD GR to TD vs a short GR).
+function curveCandidates(well,cfg){ const out=[]; cfg.aliases.forEach((a,k)=>{ const au=a.toUpperCase(); for(const c of well.curves) if(norm(c.mnemonic)===au&&!out.some(o=>o.c===c)) out.push({c,k,n:c.sparse?0:c.data.length-(c.nulls||0)}); });
+  return out.sort((x,y)=>(!!x.c.cased-!!y.c.cased)||(x.n>1.5*y.n?-1:y.n>1.5*x.n?1:x.k-y.k)).map(o=>o.c); }
+// A well can pin which curve a family uses (well settings), or show all of them ('*').
+function resolveCurve(well,cfg){ const pick=well.pick?.[famKey(cfg)]; if(pick&&pick!=='*'){ const c=well.curves.find(c=>c.mnemonic===pick); if(c) return c; } return curveCandidates(well,cfg)[0]||null; }
 
 /* ---------- State ---------- */
 const newViews=()=>({single:{pxPerFt:0.35,top:0,bottom:1000},corr:{pxPerFt:0.35,top:0,bottom:1000}});
@@ -85,6 +100,7 @@ function wellRange(w){ const d=depthOf(w); return [d[0],d[d.length-1]]; }
 /* ---------- Depth frames: MD, TVDSS, or flattened on a top. Deviated wells use TVD from their survey. ---------- */
 function tvdOf(w){ if(!w.survey) return null; const d=depthOf(w); if(!w._tvd||w._tvd.length!==d.length) w._tvd=WellerLAS.tvdAt(w.survey,d); return w._tvd; }
 function mdToTvd(w,md){ return w.survey?WellerLAS.tvdAt(w.survey,Float64Array.of(md))[0]:md; }
+function syncDatum(){ if(!['MD','TVDSS'].includes(S.datum)&&!S.wells.some(w=>w.tops.some(t=>t.name===S.datum))) S.datum='MD'; }
 function frameOf(w){
   const dep=depthOf(w), mode=S.mode==='single'?'MD':S.datum, md={kind:'MD',z:m=>m,arr:dep,mono:true,note:''};
   if(mode==='MD') return md;
@@ -92,7 +108,7 @@ function frameOf(w){
   const mono=!tvd||src.every((v,i)=>i===0||v>=src[i-1]-1e-9);
   if(mode==='TVDSS'){ const e=WellerLAS.datumElevation(w); if(!Number.isFinite(e)) return {...md,note:'no elevation, shown in MD'};
     const hungGL=!Number.isFinite(w.elevation?.kb); return {kind:'TVDSS',z:m=>base(m)-e,arr:src.map(v=>v-e),mono,note:(hungGL?'hung on GL':'')+(tvd?(hungGL?', ':'')+'TVD from survey':'')}; }
-  const t=w.tops.find(t=>t.name===mode); if(!t) return {...md,note:`no ${mode} top, shown in MD`};
+  const t=w.tops.find(t=>t.name===mode); if(!t) return {...md,note:`no ${mode} pick, not flattened`};
   const zt=base(t.md); return {kind:'FLAT',z:m=>base(m)-zt,arr:src.map(v=>v-zt),mono,note:tvd?'TVD from survey':''};
 }
 function mdAtZ(w,F,z){ const a=F.arr,d=depthOf(w); let i=F.mono?d3.bisectLeft(a,z):a.findIndex(v=>v>=z); if(i<=0) return d[0]; if(i<0||i>=a.length) return d[d.length-1];
@@ -136,7 +152,7 @@ function depthTicks(w,F,y,H){
   const primary=(hasSS&&(!showMD||(S.mode==='corr'&&S.datum==='TVDSS')))?(i=>ss[i]):(i=>d[i]);
   return { grid:thin(walk(primary,true),3), md:showMD?thin(walk(i=>d[i],false),14):[], ss:hasSS?thin(walk(i=>ss[i],false),14):[], showMD, showSS:hasSS, hasSS:!!ss };
 }
-function render(){
+function render(){ syncDatum();
   const statsMode=S.mode==='stats'; $('statsView').hidden=!statsMode; $('logView').hidden=statsMode;
   syncPanel();
   if(statsMode){ renderSidebar(); renderStats(); autosave(); return; }
@@ -187,7 +203,7 @@ function depthTrack(w,F,y,H,ticks,zc){
   for(const z of zonesOf(w)){ if(z.name==='Whole well') continue; const y0=y(F.z(z.top)), y1=y(F.z(z.base)); if(y1<0||y0>H) continue;
     svg.append('rect').attr('x',0).attr('width',7).attr('y',Math.max(0,y0)).attr('height',Math.max(0,Math.min(H,y1)-Math.max(0,y0))).attr('fill',zc.get(z.name)||'transparent').append('title').text(z.name); }
   for(const t of ticks.grid) svg.append('line').attr('x1',t.major?W-6:W-3).attr('x2',W).attr('y1',t.y).attr('y2',t.y).attr('class','grid s');
-  cols.forEach((c,j)=>{ const x=12+44*j+40; for(const t of ticks[c]) svg.append('text').attr('x',x).attr('y',t.y+3.5).attr('text-anchor','end').attr('class','depth'+(c==='ss'?' ss':'')).text(Math.round(t.v).toLocaleString().replace(/^-/,'−')); });
+  cols.forEach((c,j)=>{ const x=12+44*j+40; for(const t of ticks[c]) svg.append('text').attr('x',x).attr('y',t.y+3.5).attr('text-anchor','end').attr('class','depth'+(c==='ss'?' ss':'')).text((Math.round(t.v)||0).toLocaleString().replace(/^-/,'−')); });
   for(const tp of w.tops){ const yy=y(F.z(tp.md)); if(yy<0||yy>H) continue; svg.append('line').attr('x1',8).attr('x2',W).attr('y1',yy).attr('y2',yy).attr('class','top').attr('data-top',tp.name).style('stroke',zc.get(tp.name)||null); }
   const node=svg.node();
   node.addEventListener('mousemove',e=>{ if(S.drag) return; const r=node.getBoundingClientRect(); const z=y.invert(e.clientY-r.top); showCursor(e.clientY-$('logPanel').getBoundingClientRect().top,mdAtZ(w,F,z),w,[]); });
@@ -213,12 +229,14 @@ function logTrack(w,t,F,y,H,ticks){
   const width=trackW(t), dep=depthOf(w), zA=F.arr; const div=document.createElement('div'); div.className='track'; div.style.width=width+'px';
   const head=document.createElement('div'); head.className='thead';
   head.innerHTML=`<div class="tn"><span>${esc(t.name)}</span><button title="Edit track" data-edit="${t.id}">⚙</button></div>`;
-  const resolved=t.curves.map(c=>{ const curve=resolveCurve(w,c); return {cfg:curve?effCfg(w,c):c,curve}; });
+  const MULTI=['#E4572E','#0353A4','#8E44AD','#7A5C3E','#2A9D8F'];
+  const resolved=t.curves.flatMap(c=>{ if(!t.type&&w.pick?.[famKey(c)]==='*'){ const all=curveCandidates(w,c); if(all.length>1) return all.map((curve,k)=>({cfg:{...effCfg(w,c),label:curve.mnemonic,color:k?MULTI[(k-1)%MULTI.length]:c.color,dash:c.dash,fill:k?'none':c.fill},curve})); }
+    const curve=resolveCurve(w,c); return [{cfg:curve?effCfg(w,c):c,curve}]; });
   const gr=resolveCurve(w,{aliases:A.GR}), pe=resolveCurve(w,{aliases:A.PE}); let lithCls=null;
   if(t.type==='lithpct'){ const have=resolved.filter(r=>r.curve&&!r.curve.sparse); head.innerHTML+=`<div class="scale" style="color:var(--muted)"><span>0</span><span class="c">${have.length?have.length+' components':'no cuttings curves'}</span><span class="r">100%</span></div><div class="legend">${have.map(r=>`<i style="background:${r.cfg.color}" title="${r.cfg.label} (${r.curve.mnemonic})"></i>`).join('')}</div>`; }
   const LP=lithParams(t), hasPE=!!(pe&&!pe.sparse);
   const vs=resolveCurve(w,{aliases:['VSH_GR','VSH_SP']}), vSrc=gr&&!gr.sparse?'GR':vs?'SP':null;
-  if(t.type==='lith') head.innerHTML+=`<div class="scale" style="color:var(--muted)"><span></span><span class="c">${vSrc?(vSrc+(hasPE?' + PE':''))+' quick look':'needs GR or SP'}</span><span></span></div><div class="legend">${Object.keys(lithRules(LP,hasPE)).map(k=>`<i style="background:${LP.colors[k]}"></i>`).join('')}</div>`;
+  if(t.type==='lith') head.innerHTML+=`<div class="scale" style="color:var(--muted)" title="Computed from ${esc(gr?.mnemonic||vSrc||'GR')} cutoffs, not a mud-log or core description${gr?.cased?'. This gamma ray was logged through casing and reads low; pick an open-hole GR in well settings':''}"><span></span><span class="c">${vSrc?'computed* '+esc(vSrc==='GR'?gr.mnemonic:'SP')+(hasPE?' + PE':''):'needs GR or SP'}${gr?.cased?' · cased':''}</span><span></span></div><div class="legend">${Object.keys(lithRules(LP,hasPE)).map(k=>`<i style="background:${LP.colors[k]}"></i>`).join('')}</div>`;
   else if(t.type==='flags') head.innerHTML+=`<div class="legend">${resolved.filter(r=>r.curve).map(r=>`<i style="background:${r.cfg.color}"></i>`).join('')}</div>`;
   else for(const {cfg,curve} of resolved){ const s=document.createElement('div'); s.className='scale'; s.style.color=cfg.color; s.style.opacity=curve?1:.35; s.title=curve?.description||'';
     s.innerHTML=`<span>${cfg.min}</span><span class="c">${curve?curve.mnemonic:cfg.label+' (none)'}${cfg.unit?' '+cfg.unit:''}${cfg.tag?' · '+cfg.tag:''}</span><span class="r">${cfg.max}</span><span class="bar${curve?.sparse?' pts':cfg.dash?' dash':''}"></span>`; head.appendChild(s); }
@@ -238,7 +256,7 @@ function logTrack(w,t,F,y,H,ticks){
   if(t.type==='lithpct'){ const have=resolved.filter(r=>r.curve&&!r.curve.sparse); if(have.length){ const g=svg.append('g'); const sx=width/100;
       for(let k=0;k<idx.length;k++){ const i=idx[k], j=idx[k+1]??Math.min(i1,i+stride); let x=0;
         for(const r of have){ const v=r.curve.data[i]; if(!Number.isFinite(v)||v<=0) continue; band(g,i,j,x,v*sx,r.cfg.color); x+=v*sx; } } } }
-  else if(t.type==='lith'){ if(vSrc){ const g=svg.append('g'); const bl=grBaselines(w); let run=null;
+  else if(t.type==='lith'){ if(vSrc){ const g=svg.append('g').attr('opacity',gr?.cased&&vSrc==='GR'?.5:1); const bl=grBaselines(w); let run=null;
       const vshAt=i=>vs?vs.data[i]:WellerPetro.igr(gr.data[i],bl.clean??20,bl.shale??130), peAt=i=>hasPE?pe.data[i]:NaN;
       const cls=i=>quickLith(vshAt(i),peAt(i),LP); lithCls=i=>({k:cls(i),vsh:vshAt(i),pe:peAt(i)});
       const flush=(k,a,b)=>{ if(k) band(g,a,b,0,width,LP.colors[k]); };
@@ -275,7 +293,7 @@ function logTrack(w,t,F,y,H,ticks){
       showTip(e,(on.length?on.map(f=>`<div class="lr on"><i style="background:${f.cfg.color}"></i>${esc(f.cfg.label)}</div>`).join(''):'<div class="tipv">No flag at this depth</div>')+`<div class="tipd">${depthText(w,md)}</div>`); } });
   node.addEventListener('mouseleave',()=>{ $('cursor').style.display='none'; hideTip(); });
   const leg=head.querySelector('.legend');
-  if(leg&&t.type==='lith'){ leg.addEventListener('mousemove',e=>showTip(e,legendTip(`Quick-look lithology from ${vSrc||'GR'}${hasPE?' and PE':' only'}`,Object.entries(lithRules(LP,hasPE)).map(([n,r])=>[n,LP.colors[n],r])))); leg.addEventListener('mouseleave',hideTip); }
+  if(leg&&t.type==='lith'){ leg.addEventListener('mousemove',e=>showTip(e,legendTip(`Computed lithology from ${vSrc==='GR'?gr.mnemonic:vSrc||'GR'}${hasPE?' and PE':' only'}: a quick look from cutoffs, not described cuttings${gr?.cased?'. Cased-hole GR: unreliable':''}`,Object.entries(lithRules(LP,hasPE)).map(([n,r])=>[n,LP.colors[n],r])))); leg.addEventListener('mouseleave',hideTip); }
   if(leg&&t.type==='flags'){ leg.addEventListener('mousemove',e=>showTip(e,legendTip('Flags',flagsOn.map(f=>[f.cfg.label,f.cfg.color,(f.curve.description||'').replace(/^[^:]*:\s*/,'')])))); leg.addEventListener('mouseleave',hideTip); }
   node.addEventListener('click',e=>{ if(!S.picking) return; const r=node.getBoundingClientRect(); const md=Math.round(mdAtZ(w,F,y.invert(e.clientY-r.top))*2)/2; placeTop(w,md); });
   attachTopDrag(node,w,F,y);
@@ -454,11 +472,22 @@ function openWellDlg(id){ const w=wellById(id); if(!w) return; wellEditing=w; $(
   $('wdOp').value=w.company||''; $('wdCounty').value=w.county||''; $('wdState').value=w.state||'';
   const logs=w.curves.slice(1).filter(c=>!c.sparse&&!c.computed), comp=w.curves.filter(c=>c.computed), pts=w.curves.filter(c=>c.sparse);
   $('wdCurves').innerHTML=`<b>${logs.length} logged curves</b>: ${logs.map(c=>`<span title="${esc(c.description||'')}">${esc(c.mnemonic)}${c.unit?` <small>${esc(c.unit)}</small>`:''}</span>`).join(', ')}`+(comp.length?`<br><b>${comp.length} computed</b>: ${comp.map(c=>esc(c.mnemonic)).join(', ')}`:'')+(pts.length?`<br><b>${pts.length} point series</b>: ${pts.map(c=>esc(c.mnemonic)).join(', ')}`:'');
+  drawCurveChoices(w);
   const src=sourcesOf(w); $('wdSources').innerHTML=src.length>1?`<b>${src.length} source files</b>, merged on one depth grid: ${src.map(esc).join(', ')}`:''; $('wdSplit').hidden=src.length<2;
   $('wellDlg').hidden=false; }
 $('wdSave').onclick=()=>{ const w=wellEditing; const n=v=>v===''?undefined:+v; w.name=$('wdName').value; w.api=$('wdApi').value; w.field=$('wdField').value; w.elevation.kb=n($('wdKb').value); w.elevation.gl=n($('wdGl').value); w.depthUnit=$('wdUnit').value;
   w.location.lat=n($('wdLat').value); w.location.lon=n($('wdLon').value); w.location.crs=$('wdCrs').value; w.company=$('wdOp').value; w.county=$('wdCounty').value; w.state=$('wdState').value; w._ss=null; $('wellDlg').hidden=true; render(); };
 $('wdCancel').onclick=()=>{ $('wellDlg').hidden=true; };
+function drawCurveChoices(w){ const ch=curveChoices(w);
+  $('wdChoices').innerHTML=ch.length?`<b>Several curves of one kind</b> <span class="hint">The first open-hole curve is used unless you pick one here. Applies to tracks, lithology and interpretation.</span>`+ch.map(m=>{ const p=w.pick?.[m.key]||'';
+    return `<div class="row"><label>${esc(m.label)} <select data-pick="${esc(m.key)}"><option value=""${p?'':' selected'}>Auto: ${esc(curveCandidates(w,m.cfg)[0]?.mnemonic||'')}</option>${m.list.map(c=>`<option value="${esc(c.mnemonic)}"${p===c.mnemonic?' selected':''}>${esc(curveWhere(w,c))}</option>`).join('')}<option value="*"${p==='*'?' selected':''}>Show all ${m.list.length}, overlaid</option></select></label></div>`; }).join(''):'';
+  const shown=new Set(); for(const t of S.tracks) for(const c of t.curves||[]){ if(!c.aliases) continue; for(const x of curveCandidates(w,c)) shown.add(x); }
+  const hidden=w.curves.slice(1).filter(c=>!c.computed&&!c.sparse&&!shown.has(c)&&c.nulls<depthOf(w).length&&!/^(TVD|TVDSS|MD|DEPT|DEPTH)$/i.test(norm(c.mnemonic)));
+  $('wdHidden').innerHTML=hidden.length?`<b>${hidden.length} curves not in any track</b>: ${hidden.map(c=>`<button class="small" data-addtrack="${esc(c.mnemonic)}" title="Add a track for ${esc(c.description||c.mnemonic)}">+ ${esc(c.mnemonic)}</button>`).join(' ')}`:''; }
+$('wdChoices').addEventListener('change',e=>{ const k=e.target.dataset.pick; if(k===undefined||!wellEditing) return; const w=wellEditing; w.pick={...(w.pick||{})}; if(e.target.value) w.pick[k]=e.target.value; else delete w.pick[k];
+  w._grP=null; computeInterp(w); render(); drawCurveChoices(w); });
+$('wdHidden').addEventListener('click',e=>{ const m=e.target.dataset.addtrack; if(!m||!wellEditing) return; const c=wellEditing.curves.find(x=>x.mnemonic===m); const r=autoScale(c,false)||[0,100];
+  S.tracks.push({id:'t'+Date.now().toString(36),name:m,width:120,curves:[{label:m,aliases:[norm(m)],min:r[0],max:r[1],unit:c.unit||'',color:'var(--ink)'}]}); render(); drawCurveChoices(wellEditing); $('stNote').textContent=`Track added for ${m}; edit it with its ⚙`; });
 $('wdSplit').onclick=()=>{ const out=splitWell(wellEditing); $('wellDlg').hidden=true; render(); $('stNote').textContent=`Split into ${out.length} wells: ${out.map(w=>w.name).join(', ')}`; };
 $('wdRemove').onclick=()=>{ removeWells([wellEditing]); $('wellDlg').hidden=true; };
 function removeWells(list){ S.wells=S.wells.filter(w=>!list.includes(w)); S.panel=S.panel.filter(id=>wellById(id)); if(!wellById(S.selected)) S.selected=S.wells[0]?.id||null; render(); }
@@ -633,7 +662,7 @@ function rebuildWell(prev,parts,prefer='prev'){ const m=WellerLAS.mergeWells(par
     for(const k of HEAD_KEYS) if(ok(prev[k])&&(prefer==='prev'||!ok(m[k]))) m[k]=prev[k];
     for(const g of ['location','elevation']) for(const [k,v] of Object.entries(prev[g]||{})) if(ok(v)&&(prefer==='prev'||!ok(m[g][k]))) m[g][k]=v;
     const tops=[...(prev.tops||[])]; for(const t of m.tops) if(!tops.some(x=>x.name===t.name)) tops.push(t); m.tops=tops;
-    m.curves.push(...prev.curves.filter(c=>c.sparse&&!m.curves.some(x=>x.mnemonic===c.mnemonic))); }
+    m.curves.push(...prev.curves.filter(c=>c.sparse&&!m.curves.some(x=>x.mnemonic===c.mnemonic))); if(prev.pick) m.pick={...prev.pick}; }
   if(parts.length>1) m.parts=parts; return m; }
 function replaceWell(old,nw){ const i=S.wells.indexOf(old); if(i>=0) S.wells[i]=nw; else S.wells.push(nw); }
 function mergeInto(target,others){ const nw=rebuildWell(target,[...partsOf(target),...others.flatMap(partsOf)],'prev');
@@ -643,6 +672,14 @@ function splitWell(w){ const parts=partsOf(w); if(parts.length<2) return [w]; co
   const out=parts.map((p,i)=>{ const nw=rebuildWell(null,[p]); nw.id=i===0?w.id:(!ids.has(p.id)&&p.id!==w.id?p.id:'u'+Math.random().toString(36).slice(2,8)); ids.add(nw.id); computeInterp(nw); return nw; });
   const i=S.wells.indexOf(w); S.wells.splice(i,1,...out); return out; }
 
+// Curve families (GR, ROP, …) with more than one matching curve in a well: the user picks, or shows all.
+function curveChoices(w){ const seen=new Set(), out=[];
+  for(const t of S.tracks) for(const c of t.curves||[]){ if(t.type==='lithpct'||t.type==='flags'||!c.aliases) continue; const k=famKey(c); if(seen.has(k)) continue; seen.add(k);
+    const list=curveCandidates(w,c).filter(x=>!x.computed&&!x.sparse); if(list.length>1) out.push({key:k,cfg:c,label:c.label||k,list,current:resolveCurve(w,c)}); }
+  return out; }
+function curveWhere(w,c){ const d=depthOf(w); let a=-1,b=-1; for(let i=0;i<d.length;i++) if(Number.isFinite(c.data[i])){ if(a<0) a=i; b=i; }
+  const src=(c.sources||[w.fileName]).filter(Boolean).join(' + ');
+  return `${c.mnemonic}${c.unit?' ('+c.unit+')':''} ${a<0?'no data':fmtD(d[a],w)+'–'+fmtD(d[b],w)+' '+dispU()}${c.cased?', cased hole':''}${src?', '+src:''}`; }
 function addLASFiles(files){ const report=[], touched=[], fresh=new Set(), auto=lsGet('weller.autoMerge',true);
   for(const f of files){ const r={file:f.name,problems:[]}; report.push(r);
     try{ const dx=WellerLAS.diagnoseLAS(f.text,f.name,f.bytes); r.problems=dx.problems; if(dx.problems.some(p=>p.level==='error')){ r.status='failed'; continue; }
@@ -650,21 +687,29 @@ function addLASFiles(files){ const report=[], touched=[], fresh=new Set(), auto=
       const key=WellerLAS.apiKey(part.api), same=S.wells.find(w=>sourcesOf(w).includes(f.name)); let w;
       if(same){ w=rebuildWell(same,partsOf(same).map(p=>p.fileName===f.name?part:p),'parts'); replaceWell(same,w); r.status='reloaded';
         r.problems.push({level:'info',cat:'Merge',title:`Replaced the earlier copy of ${f.name} in ${w.name}`}); }
-      else{ const target=auto&&key&&S.wells.find(w=>apiOf(w)?.key===key.key);
+      else{ let target=auto&&key&&S.wells.find(w=>apiOf(w)?.key===key.key), how=target&&`same borehole, API ${WellerLAS.fmtApi(key)}`;
+        // No API on one side: the same well name is enough, unless the other file's API says a different borehole.
+        if(auto&&!target){ const nk=WellerLAS.nameKey(part.name); target=nk&&S.wells.find(w=>WellerLAS.nameKey(w.name)===nk&&!(key&&apiOf(w)&&apiOf(w).key!==key.key));
+          if(target) how=`same well name${key?'':' (this file has no API)'}${apiOf(target)?'':' (the open well has no API)'}`; }
         if(target){ w=rebuildWell(target,[...partsOf(target),part],'prev'); replaceWell(target,w); r.status='merged';
           const mine=(w.notes||[]).filter(n=>n.includes(f.name));
-          r.problems.push({level:'info',cat:'Merge',title:`Merged into ${w.name} (${sourcesOf(w).length} files): same borehole, API ${WellerLAS.fmtApi(key)}`,detail:mine.join(' · ')||'',fix:'Wrong hole? Split it in Manage wells.'}); }
+          r.problems.push({level:'info',cat:'Merge',title:`Merged into ${w.name} (${sourcesOf(w).length} files): ${how}`,detail:mine.join(' · ')||'',fix:'Wrong hole? Split it in Manage wells.'}); }
         else{ w=part; w.sources=[f.name]; S.wells.push(w); fresh.add(w.id); r.status='loaded';
           const sib=key?.us&&S.wells.find(o=>o!==w&&apiOf(o)?.well===key.well);
           if(sib){ const kb=apiOf(sib).bore; if(sib.name===w.name&&key.bore!=='00'&&!/\bST\s*\d|SIDETRACK/i.test(w.name)) w.name+=' ST'+key.bore;
             r.problems.push({level:'info',cat:'Merge',title:`Kept apart from ${sib.name}: wellbore ${key.bore} vs ${kb}`,detail:`Same well (API ${key.well}), different borehole code, so a sidetrack or re-drill${key.explicitBore?'':'; a 10-digit API counts as the original hole (00)'}.`,fix:'Same hole after all? Select both in Manage wells and Merge.'}); }
-          else if(!key) r.problems.push({level:'info',cat:'Header',title:'No API or UWI in ~Well, so this file will not merge with other runs of the well automatically',fix:'Set the API in well settings, or merge by hand in Manage wells.'}); } }
+          else if(!key) r.problems.push({level:'info',cat:'Header',title:'No API or UWI in ~Well: files of this well are matched by name only',fix:'Set the API in well settings, or merge by hand in Manage wells.'}); } }
       touched.push(w.id); r.well=w.name; computeInterp(w);
       if(!Number.isFinite(w.location.lat)) r.problems.push({level:'info',cat:'Header',title:'No location in header, not on map'});
       if(w.elevation.kb===undefined) r.problems.push({level:'info',cat:'Header',title:'No KB elevation, TVDSS unavailable'});
       const conv=part.curves.filter(c=>c.note).map(c=>c.mnemonic+' '+c.note); if(conv.length) r.problems.push({level:'info',cat:'Parsing',title:conv.join(', ')});
-      if(part.notes?.length) r.problems.push({level:'warn',cat:'Header',title:part.notes.join(', ')});
+      const corr=(part.notes||[]).filter(n=>/ignored|corrected/.test(n)), info=(part.notes||[]).filter(n=>!corr.includes(n));
+      if(corr.length) r.problems.push({level:'warn',cat:'Header',title:corr.join(', ')}); if(info.length) r.problems.push({level:'info',cat:'Header',title:info.join(', ')});
     }catch(err){ r.status='failed'; r.problems.push({level:'error',cat:'Parsing',title:'Unexpected error while reading: '+err.message,fix:'Please report this file; it passed the checks but the reader failed.'}); } }
+  for(const id of new Set(touched)){ const w=wellById(id); if(!w) continue; const multi=curveChoices(w); if(!multi.length) continue;
+    const r=[...report].reverse().find(x=>x.well===w.name&&x.status!=='failed');
+    r?.problems.push({level:'warn',cat:'Merge',title:`${w.name}: ${multi.map(m=>`${m.list.length} ${m.label} curves`).join(', ')}. Showing ${multi.map(m=>m.current.mnemonic).join(', ')}`,
+      detail:multi.map(m=>`${m.label}: `+m.list.map(c=>curveWhere(w,c)).join('; ')).join(' · '),fix:'Pick another, or show all of them overlaid, in the well settings (⚙ next to the well).'}); }
   // New wells join the list west to east, after the wells already open.
   const added=S.wells.filter(w=>fresh.has(w.id));
   if(added.length){ const sorted=sortWestEast(added); S.wells=[...S.wells.filter(w=>!fresh.has(w.id)),...sorted]; }
@@ -698,7 +743,7 @@ addEventListener('drop',async e=>{ e.preventDefault(); dragDepth=0; document.bod
 
 /* ---------- Project save / load / autosave ---------- */
 function projectJSON(){ return { version:3, app:'weller-logs', savedAt:new Date().toISOString(), mode:S.mode, selected:S.selected, panel:S.panel, datum:S.datum, views:S.views, tracks:S.tracks, hiddenPoints:S.hiddenPoints, stats:S.stats, basemap:S.basemap, interp:S.interp, corr:S.corr, topColors:S.topColors,
-  wells:S.wells.map(w=>({id:w.id,name:w.name,api:w.api,field:w.field,company:w.company,county:w.county,state:w.state,preset:w.preset,demo:w.demo,fileName:w.fileName,files:partsOf(w).length>1?partsOf(w).map(p=>({fileName:p.fileName,demo:p.demo})):undefined,location:w.location,elevation:w.elevation,depthUnit:w.depthUnit,tops:w.tops,points:pointsJSON(w),curveList:w.curves.filter(c=>!c.sparse).map(c=>c.mnemonic)})) }; }
+  wells:S.wells.map(w=>({id:w.id,name:w.name,api:w.api,field:w.field,company:w.company,county:w.county,state:w.state,preset:w.preset,demo:w.demo,fileName:w.fileName,pick:w.pick,files:partsOf(w).length>1?partsOf(w).map(p=>({fileName:p.fileName,demo:p.demo})):undefined,location:w.location,elevation:w.elevation,depthUnit:w.depthUnit,tops:w.tops,points:pointsJSON(w),curveList:w.curves.filter(c=>!c.sparse).map(c=>c.mnemonic)})) }; }
 async function loadProject(p){ if(!p||p.app!=='weller-logs') throw new Error('not a Weller Logs project'); const missing=[];
   // A file may be a well on its own or one part of a merged well; find it wherever it is now.
   const findPart=fn=>{ for(const w of S.wells){ const ps=partsOf(w); if(ps.length===1&&w.fileName===fn) return w; const q=ps.find(q=>q.fileName===fn); if(q) return q; } return null; };
@@ -710,7 +755,7 @@ async function loadProject(p){ if(!p||p.app!=='weller-logs') throw new Error('no
     let live;
     if(ref.files){ const fs=ref.files.map(f=>f.fileName); live=byFiles(fs); if(!live){ const parts=fs.map(getPart); if(parts.some(x=>!x)){ missing.push(...fs.filter((f,i)=>!parts[i])); return null; } live=rebuildWell(null,parts); } }
     else live=byFiles([ref.fileName])||getPart(ref.fileName);
-    if(live){ if(ref.demo) live.demo=ref.demo; Object.assign(live,{tops:ref.tops,elevation:ref.elevation,location:ref.location,name:ref.name,api:ref.api,field:ref.field,id:ref.id}); for(const k of ['company','county','state']) if(ref[k]!==undefined) live[k]=ref[k]; restorePoints(live,ref.points); return live; } missing.push(ref.fileName||ref.name); return null; }).filter(Boolean);
+    if(live){ if(ref.demo) live.demo=ref.demo; Object.assign(live,{tops:ref.tops,elevation:ref.elevation,location:ref.location,name:ref.name,api:ref.api,field:ref.field,id:ref.id,pick:ref.pick,_grP:null}); for(const k of ['company','county','state']) if(ref[k]!==undefined) live[k]=ref[k]; restorePoints(live,ref.points); return live; } missing.push(ref.fileName||ref.name); return null; }).filter(Boolean);
   S.tracks=migrateTracks(p.tracks); S.views=p.views||newViews(); S.view=S.views[viewKey(S.mode)]||S.views.single; S.datum=p.datum||'MD'; S.topColors=p.topColors||S.topColors; S.hiddenPoints=p.hiddenPoints||[]; S.stats={...statsDefaults(),...(p.stats||{})}; S.interp={...interpDefaults(),...(p.interp||{})}; S.corr={...S.corr,...(p.corr||{})}; if(!p.tracks.some(t=>t.id==='t8')) S.tracks=[...p.tracks,...defaultTracks().filter(t=>['t8','t9','t10','t11','t12'].includes(t.id))]; setBasemap(p.basemap||'map'); if((p.version||1)<2) pointSeriesNames().forEach(placePointSeries); S.panel=(p.panel||[]).filter(id=>wellById(id));
   // Older projects kept section order separately: move those wells into that order within the list.
   if((p.version||1)<3){ const pos=S.wells.map((w,i)=>S.panel.includes(w.id)?i:-1).filter(i=>i>=0); S.panel.forEach((id,k)=>{ S.wells[pos[k]]=wellById(id); }); } S.selected=wellById(p.selected)?p.selected:(S.wells[0]?.id||null);

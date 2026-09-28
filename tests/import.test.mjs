@@ -80,3 +80,37 @@ test('merge converts metres to the first file\'s feet and keeps same-mnemonic di
   assert.equal(m.depthUnit, 'ft'); assert.ok(m.curves.some(c => c.mnemonic === 'GR:2'));
   assert.ok(m.notes.some(n => /converted m → ft/.test(n)));
 });
+
+test('coordinates in degrees-minutes-seconds with hemisphere letters', () => {
+  const { parseCoord } = globalThis.WellerLAS;
+  assert.ok(Math.abs(parseCoord('041° 02\' 31.040" N').v - 41.04196) < 1e-4);
+  assert.ok(Math.abs(parseCoord('104� 26\' 37.660" W').v + 104.44379) < 1e-4);
+  assert.equal(parseCoord('-104.5').v, -104.5);
+  const w = well({ rows: [[1000, 1], [1001, 2]], extra: 'LAT . 41 2 31.04 N :\nLONG. 104 26 37.66 W :\n' });
+  assert.ok(Math.abs(w.location.lon + 104.4438) < 1e-3); assert.ok(!w.notes.some(n => /corrected/.test(n)));
+});
+
+test('mud-log drill time (min/ft) becomes ROP in ft/hr', () => {
+  const w = well({ curves: ['DEPT .F', 'ROP .min_/_ft'], rows: [[1000, 2], [1001, 0.5]] });
+  assert.deepEqual(Array.from(w.curves[1].data), [30, 120]); assert.equal(w.curves[1].unit, 'ft/hr');
+});
+
+test('a TVD curve stands in for a survey', () => {
+  const rows = Array.from({ length: 50 }, (_, i) => [1000 + i * 10, Math.min(1000 + i * 10, 1200 + (i * 10 - 200) * 0.2), 50]);
+  const w = well({ curves: ['DEPT .F', 'TVD .F', 'GR .GAPI'], rows });
+  assert.ok(w.survey); assert.ok(w.survey.tvd.at(-1) < w.survey.md.at(-1));
+});
+
+test('overlapping curves from different tools stay separate; a CBL gamma ray is marked cased', () => {
+  const rows = Array.from({ length: 40 }, (_, i) => [1000 + i, 50 + i]);
+  const a = well({ rows }, 'mudlog.las');
+  const b = well({ curves: ['DEPT .F', 'GR .GAPI', 'CCL .'], rows: rows.map(r => [r[0], r[1] / 2, 0]) }, 'cbl.las');
+  assert.ok(b.curves.find(c => c.mnemonic === 'GR').cased);
+  const m = mergeWells([a, b]);
+  assert.deepEqual(m.curves.filter(c => /^GR/.test(c.mnemonic)).map(c => [c.mnemonic, !!c.cased]), [['GR', false], ['GR:2', true]]);
+});
+
+test('well names compare without case or punctuation', () => {
+  const { nameKey } = globalThis.WellerLAS;
+  assert.equal(nameKey('CARPENTER 126-0408H'), nameKey('Carpenter 126 0408H'));
+});

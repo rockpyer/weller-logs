@@ -245,6 +245,7 @@ pre.snip{margin:4px 0;padding:6px 8px;background:var(--ground);border:1px solid 
 pre.snip .ln{display:inline-block;min-width:3.5em;color:var(--muted);user-select:none}
 pre.snip mark{background:#EDC84A;color:#000}
 #mwDlg td.num button{margin-left:4px}
+.wdchoices{display:flex;flex-direction:column;gap:4px}.wdchoices select{max-width:100%}#wdHidden button{margin:2px 2px 0 0}
 #mwDlg td.num{text-align:right;font-family:"IBM Plex Mono",monospace;color:var(--muted)}
 .dlg .sp{flex:1}
 #wdCurves{font-size:12px;line-height:1.6}#wdCurves small{color:var(--muted)}
@@ -433,6 +434,8 @@ pre.snip mark{background:#EDC84A;color:#000}
     <div class="row"><label>Latitude <input type="number" id="wdLat" step="0.000001" style="width:9em"></label><label>Longitude <input type="number" id="wdLon" step="0.000001" style="width:9em"></label><label>CRS <input type="text" id="wdCrs" placeholder="NAD27 / NAD83 / State Plane Zone 5"></label></div>
     <p class="hint" id="wdNotes"></p>
     <div id="wdCurves"></div>
+    <div id="wdChoices" class="wdchoices"></div>
+    <div class="hint" id="wdHidden"></div>
     <div class="hint" id="wdSources"></div>
     <div class="foot"><button id="wdRemove">Remove well</button><button id="wdSplit" title="One well per source file" hidden>Split into one well per file</button><span style="flex:1"></span><button id="wdCancel">Cancel</button><button class="primary" id="wdSave">Apply</button></div>
   </div>

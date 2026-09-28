@@ -40,7 +40,15 @@ Methods, equations, defaults and limits: [docs/PETROPHYSICS.md](docs/PETROPHYSIC
   than used. Covered by unit tests on the bundled real files.
 - **Several files, one well.** LAS files whose API names the same borehole (first 12 digits; a 10-digit API is the
   original hole, `00`) merge into one well on a common depth grid. The event code (digits 13–14) does not split a
-  well; a sidetrack code (`-01`, `-02`) does. Where two runs overlap, the first file opened wins.
+  well; a sidetrack code (`-01`, `-02`) does. A file with no API joins an open well of the same name (case and
+  punctuation ignored) unless the APIs disagree. Runs of one curve that follow each other are spliced; curves that
+  overlap (mud-log GR, MWD GR, a cement-bond GR) stay separate.
+- **Several curves of one kind.** Where a well has more than one GR, ROP or other curve family, open-hole beats cased-hole
+  and the curve covering the most depth is used. Pick another, or overlay all of them, in the well's settings (⚙),
+  which also list curves no track shows and add a track for one with a click. Gamma ray from a cement-bond run is
+  marked cased hole. The lithology track is labeled *computed* and names its GR, since it comes from cutoffs.
+- **Header clean-up.** Latitude and longitude in degrees-minutes-seconds, drill time (min/ft) converted to ROP in
+  ft/hr, and a TVD curve used for TVD when the file has no survey.
 - **Import report.** A file that will not load says why: wrong file type (PDF, DLIS, TIFF, Excel, CSV, LAS 3.0),
   parse errors with the offending line (column count, text or comma decimals in the data), or no usable data
   (empty `~A`, all nulls, time-indexed), each with a fix and a minimal LAS 2.0 template.
