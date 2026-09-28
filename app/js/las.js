@@ -365,7 +365,9 @@
     const depthUnit = /^(M|METER|METERS|METRES?)$/.test(du) ? 'm' : 'ft';
     for (const c of p.curves) {
       const m = c.mnemonic.toUpperCase().replace(/:\d+$/, ''), u = (c.unit || '').toUpperCase();
-      if (/^(NPHI|TNPH|NPOR|PHIN|CNC|HNPO|NPHS|NPHL|TNPS)/.test(m)) { const med = median(c.data); if (/PU|%/.test(u) || med > 1.5) { c.data = c.data.map(v => v / 100); c.unit = 'V/V'; c.note = 'converted from pu'; } }
+      // Neutron and logged density porosity in porosity units become v/v. NPRL/NPRS/NPRD and DPRL/DPRS/DPRD are the
+      // limestone, sandstone and dolomite versions many LWD and wireline vendors deliver side by side.
+      if (/^(NPHI|TNPH|NPOR|PHIN|CNC|HNPO|NPHS|NPHL|TNPS|NPR[LSD]|DPHI|DPOR|DPR[LSD]|DPHZ)/.test(m)) { const med = median(c.data); if (/PU|%/.test(u) || med > 1.5) { c.data = c.data.map(v => v / 100); c.unit = 'V/V'; c.note = 'converted from pu'; } }
       if (/^(DT|DTC|DTCO|AC)$/.test(m) && /US\/M|USEC\/M/.test(u)) { c.data = c.data.map(v => v / 3.28084); c.unit = 'US/F'; c.note = 'converted from us/m'; }
       // Mud loggers often record drill time (minutes per foot) under ROP; tracks expect ft/hr.
       if (/^ROP/.test(m) && /^MIN/.test(u.replace(/[_\s]/g, ''))) { c.data = c.data.map(v => v > 0 ? 60 / v : NaN); c.unit = depthUnit === 'm' ? 'm/hr' : 'ft/hr'; c.note = 'converted from drill time (min/' + depthUnit + ')'; }
@@ -395,7 +397,8 @@
     const crsM = all.match(/NAD\s*(27|83)/i); const zoneM = all.match(/ZONE\s*(\d)/i);
     const crs = g('GDAT') || (crsM ? `NAD${crsM[1]}${zoneM ? ' · State Plane Zone ' + zoneM[1] : ''}` : 'unknown');
     const matr = String(g('MATR') || g('NMAT') || g('DPOR') || '').toUpperCase();
-    const neutronMatrix = /SAND|SS|QUARTZ/.test(matr) ? 'sandstone' : /DOL/.test(matr) ? 'dolomite' : /LIME|LS|CALC/.test(matr) ? 'limestone' : null;
+    const mn = new Set(p.curves.map(c => c.mnemonic.toUpperCase())), nprM = ['NPRL', 'NPRS', 'NPRD'].find(m => mn.has(m));   // same order as the NPHI aliases
+    const neutronMatrix = !matr && nprM ? { L: 'limestone', S: 'sandstone', D: 'dolomite' }[nprM[3]] : /SAND|SS|QUARTZ/.test(matr) ? 'sandstone' : /DOL/.test(matr) ? 'dolomite' : /LIME|LS|CALC/.test(matr) ? 'limestone' : null;
     let survey = parseSurvey(p.header.other);
     // No survey but a TVD curve (common in MWD deliverables): use it for TVD. Inclination follows from dTVD/dMD.
     const tvdC = !survey && p.curves.find(c => /^(TVD|TVDM|TVD_MD)$/i.test(c.mnemonic));

@@ -47,6 +47,13 @@ Methods, equations, defaults and limits: [docs/PETROPHYSICS.md](docs/PETROPHYSIC
   and the curve covering the most depth is used. Pick another, or overlay all of them, in the well's settings (⚙),
   which also list curves no track shows and add a track for one with a click. Gamma ray from a cement-bond run is
   marked cased hole. The lithology track is labeled *computed* and names its GR, since it comes from cutoffs.
+- **Vendor mnemonics.** Built-in tracks recognize common LWD, mud-log and cased-hole names: array resistivity by depth of
+  investigation (R20/R30/R40/R60/R85 and RT10–RT90 with their processing variants), spectral gamma (K, Th, U, CGR),
+  neutron and density porosity on limestone, sandstone or dolomite (NPRL, DPRL…), density caliper and correction,
+  bit size, C3–C5 gas, oil shows, mud-log lithology percentages, and shock and stick-slip. Cased hole gets Cement bond
+  (3 ft amplitude, transit time, bond index, CCL), Ultrasonic cement (acoustic impedance), Casing (thickness, ID,
+  ovality) and Temp · tension tracks. These appear only in wells that have the curves; where the range depends on the
+  job (casing size, tension, shock) the scale comes from the well's data.
 - **Header clean-up.** Latitude and longitude in degrees-minutes-seconds, drill time (min/ft) converted to ROP in
   ft/hr, and a TVD curve used for TVD when the file has no survey.
 - **Load summary.** After opening files, one card per well says what came in and what to do: pick between duplicate
