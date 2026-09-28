@@ -229,6 +229,23 @@ ul.list .wn{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:
 .gutter{width:6px;flex:none;cursor:col-resize;background:transparent;margin-left:-3px;margin-right:-3px;position:relative;z-index:5}
 .gutter:hover,.gutter.on{background:var(--focus);opacity:.4}
 #mwDlg td input{font-size:12.5px;padding:2px 5px}#mwDlg td input[type=text]{width:100%;min-width:6.5em}#mwDlg td input.mw-name{min-width:12em}#mwDlg td input.mw-state{min-width:4em}#mwDlg td input[type=number]{width:5em}
+#impBody{display:flex;flex-direction:column;gap:10px}
+.imp{border:1px solid var(--line);border-radius:5px;padding:8px 10px;display:flex;flex-direction:column;gap:6px}
+.imp.failed{border-color:#c1121f}
+.imph{display:flex;gap:8px;align-items:baseline;flex-wrap:wrap;word-break:break-all}
+.chip{font:600 11px "IBM Plex Sans Condensed",sans-serif;text-transform:uppercase;letter-spacing:.06em;padding:1px 6px;border-radius:3px;background:var(--line);color:var(--ink);white-space:nowrap}
+.chip.failed{background:#c1121f;color:#fff}.chip.merged,.chip.reloaded{background:#0353A4;color:#fff}.chip.loaded{background:#2E7D32;color:#fff}
+.prob{border-left:3px solid var(--line);padding:2px 0 2px 8px;font-size:13px}
+.prob.error{border-color:#c1121f}.prob.warn{border-color:#d69e00}
+.prob .lv{font:600 11px "IBM Plex Sans Condensed",sans-serif;text-transform:uppercase;letter-spacing:.06em;margin-right:6px}
+.prob.error .lv{color:#c1121f}.prob.warn .lv{color:#9a7300}.prob.info .lv{color:var(--muted)}
+.prob .cat{font-size:11px;color:var(--muted);border:1px solid var(--line);border-radius:3px;padding:0 4px}
+.prob .fix{margin-top:3px}
+pre.snip{margin:4px 0;padding:6px 8px;background:var(--ground);border:1px solid var(--line);border-radius:4px;font:12px/1.45 "IBM Plex Mono",monospace;overflow-x:auto;white-space:pre}
+pre.snip .ln{display:inline-block;min-width:3.5em;color:var(--muted);user-select:none}
+pre.snip mark{background:#EDC84A;color:#000}
+#mwDlg td.num button{margin-left:4px}
+.wdchoices{display:flex;flex-direction:column;gap:4px}.wdchoices select{max-width:100%}#wdHidden button{margin:2px 2px 0 0}
 #mwDlg td.num{text-align:right;font-family:"IBM Plex Mono",monospace;color:var(--muted)}
 .dlg .sp{flex:1}
 #wdCurves{font-size:12px;line-height:1.6}#wdCurves small{color:var(--muted)}
@@ -417,7 +434,10 @@ ul.list .wn{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:
     <div class="row"><label>Latitude <input type="number" id="wdLat" step="0.000001" style="width:9em"></label><label>Longitude <input type="number" id="wdLon" step="0.000001" style="width:9em"></label><label>CRS <input type="text" id="wdCrs" placeholder="NAD27 / NAD83 / State Plane Zone 5"></label></div>
     <p class="hint" id="wdNotes"></p>
     <div id="wdCurves"></div>
-    <div class="foot"><button id="wdRemove">Remove well</button><span style="flex:1"></span><button id="wdCancel">Cancel</button><button class="primary" id="wdSave">Apply</button></div>
+    <div id="wdChoices" class="wdchoices"></div>
+    <div class="hint" id="wdHidden"></div>
+    <div class="hint" id="wdSources"></div>
+    <div class="foot"><button id="wdRemove">Remove well</button><button id="wdSplit" title="One well per source file" hidden>Split into one well per file</button><span style="flex:1"></span><button id="wdCancel">Cancel</button><button class="primary" id="wdSave">Apply</button></div>
   </div>
 </div>
 
@@ -425,13 +445,24 @@ ul.list .wn{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:
   <div class="dlg" role="dialog" aria-labelledby="mwTitle">
     <h3 id="mwTitle">Manage wells</h3>
     <div class="row"><button class="small" id="mwAll">Select all</button><span class="hint" id="mwCount"></span><span class="sp"></span><button class="small" id="mwSort" title="Order the list, and the section, west to east">Order west → east</button></div>
-    <div class="row"><label>Set <select id="mwField"><option value="company">Operator</option><option value="field">Field</option><option value="county">County</option><option value="state">State</option><option value="kb">KB</option><option value="gl">GL</option></select></label><label>to <input type="text" id="mwVal"></label><button class="small" id="mwSet">Set for selected</button><span class="sp"></span><button class="small" id="mwRemove">Remove selected</button><button class="small" id="mwClear">Clear all wells</button></div>
+    <div class="row"><label>Set <select id="mwField"><option value="company">Operator</option><option value="field">Field</option><option value="county">County</option><option value="state">State</option><option value="kb">KB</option><option value="gl">GL</option></select></label><label>to <input type="text" id="mwVal"></label><button class="small" id="mwSet">Set for selected</button><span class="sp"></span><button class="small" id="mwMerge" title="Splice the selected wells' curves into the first selected well">Merge selected</button><button class="small" id="mwRemove">Remove selected</button><button class="small" id="mwClear">Clear all wells</button></div>
     <div class="tblwrap"><table>
-      <thead><tr><th></th><th>Name</th><th>API</th><th>Operator</th><th>Field</th><th>County</th><th>State</th><th>KB</th><th>GL</th><th title="Logged curves; the list is in each well's settings">Curves</th></tr></thead>
+      <thead><tr><th></th><th>Name</th><th>API</th><th>Operator</th><th>Field</th><th>County</th><th>State</th><th>KB</th><th>GL</th><th title="Logged curves; the list is in each well's settings">Curves</th><th title="LAS files in this well">Files</th></tr></thead>
       <tbody id="mwBody"></tbody>
     </table></div>
+    <label class="hint"><input type="checkbox" id="mwAuto"> Merge LAS files into one well when their API matches the same borehole (first 12 digits; a 10-digit API is the original hole)</label>
     <p class="hint">Nothing changes until Apply. Undo (Cmd/Ctrl+Z) reverses it afterwards.</p>
     <div class="foot"><button id="mwCancel">Cancel</button><button class="primary" id="mwSave">Apply</button></div>
+  </div>
+</div>
+
+<div id="impDlg" class="modal" hidden>
+  <div class="dlg" role="dialog" aria-labelledby="impTitle">
+    <h3 id="impTitle">Import report</h3>
+    <div id="impBody"></div>
+    <details id="impTpl" hidden><summary>A minimal LAS 2.0 file that loads</summary><pre class="snip" id="impTplText"></pre>
+      <p class="hint">Sections start with ~. Header lines read <code>MNEM.UNIT  VALUE : DESCRIPTION</code>. Depth is the first curve, one data row per depth, values separated by spaces. Spec: <a href="https://www.cwls.org/products/#products-las" target="_blank" rel="noopener">CWLS LAS 2.0</a>. Converter: <a href="https://lasio.readthedocs.io/" target="_blank" rel="noopener">lasio</a>.</p></details>
+    <div class="foot"><span style="flex:1"></span><button class="primary" id="impClose">Close</button></div>
   </div>
 </div>
 

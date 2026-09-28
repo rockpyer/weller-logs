@@ -38,6 +38,20 @@ Methods, equations, defaults and limits: [docs/PETROPHYSICS.md](docs/PETROPHYSIC
 - **Robust LAS reading.** LAS 1.2 and 2.0, wrapped data, several null values, headers with label and value swapped,
   elevations in `~Parameter`, bottom-up logs, surveys in `~Other`, and implausible KB elevations flagged rather
   than used. Covered by unit tests on the bundled real files.
+- **Several files, one well.** LAS files whose API names the same borehole (first 12 digits; a 10-digit API is the
+  original hole, `00`) merge into one well on a common depth grid. The event code (digits 13–14) does not split a
+  well; a sidetrack code (`-01`, `-02`) does. A file with no API joins an open well of the same name (case and
+  punctuation ignored) unless the APIs disagree. Runs of one curve that follow each other are spliced; curves that
+  overlap (mud-log GR, MWD GR, a cement-bond GR) stay separate.
+- **Several curves of one kind.** Where a well has more than one GR, ROP or other curve family, open-hole beats cased-hole
+  and the curve covering the most depth is used. Pick another, or overlay all of them, in the well's settings (⚙),
+  which also list curves no track shows and add a track for one with a click. Gamma ray from a cement-bond run is
+  marked cased hole. The lithology track is labeled *computed* and names its GR, since it comes from cutoffs.
+- **Header clean-up.** Latitude and longitude in degrees-minutes-seconds, drill time (min/ft) converted to ROP in
+  ft/hr, and a TVD curve used for TVD when the file has no survey.
+- **Import report.** A file that will not load says why: wrong file type (PDF, DLIS, TIFF, Excel, CSV, LAS 3.0),
+  parse errors with the offending line (column count, text or comma decimals in the data), or no usable data
+  (empty `~A`, all nulls, time-indexed), each with a fix and a minimal LAS 2.0 template.
 
 ## Use it
 
@@ -49,8 +63,9 @@ Methods, equations, defaults and limits: [docs/PETROPHYSICS.md](docs/PETROPHYSIC
 - **ft / m** in the top bar switches display units; data stay in each file's own unit. ◐ switches to a dark theme.
 - **Scale** is a print ratio: 1:240 is 5 in per 100 ft, 1:600 is 2 in per 100 ft (nominal on screen at 96 px per inch).
   **Fit** fits the logs to the window. Logs and Correlation keep their own zoom and scroll.
-- **Manage wells** renames wells, fills operator, field, county, state and elevations for several at once, and removes
-  or clears wells. Hover a well name for its header: operator, location, API, log date, elevations, TD.
+- **Manage wells** renames wells, fills operator, field, county, state and elevations for several at once, merges
+  selected wells, splits a merged well back into one well per file, and removes or clears wells. Automatic merging
+  by API can be turned off there. Re-opening a file with the same name replaces the earlier copy. Hover a well name for its header: operator, location, API, log date, elevations, TD.
 - The lithology track's gear edits its Vshale and PE cutoffs and colors. Hover the lithology or flag tracks for the
   class at that depth, the values behind it and MD / ssTVD; hover their header swatches for the full legend.
 - **Load example data** in the Wells panel switches between the Niobrara set and a synthetic LA Basin set.
