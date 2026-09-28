@@ -4,6 +4,7 @@
    - Simandoux, P. (1963). Dielectric measurements on porous media. Revue de l'IFP 18 (shaly-sand saturation).
    - Larionov, V.V. (1969). Borehole radiometry (Vsh from GR index, Tertiary and older rocks).
    - Arps, J.J. (1953). The effect of temperature on the density and electrical resistivity of sodium chloride solutions.
+   - Raymer, L.L., Hunt, E.R., Gardner, J.S. (1980). An improved sonic transit time-to-porosity transform. SPWLA 21st Symposium.
    - Passey, Q.R. et al. (1990). A practical model for organic richness from porosity and resistivity logs. AAPG Bull. 74(12).
    Units: depth ft, temperature degF, resistivity ohm.m, density g/cc, porosity and saturation v/v. */
 (function (root) {
@@ -22,7 +23,17 @@
     }
   }
 
+  // Vshale from SP between the clean-sand line and the shale baseline. Works for either deflection direction.
+  function vshSP(sp, spSand, spShale) { return fin(sp) && fin(spSand) && fin(spShale) && spShale !== spSand ? clamp((sp - spSand) / (spShale - spSand), 0, 1) : NaN; }
+
   const MATRIX = { sandstone: 2.65, limestone: 2.71, dolomite: 2.87 };
+  const DT_MATRIX = { sandstone: 55.5, limestone: 47.6, dolomite: 43.5 };   // us/ft
+
+  // Sonic porosity, Raymer-Hunt-Gardner field form: phi = 0.625 (DT - DTma) / DT. Needs no compaction correction.
+  function phiSonic(dt, dtMa = 55.5) { return fin(dt) && dt > 0 ? clamp(0.625 * (dt - dtMa) / dt, 0, 1) : NaN; }
+
+  // Sw from the resistivity index when no porosity log exists: Sw = (R0 / Rt)^(1/n), R0 the water-bearing resistivity.
+  function swFromRI(rt, r0, n = 2) { return fin(rt) && fin(r0) && rt > 0 && r0 > 0 ? clamp(Math.pow(r0 / rt, 1 / n), 0, 1) : NaN; }
 
   function phiDensity(rhob, rhoMa = 2.71, rhoFl = 1.0) { return fin(rhob) ? (rhoMa - rhob) / (rhoMa - rhoFl) : NaN; }
 
@@ -61,6 +72,7 @@
   }
   function tocPassey(dlogr, lom) { return fin(dlogr) ? Math.max(0, dlogr * Math.pow(10, 2.297 - 0.1688 * lom)) : NaN; }
 
+  function washout(cal, bitSize, calTol = 1.0) { return fin(cal) && fin(bitSize) && cal - bitSize > calTol; }
   function badHole(cal, bitSize, drho, calTol = 1.0, drhoTol = 0.15) {
     return (fin(cal) && fin(bitSize) && cal - bitSize > calTol) || (fin(drho) && Math.abs(drho) > drhoTol);
   }
@@ -73,5 +85,5 @@
   // Sw lines on a Pickett plot: log10(Rt) = log10(a Rw) - m log10(phi) - n log10(Sw)  ->  Rt at a given phi.
   function pickettRt(phi, sw, rw, a = 1, m = 2, n = 2) { return a * rw / (Math.pow(phi, m) * Math.pow(sw, n)); }
 
-  root.WellerPetro = { igr, vsh, MATRIX, phiDensity, phiND, tempAtDepth, rwAtTemp, swArchie, swSimandoux, deltaLogR, tocPassey, badHole, percentile, pickettRt, clamp };
+  root.WellerPetro = { igr, vsh, vshSP, DT_MATRIX, phiSonic, swFromRI, washout, MATRIX, phiDensity, phiND, tempAtDepth, rwAtTemp, swArchie, swSimandoux, deltaLogR, tocPassey, badHole, percentile, pickettRt, clamp };
 })(typeof globalThis !== 'undefined' ? globalThis : this);

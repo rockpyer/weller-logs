@@ -32,8 +32,8 @@ function defaultTracks(){ return [
     {label:'NPHI',aliases:A.NPHI,min:0.45,max:-0.15,unit:'v/v',color:'var(--nphi)',dash:'5 3'},
     {label:'PEF',aliases:A.PE,min:0,max:10,unit:'b/e',color:'var(--pef)',dash:'1 2'},
     {label:'DT',aliases:A.DT,min:140,max:40,unit:'µs/ft',color:'var(--dt)'}]},
-  {id:'t6',name:'Lith',width:56,type:'lith',panel:true,curves:[{label:'GR',aliases:A.GR,min:0,max:200}]},
-  {id:'t8',name:'Vsh',width:84,curves:[{label:'VSH',aliases:['VSH_GR','VSH','VCL','VSHALE','VCLAY'],min:0,max:1,unit:'v/v',color:'var(--vsh)',fill:'left',fillColor:'#465445',fillOpacity:.45}]},
+  {id:'t6',name:'Lith',width:56,type:'lith',panel:true,curves:[{label:'GR',aliases:[...A.GR,'VSH_SP'],min:0,max:200}]},
+  {id:'t8',name:'Vsh',width:84,curves:[{label:'VSH',aliases:['VSH_GR','VSH_SP','VSH','VCL','VSHALE','VCLAY'],min:0,max:1,unit:'v/v',color:'var(--vsh)',fill:'left',fillColor:'#465445',fillOpacity:.45}]},
   {id:'t9',name:'Porosity · BVW',width:120,curves:[
     {label:'PHI',aliases:['PHI_SW','PHIE','PORE','PHIEF'],min:0.5,max:0,unit:'v/v',color:'var(--phie)',fill:'right',fillColor:'#2A9D8F',fillOpacity:.5},
     {label:'BVW',aliases:['BVW'],min:0.5,max:0,unit:'v/v',color:'var(--sw)',fill:'right',fillColor:'#0353A4',fillOpacity:.55},
@@ -41,7 +41,7 @@ function defaultTracks(){ return [
   {id:'t10',name:'Sw',width:84,curves:[{label:'SW',aliases:['SW','SWT','SWE','SUWI'],min:1,max:0,unit:'v/v',color:'var(--sw)'}]},
   {id:'t11',name:'TOC',width:84,curves:[{label:'TOC',aliases:['TOC_DLR','TOC'],min:0,max:10,unit:'wt%',color:'var(--toc)',fill:'left',fillColor:'#7A5C3E',fillOpacity:.45}]},
   {id:'t12',name:'Flags',width:40,type:'flags',curves:[
-    {label:'Net reservoir',aliases:['NET_RES'],color:'#EDC84A'},{label:'Net pay',aliases:['NET_PAY'],color:'#C1121F'},{label:'Bad hole',aliases:['FLAG_BH'],color:'#9AA5AB'}]},
+    {label:'Net reservoir',aliases:['NET_RES'],color:'#EDC84A'},{label:'Net pay',aliases:['NET_PAY'],color:'#2E7D32'},{label:'Washout',aliases:['FLAG_WO'],color:'#8C7B62'},{label:'Bad hole',aliases:['FLAG_BH'],color:'#9AA5AB'}]},
   {id:'t4',name:'Drilling',width:130,curves:[
     {label:'ROP',aliases:A.ROP,min:0,max:300,unit:'ft/hr',color:'var(--rop)'},
     {label:'WOB',aliases:A.WOB,min:0,max:50,unit:'klb',color:'var(--wob)',dash:'3 3'}]},
@@ -51,7 +51,11 @@ function defaultTracks(){ return [
     {label:'C2',aliases:A.C2,min:1,max:100000,log:true,unit:'ppm',color:'var(--c2)',dash:'4 2'}]},
   {id:'t7',name:'Cuttings %',width:110,type:'lithpct',curves:LITH.map(l=>({...l,min:0,max:100,unit:'%'}))},
 ];}
-function loadTrackDefaults(){ try{ const d=JSON.parse(localStorage.getItem('weller.trackDefaults2')||'null'); if(Array.isArray(d)&&d.length) return d; }catch(e){} return defaultTracks(); }
+function loadTrackDefaults(){ try{ const d=JSON.parse(localStorage.getItem('weller.trackDefaults2')||'null'); if(Array.isArray(d)&&d.length) return migrateTracks(d); }catch(e){} return defaultTracks(); }
+// Older track sets: net pay was red (reads as gas), there was no washout flag, and Vsh had no SP source.
+function migrateTracks(tr){ for(const t of tr){ for(const c of t.curves||[]){ if(c.aliases?.[0]==='NET_PAY'&&/^#c1121f$/i.test(c.color)) c.color='#2E7D32'; if(c.aliases?.[0]==='VSH_GR'&&!c.aliases.includes('VSH_SP')) c.aliases.splice(1,0,'VSH_SP'); }
+    if(t.type==='lith') for(const c of t.curves) if(!c.aliases.includes('VSH_SP')) c.aliases.push('VSH_SP');
+    if(t.type==='flags'&&!t.curves.some(c=>c.aliases?.includes('FLAG_WO'))){ const i=t.curves.findIndex(c=>c.aliases?.[0]==='FLAG_BH'); t.curves.splice(i<0?t.curves.length:i,0,{label:'Washout',aliases:['FLAG_WO'],color:'#8C7B62'}); } } return tr; }
 const norm=s=>s.toUpperCase().replace(/[:_-]\d+$/,'');
 function resolveCurve(well,cfg){ for(const a of cfg.aliases){ const c=well.curves.find(c=>norm(c.mnemonic)===a.toUpperCase()); if(c) return c; } return null; }
 
@@ -213,7 +217,8 @@ function logTrack(w,t,F,y,H,ticks){
   const gr=resolveCurve(w,{aliases:A.GR}), pe=resolveCurve(w,{aliases:A.PE}); let lithCls=null;
   if(t.type==='lithpct'){ const have=resolved.filter(r=>r.curve&&!r.curve.sparse); head.innerHTML+=`<div class="scale" style="color:var(--muted)"><span>0</span><span class="c">${have.length?have.length+' components':'no cuttings curves'}</span><span class="r">100%</span></div><div class="legend">${have.map(r=>`<i style="background:${r.cfg.color}" title="${r.cfg.label} (${r.curve.mnemonic})"></i>`).join('')}</div>`; }
   const LP=lithParams(t), hasPE=!!(pe&&!pe.sparse);
-  if(t.type==='lith') head.innerHTML+=`<div class="scale" style="color:var(--muted)"><span></span><span class="c">${hasPE?'GR + PE':'GR'} quick look</span><span></span></div><div class="legend">${Object.keys(lithRules(LP,hasPE)).map(k=>`<i style="background:${LP.colors[k]}"></i>`).join('')}</div>`;
+  const vs=resolveCurve(w,{aliases:['VSH_GR','VSH_SP']}), vSrc=gr&&!gr.sparse?'GR':vs?'SP':null;
+  if(t.type==='lith') head.innerHTML+=`<div class="scale" style="color:var(--muted)"><span></span><span class="c">${vSrc?(vSrc+(hasPE?' + PE':''))+' quick look':'needs GR or SP'}</span><span></span></div><div class="legend">${Object.keys(lithRules(LP,hasPE)).map(k=>`<i style="background:${LP.colors[k]}"></i>`).join('')}</div>`;
   else if(t.type==='flags') head.innerHTML+=`<div class="legend">${resolved.filter(r=>r.curve).map(r=>`<i style="background:${r.cfg.color}"></i>`).join('')}</div>`;
   else for(const {cfg,curve} of resolved){ const s=document.createElement('div'); s.className='scale'; s.style.color=cfg.color; s.style.opacity=curve?1:.35; s.title=curve?.description||'';
     s.innerHTML=`<span>${cfg.min}</span><span class="c">${curve?curve.mnemonic:cfg.label+' (none)'}${cfg.unit?' '+cfg.unit:''}${cfg.tag?' · '+cfg.tag:''}</span><span class="r">${cfg.max}</span><span class="bar${curve?.sparse?' pts':cfg.dash?' dash':''}"></span>`; head.appendChild(s); }
@@ -233,14 +238,14 @@ function logTrack(w,t,F,y,H,ticks){
   if(t.type==='lithpct'){ const have=resolved.filter(r=>r.curve&&!r.curve.sparse); if(have.length){ const g=svg.append('g'); const sx=width/100;
       for(let k=0;k<idx.length;k++){ const i=idx[k], j=idx[k+1]??Math.min(i1,i+stride); let x=0;
         for(const r of have){ const v=r.curve.data[i]; if(!Number.isFinite(v)||v<=0) continue; band(g,i,j,x,v*sx,r.cfg.color); x+=v*sx; } } } }
-  else if(t.type==='lith'){ if(gr&&!gr.sparse){ const g=svg.append('g'); const bl=grBaselines(w); const vs=resolveCurve(w,{aliases:['VSH_GR']}); let run=null;
+  else if(t.type==='lith'){ if(vSrc){ const g=svg.append('g'); const bl=grBaselines(w); let run=null;
       const vshAt=i=>vs?vs.data[i]:WellerPetro.igr(gr.data[i],bl.clean??20,bl.shale??130), peAt=i=>hasPE?pe.data[i]:NaN;
       const cls=i=>quickLith(vshAt(i),peAt(i),LP); lithCls=i=>({k:cls(i),vsh:vshAt(i),pe:peAt(i)});
       const flush=(k,a,b)=>{ if(k) band(g,a,b,0,width,LP.colors[k]); };
       for(const i of idx){ const k=cls(i); if(!run||run.k!==k){ if(run) flush(run.k,run.a,i); run={k,a:i}; } }
       if(run) flush(run.k,run.a,i1); } }
   else if(t.type==='flags'){ const have=resolved.filter(r=>r.curve&&!r.curve.sparse); const wd=width/Math.max(1,have.length);
-    have.forEach((r,c)=>{ const g=svg.append('g'); let a=null; for(const i of idx){ const on=r.curve.data[i]>0.5; if(on&&a===null) a=i; if(!on&&a!==null){ band(g,a,i,c*wd,wd,r.cfg.color); a=null; } } if(a!==null) band(g,a,i1,c*wd,wd,r.cfg.color); }); }
+    have.forEach((r,c)=>{ const g=svg.append('g'); let a=null; for(const i of idx){ const on=r.curve.data[i]>=(r.cfg.flagAt??0.5); if(on&&a===null) a=i; if(!on&&a!==null){ band(g,a,i,c*wd,wd,r.cfg.color); a=null; } } if(a!==null) band(g,a,i1,c*wd,wd,r.cfg.color); }); }
   else {
     if(t.crossover){ const ra=resolved.find(r=>r.cfg.label===t.crossover[0]), rb=resolved.find(r=>r.cfg.label===t.crossover[1]);
       if(ra?.curve&&rb?.curve&&!ra.curve.sparse&&!rb.curve.sparse){ const sa=scaleFor(ra.cfg,width), sb=scaleFor(rb.cfg,width);
@@ -266,11 +271,11 @@ function logTrack(w,t,F,y,H,ticks){
     const i=Math.min(dep.length-1,Math.max(0,d3.bisectCenter(dep,md)));
     if(lithCls){ const L=lithCls(i); if(!L.k) return hideTip(); const rule=lithRules(LP,hasPE)[L.k];
       showTip(e,`<div class="lr on"><i style="background:${LP.colors[L.k]}"></i>${esc(L.k)}</div><div class="tipv">Vsh <b>${L.vsh.toFixed(2)}</b>${Number.isFinite(L.pe)?` · PE <b>${L.pe.toFixed(2)}</b> b/e`:''}</div><div class="tipr">Rule: ${esc(rule)}</div><div class="tipd">${depthText(w,md)}</div>`); }
-    else if(t.type==='flags'){ const on=flagsOn.filter(f=>f.curve.data[i]>0.5);
+    else if(t.type==='flags'){ const on=flagsOn.filter(f=>f.curve.data[i]>=(f.cfg.flagAt??0.5));
       showTip(e,(on.length?on.map(f=>`<div class="lr on"><i style="background:${f.cfg.color}"></i>${esc(f.cfg.label)}</div>`).join(''):'<div class="tipv">No flag at this depth</div>')+`<div class="tipd">${depthText(w,md)}</div>`); } });
   node.addEventListener('mouseleave',()=>{ $('cursor').style.display='none'; hideTip(); });
   const leg=head.querySelector('.legend');
-  if(leg&&t.type==='lith'){ leg.addEventListener('mousemove',e=>showTip(e,legendTip(`Quick-look lithology from ${hasPE?'GR and PE':'GR only'}`,Object.entries(lithRules(LP,hasPE)).map(([n,r])=>[n,LP.colors[n],r])))); leg.addEventListener('mouseleave',hideTip); }
+  if(leg&&t.type==='lith'){ leg.addEventListener('mousemove',e=>showTip(e,legendTip(`Quick-look lithology from ${vSrc||'GR'}${hasPE?' and PE':' only'}`,Object.entries(lithRules(LP,hasPE)).map(([n,r])=>[n,LP.colors[n],r])))); leg.addEventListener('mouseleave',hideTip); }
   if(leg&&t.type==='flags'){ leg.addEventListener('mousemove',e=>showTip(e,legendTip('Flags',flagsOn.map(f=>[f.cfg.label,f.cfg.color,(f.curve.description||'').replace(/^[^:]*:\s*/,'')])))); leg.addEventListener('mouseleave',hideTip); }
   node.addEventListener('click',e=>{ if(!S.picking) return; const r=node.getBoundingClientRect(); const md=Math.round(mdAtZ(w,F,y.invert(e.clientY-r.top))*2)/2; placeTop(w,md); });
   attachTopDrag(node,w,F,y);
@@ -394,6 +399,11 @@ function drawTdLith(){ const P=lithParams(editing), n=(k,st)=>`<input type="numb
 function readTdLith(){ const P={colors:{}}; document.querySelectorAll('#tdLithBody [data-lp]').forEach(i=>{ const v=parseFloat(i.value); if(Number.isFinite(v)) P[i.dataset.lp]=v; }); document.querySelectorAll('#tdLithBody [data-lc]').forEach(b=>P.colors[b.dataset.lc]=b.dataset.color); editing.lith=P; }
 function drawTdCurves(){ const lith=editing.type==='lith'; $('tdLith').hidden=!lith; $('tdCurveWrap').hidden=lith; $('tdAddRow').hidden=lith; if(lith) return drawTdLith();
   const w=wellById(S.selected)||S.wells[0]; const tb=$('tdCurves'); tb.innerHTML=''; if(!w) return;
+  const flags=editing.type==='flags'; $('tdHead').innerHTML=flags?'<th>Curve</th><th>Flag where value ≥</th><th>Color</th><th></th>':'<th>Curve</th><th>Left</th><th>Right</th><th>Log</th><th>Line</th><th>Dash</th><th>Fill</th><th>Fill colors</th><th>Opacity</th><th></th>';
+  $('tdHint').textContent=flags?'Each curve draws as a bar where its value reaches the threshold: 1 for the computed 0/1 flags, or a level on any log, such as metal loss % or caliper minus bit for corrosion and washout.':'Styles apply to this track in every well. Reversed scales (left > right) are fine: that is how NPHI and DT are read. Color by value shades each depth by its reading, from the first color at the left scale value to the second at the right.';
+  if(flags){ editing.curves.forEach((c,i)=>{ const cur=resolveCurve(w,c), tr=document.createElement('tr'); const col=c.color&&c.color.startsWith('var(')?cssVarHex(c.color.slice(4,-1)):(c.color||'#333333');
+    tr.innerHTML=`<td><select data-i="${i}" class="tdm">${w.curves.slice(1).map(x=>`<option value="${x.mnemonic}"${cur&&cur.mnemonic===x.mnemonic?' selected':''}>${x.mnemonic} (${x.unit||'-'})</option>`).join('')}${cur?'':`<option selected value="">${esc(c.label)} (not in this well)</option>`}</select> <input type="text" class="tdlbl" data-i="${i}" value="${esc(c.label)}" aria-label="Flag name" style="width:9em"></td>
+      <td><input type="number" class="tdfa" data-i="${i}" value="${c.flagAt??0.5}" step="any"></td><td><button type="button" class="swatchbtn tdcol" data-i="${i}" data-color="${col}" style="background:${col}" title="Flag color"></button></td><td><button class="small tdrm" data-i="${i}">×</button></td>`; tb.appendChild(tr); }); return; }
   const toHex=c=>c.startsWith('var(')?cssVarHex(c.slice(4,-1)):c;
   editing.curves.forEach((c,i)=>{ const tr=document.createElement('tr'); const cur=resolveCurve(w,c);
     tr.innerHTML=`<td><select data-i="${i}" class="tdm">${w.curves.slice(1).map(x=>`<option value="${x.mnemonic}"${cur&&cur.mnemonic===x.mnemonic?' selected':''}>${x.mnemonic} (${x.unit||'-'})${x.sparse?' · points':''}</option>`).join('')}${cur?'':`<option selected value="">${c.label} (not in well)</option>`}</select><div class="hint" style="font-size:10px">${c.label}</div></td>
@@ -410,6 +420,8 @@ function autoScale(curve,log){ const v=Array.from(curve.data).filter(x=>Number.i
   const [a,b]=d3.scaleLinear().domain([lo,hi]).nice(5).domain(); return [a,b]; }
 function cssVarHex(name){ const v=cssVar(name); if(/^#/.test(v)) return v; const m=v.match(/\d+/g); return m?'#'+m.slice(0,3).map(n=>(+n).toString(16).padStart(2,'0')).join(''):'#333333'; }
 function readTd(){ editing.name=$('tdName').value; editing.width=+$('tdWidth').value||190; if(editing.type==='lith') return readTdLith();
+  if(editing.type==='flags'){ document.querySelectorAll('#tdCurves tr').forEach((tr,i)=>{ const c=editing.curves[i], m=tr.querySelector('.tdm').value; if(m){ const mu=m.toUpperCase(); c.aliases=[m,...(c.aliases||[]).filter(a=>a.toUpperCase()!==mu)]; }
+    c.label=tr.querySelector('.tdlbl').value.trim()||m||c.label; const fa=parseFloat(tr.querySelector('.tdfa').value); c.flagAt=Number.isFinite(fa)?fa:0.5; c.color=tr.querySelector('.tdcol').dataset.color; }); return; }
   document.querySelectorAll('#tdCurves tr').forEach((tr,i)=>{ const c=editing.curves[i]; const m=tr.querySelector('.tdm').value; if(m){ const mu=m.toUpperCase(); if(!c.aliases.some(a=>a.toUpperCase()===mu)) c.label=m; c.aliases=[m,...c.aliases.filter(a=>a.toUpperCase()!==mu)]; }
     const mn=+tr.querySelector('.tdmin').value, mx=+tr.querySelector('.tdmax').value; if(c.matchNeutron&&(mn!==c.min||mx!==c.max)) c.matchNeutron=false; c.min=mn; c.max=mx; c.log=tr.querySelector('.tdlog').checked; c.color=tr.querySelector('.tdcol').dataset.color; c.dash=tr.querySelector('.tddash').checked?'4 3':undefined;
     c.fill=tr.querySelector('.tdfill').value; c.fillStyle=tr.querySelector('.tdfs').value; c.fillColor=tr.querySelector('.tdfc').dataset.color; c.fillColor2=tr.querySelector('.tdfc2').dataset.color; c.fillOpacity=+tr.querySelector('.tdfo').value; }); }
@@ -430,7 +442,7 @@ document.addEventListener('click',e=>{
 $('tdSaveDefaults').onclick=()=>{ readTd(); const i=S.tracks.findIndex(t=>t.id===editing.id); const set=S.tracks.map(t=>t.id===editing.id?editing:t); if(i<0) set.push(editing); try{ localStorage.setItem('weller.trackDefaults2',JSON.stringify(set)); $('stNote').textContent='Track defaults saved for new projects'; }catch(e){ $('stNote').textContent='Could not save defaults (storage blocked)'; } };
 $('tdLithReset').onclick=()=>{ delete editing.lith; drawTdLith(); };
 $('tdResetDefaults').onclick=()=>{ try{ localStorage.removeItem('weller.trackDefaults2'); }catch(e){} S.tracks=defaultTracks(); $('trackDlg').hidden=true; render(); };
-$('tdAddCurve').onclick=()=>{ readTd(); const w=wellById(S.selected)||S.wells[0]; const c=w.curves[1]; editing.curves.push({label:c.mnemonic,aliases:[c.mnemonic],min:0,max:100,color:'#333333'}); drawTdCurves(); };
+$('tdAddCurve').onclick=()=>{ readTd(); const w=wellById(S.selected)||S.wells[0]; const c=w.curves[1]; editing.curves.push(editing.type==='flags'?{label:c.mnemonic,aliases:[c.mnemonic],flagAt:0.5,color:'#C62828'}:{label:c.mnemonic,aliases:[c.mnemonic],min:0,max:100,color:'#333333'}); drawTdCurves(); };
 $('tdSave').onclick=()=>{ readTd(); const i=S.tracks.findIndex(t=>t.id===editing.id); if(i>=0) S.tracks[i]=editing; else S.tracks.push(editing); $('trackDlg').hidden=true; render(); };
 $('tdCancel').onclick=()=>{ $('trackDlg').hidden=true; };
 $('tdDelete').onclick=()=>{ S.tracks=S.tracks.filter(t=>t.id!==editing.id); $('trackDlg').hidden=true; render(); };
@@ -605,7 +617,7 @@ async function loadProject(p){ if(!p||p.app!=='weller-logs') throw new Error('no
   const fromCache={}; for(const r of p.wells){ if(r.preset||S.wells.some(w=>w.fileName===r.fileName)) continue; const text=r.demo?await fetchText('data/'+r.demo):await lasCache.get(r.fileName); if(text){ try{ fromCache[r.fileName]=normalizeWell(parseLAS(text),r.fileName); }catch(e){} } }
   S.wells=p.wells.map(ref=>{ if(ref.preset){ const cfg=WellerSynth.PRESET_WELLS.find(c=>c.id===ref.preset); const w=presetWell(cfg); w.tops=ref.tops; w.elevation=ref.elevation; restorePoints(w,ref.points); return w; }
     const live=S.wells.find(w=>w.fileName===ref.fileName)||fromCache[ref.fileName]; if(live){ if(ref.demo) live.demo=ref.demo; Object.assign(live,{tops:ref.tops,elevation:ref.elevation,location:ref.location,name:ref.name,api:ref.api,field:ref.field,id:ref.id}); for(const k of ['company','county','state']) if(ref[k]!==undefined) live[k]=ref[k]; restorePoints(live,ref.points); return live; } missing.push(ref.fileName||ref.name); return null; }).filter(Boolean);
-  S.tracks=p.tracks; S.views=p.views||newViews(); S.view=S.views[viewKey(S.mode)]||S.views.single; S.datum=p.datum||'MD'; S.topColors=p.topColors||S.topColors; S.hiddenPoints=p.hiddenPoints||[]; S.stats={...statsDefaults(),...(p.stats||{})}; S.interp={...interpDefaults(),...(p.interp||{})}; S.corr={...S.corr,...(p.corr||{})}; if(!p.tracks.some(t=>t.id==='t8')) S.tracks=[...p.tracks,...defaultTracks().filter(t=>['t8','t9','t10','t11','t12'].includes(t.id))]; setBasemap(p.basemap||'map'); if((p.version||1)<2) pointSeriesNames().forEach(placePointSeries); S.panel=(p.panel||[]).filter(id=>wellById(id));
+  S.tracks=migrateTracks(p.tracks); S.views=p.views||newViews(); S.view=S.views[viewKey(S.mode)]||S.views.single; S.datum=p.datum||'MD'; S.topColors=p.topColors||S.topColors; S.hiddenPoints=p.hiddenPoints||[]; S.stats={...statsDefaults(),...(p.stats||{})}; S.interp={...interpDefaults(),...(p.interp||{})}; S.corr={...S.corr,...(p.corr||{})}; if(!p.tracks.some(t=>t.id==='t8')) S.tracks=[...p.tracks,...defaultTracks().filter(t=>['t8','t9','t10','t11','t12'].includes(t.id))]; setBasemap(p.basemap||'map'); if((p.version||1)<2) pointSeriesNames().forEach(placePointSeries); S.panel=(p.panel||[]).filter(id=>wellById(id));
   // Older projects kept section order separately: move those wells into that order within the list.
   if((p.version||1)<3){ const pos=S.wells.map((w,i)=>S.panel.includes(w.id)?i:-1).filter(i=>i>=0); S.panel.forEach((id,k)=>{ S.wells[pos[k]]=wellById(id); }); } S.selected=wellById(p.selected)?p.selected:(S.wells[0]?.id||null);
   computeAllInterp(); setMode(p.mode||'single'); $('stNote').textContent=missing.length?`Re-open these LAS files to restore them: ${missing.join(', ')}`:'Project loaded'; }

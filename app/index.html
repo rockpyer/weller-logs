@@ -394,15 +394,15 @@ ul.list .wn{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:
       <label>Width <input type="number" id="tdWidth" min="60" max="600" step="10"></label>
     </div>
     <div id="tdLith" hidden>
-      <p class="hint">Vshale comes from GR (VSH_GR, set in the Interpretation panel). Where the well has a PE log, PE separates carbonate, marl and clean sand. Rules run top to bottom; the first that fits wins.</p>
+      <p class="hint">Vshale comes from GR, or from SP in wells without GR (set in the Interpretation panel). Where the well has a PE log, PE separates carbonate, marl and clean sand. Rules run top to bottom; the first that fits wins.</p>
       <div class="tblwrap"><table><thead><tr><th>Lithology</th><th>Rule</th></tr></thead><tbody id="tdLithBody"></tbody></table></div>
       <div class="row"><button class="small" id="tdLithReset">Reset cutoffs and colors</button></div>
     </div>
     <div class="tblwrap" id="tdCurveWrap"><table>
-      <thead><tr><th>Curve</th><th>Left</th><th>Right</th><th>Log</th><th>Line</th><th>Dash</th><th>Fill</th><th>Fill colors</th><th>Opacity</th><th></th></tr></thead>
+      <thead><tr id="tdHead"></tr></thead>
       <tbody id="tdCurves"></tbody>
     </table></div>
-    <div class="row" id="tdAddRow"><button class="small" id="tdAddCurve">+ curve</button><span class="hint">Styles apply to this track in every well. Reversed scales (left &gt; right) are fine: that is how NPHI and DT are read. Color by value shades each depth by its reading, from the first color at the left scale value to the second at the right.</span></div>
+    <div class="row" id="tdAddRow"><button class="small" id="tdAddCurve">+ curve</button><span class="hint" id="tdHint"></span></div>
     <div class="foot"><button id="tdDelete">Delete track</button><button id="tdSaveDefaults" title="Use the current track set as the default for new projects">Save all tracks as my defaults</button><button id="tdResetDefaults">Reset to built-in</button><span style="flex:1"></span><button id="tdCancel">Cancel</button><button class="primary" id="tdSave">Apply</button></div>
   </div>
 </div>

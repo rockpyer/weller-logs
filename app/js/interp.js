@@ -1,8 +1,10 @@
 /* Deterministic interpretation: Vshale, porosity, Sw, TOC and net flags, added to each well as computed curves.
    Equations live in petro.js (unit-tested). This file chooses inputs, applies parameters and writes the curves. */
 
-const INTERP_CURVES = ['VSH_GR', 'PHID', 'PHIT_ND', 'PHIE', 'PHI_SW', 'SW', 'BVW', 'TOC_DLR', 'FLAG_BH', 'NET_RES', 'NET_PAY'];
+const INTERP_CURVES = ['VSH_GR', 'VSH_SP', 'PHID', 'PHIT_ND', 'PHIT', 'PHIE', 'PHI_SW', 'SW', 'BVW', 'TOC_DLR', 'FLAG_BH', 'FLAG_WO', 'NET_RES', 'NET_PAY'];
 const DRHO_ALIASES = ['DRHO', 'HDRA', 'ZCOR', 'DCOR', 'CORR', 'DRH'];
+// NMR total porosity (CMR, MRIL and generic names).
+const NMR_PHI = ['TCMR', 'MPHS', 'PHIT_NMR', 'MPHI', 'CMRP', 'TPOR', 'MRP', 'NMR_PHIT', 'MSIG'];
 
 function interpDefaults() {
   return {
@@ -47,51 +49,86 @@ function addComputed(w, mnemonic, unit, description, data) {
   w.curves.push({ mnemonic, unit, description, data, computed: true, nulls: 0 });
 }
 
+/* Works down to whatever the well has. Vshale: GR, else SP. Porosity: neutron-density or density, else NMR, sonic,
+   or neutron alone. With no porosity log, net sand comes from Vshale alone and net pay from the resistivity index. */
 function computeInterp(w) {
   w.curves = w.curves.filter(c => !c.computed);
   w.interpNotes = [];
   if (!S.interp.enabled) return;
   const P = WellerPetro, I = S.interp, dep = depthOf(w), n = dep.length;
-  const gr = curveBy(w, A.GR), rhob = curveBy(w, A.RHOB), nphi = curveBy(w, A.NPHI), rt = curveBy(w, A.RD);
+  const gr = curveBy(w, A.GR), sp = curveBy(w, A.SP), rhob = curveBy(w, A.RHOB), nphi = curveBy(w, A.NPHI), rt = curveBy(w, A.RD), dt = curveBy(w, A.DT), nmr = curveBy(w, NMR_PHI);
   const cal = curveBy(w, A.CAL), drho = curveBy(w, DRHO_ALIASES);
   const ok = c => c && !c.sparse;
-  if (!ok(gr) && !ok(rhob)) return;
   const tvd = tvdOf(w) || dep;
   const { clean, shale } = grBaselines(w);
   const mat = matrixDensity(w);
-  const vsh = new Float64Array(n).fill(NaN), phid = new Float64Array(n).fill(NaN), phit = new Float64Array(n).fill(NaN), phie = new Float64Array(n).fill(NaN);
-  const sw = new Float64Array(n).fill(NaN), bvw = new Float64Array(n).fill(NaN), bh = new Float64Array(n), nres = new Float64Array(n), npay = new Float64Array(n);
+  const nan = () => new Float64Array(n).fill(NaN);
+  const vsh = nan(), phid = nan(), phit = nan(), phie = nan(), sw = nan(), bvw = nan();
+  const bh = new Float64Array(n), wo = new Float64Array(n), nres = new Float64Array(n), npay = new Float64Array(n);
   const bht = w.params?.bht, td = tvd[n - 1];
-  // Shale resistivity for Simandoux: median deep resistivity where Vsh > 0.8.
-  let rsh = NaN;
+  // Vshale source
+  let vshSrc = null, spB = null;
+  if (ok(gr) && Number.isFinite(clean) && Number.isFinite(shale)) vshSrc = 'GR';
+  else if (ok(sp)) { spB = { sand: P.percentile(sp.data, 0.02), shale: P.percentile(sp.data, 0.9) }; vshSrc = 'SP';
+    w.interpNotes.push(`no GR: Vshale from SP, clean line ${spB.sand.toFixed(0)} mV, shale ${spB.shale.toFixed(0)} mV (P2 / P90). SP drift or fresh formation water makes this rough.`); }
+  // Porosity source
+  const nmrScale = ok(nmr) && WellerLAS.median(nmr.data) > 1.5 ? 0.01 : 1;
+  const porSrc = ok(rhob) ? (I.porMethod === 'density' || !ok(nphi) ? 'density' : 'neutron-density') : ok(nmr) ? 'NMR' : ok(dt) ? 'sonic' : ok(nphi) ? 'neutron' : null;
+  const dtMa = P.DT_MATRIX[mat.name] || 55.5;
+  if (porSrc === 'sonic') w.interpNotes.push(`no density or NMR: porosity from sonic (Raymer-Hunt-Gardner, DT matrix ${dtMa} us/ft). Reads high in gas and uncompacted shale.`);
+  if (porSrc === 'neutron') w.interpNotes.push('neutron is the only porosity log: PHIT is apparent neutron porosity, which reads high in shale and low in gas');
+  if (porSrc === 'NMR') w.interpNotes.push(`porosity from NMR ${nmr.mnemonic}, lithology-independent`);
+  // Bit size from the header, else estimated as the caliper's gauge (P10), to find washouts.
+  let bit = w.params?.bitSize;
+  if (!Number.isFinite(bit) && ok(cal)) { bit = P.percentile(cal.data, 0.1); if (Number.isFinite(bit)) w.interpNotes.push(`no bit size in header: gauge taken as caliper P10, ${bit.toFixed(2)} in`); }
   for (let i = 0; i < n; i++) {
-    if (ok(gr) && Number.isFinite(clean) && Number.isFinite(shale)) vsh[i] = P.vsh(gr.data[i], clean, shale, I.vshMethod);
+    if (vshSrc === 'GR') vsh[i] = P.vsh(gr.data[i], clean, shale, I.vshMethod);
+    else if (vshSrc === 'SP') { const ix = P.vshSP(sp.data[i], spB.sand, spB.shale); vsh[i] = Number.isFinite(ix) ? P.vsh(spB.sand + ix * 100, spB.sand, spB.sand + 100, I.vshMethod) : NaN; }
     if (ok(rhob)) phid[i] = P.phiDensity(rhob.data[i], mat.rho, I.rhoFl);
     const pn = ok(nphi) ? nphi.data[i] : NaN;
-    phit[i] = I.porMethod === 'density' || !ok(nphi) ? phid[i] : P.phiND(pn, phid[i], I.porMethod);
+    phit[i] = porSrc === 'density' ? phid[i] : porSrc === 'neutron-density' ? P.phiND(pn, phid[i], I.porMethod)
+      : porSrc === 'NMR' ? nmr.data[i] * nmrScale : porSrc === 'sonic' ? P.phiSonic(dt.data[i], dtMa) : porSrc === 'neutron' ? pn : NaN;
     if (Number.isFinite(phit[i])) phit[i] = P.clamp(phit[i], 0, 0.5);
     phie[i] = Number.isFinite(vsh[i]) ? phit[i] * (1 - vsh[i]) : phit[i];
-    bh[i] = P.badHole(ok(cal) ? cal.data[i] : NaN, w.params?.bitSize, ok(drho) ? drho.data[i] : NaN) ? 1 : 0;
+    const c = ok(cal) ? cal.data[i] : NaN;
+    wo[i] = P.washout(c, bit) ? 1 : 0;
+    bh[i] = P.badHole(c, bit, ok(drho) ? drho.data[i] : NaN) ? 1 : 0;
   }
+  const phiS = i => I.swPhi === 'total' ? phit[i] : phie[i];
+  let rsh = NaN;
   if (I.swMethod === 'simandoux' && ok(rt)) { const v = []; for (let i = 0; i < n; i++) if (vsh[i] > 0.8 && rt.data[i] > 0) v.push(rt.data[i]); rsh = WellerLAS.median(v); }
-  if (ok(rt)) for (let i = 0; i < n; i++) {
+  if (ok(rt) && porSrc) for (let i = 0; i < n; i++) {
     const T = P.tempAtDepth(tvd[i], I.surfaceT, bht, td); const rwT = P.rwAtTemp(I.rw, I.rwTemp, T);
-    const phiS = I.swPhi === 'total' ? phit[i] : phie[i];
-    sw[i] = I.swMethod === 'simandoux' ? P.swSimandoux(rt.data[i], phiS, rwT, vsh[i], rsh, I.a, I.m) : P.swArchie(rt.data[i], phiS, rwT, I.a, I.m, I.n);
-    bvw[i] = phiS * sw[i];
+    sw[i] = I.swMethod === 'simandoux' ? P.swSimandoux(rt.data[i], phiS(i), rwT, vsh[i], rsh, I.a, I.m) : P.swArchie(rt.data[i], phiS(i), rwT, I.a, I.m, I.n);
+    bvw[i] = phiS(i) * sw[i];
   }
+  // Net flags. Without porosity: net sand is Vshale alone, and pay needs Rt above R0 by the resistivity index for the Sw cutoff,
+  // R0 taken as the P10 resistivity of the net sands, which assumes the well has some water-bearing sand.
+  let r0 = NaN;
+  if (!porSrc && ok(rt) && vshSrc) { const v = []; for (let i = 0; i < n; i++) if (vsh[i] < I.cut.vsh && !bh[i] && rt.data[i] > 0) v.push(rt.data[i]); if (v.length >= 50) r0 = P.percentile(v, 0.1); }
   for (let i = 0; i < n; i++) {
-    const res = !bh[i] && (vsh[i] < I.cut.vsh || !Number.isFinite(vsh[i])) && (I.swPhi === 'total' ? phit[i] : phie[i]) >= I.cut.phi;
-    nres[i] = res ? 1 : 0; npay[i] = res && sw[i] <= I.cut.sw ? 1 : 0;
+    const res = !bh[i] && (porSrc ? (vsh[i] < I.cut.vsh || !Number.isFinite(vsh[i])) && phiS(i) >= I.cut.phi : !!vshSrc && vsh[i] < I.cut.vsh);
+    nres[i] = res ? 1 : 0;
+    npay[i] = res && (porSrc ? sw[i] <= I.cut.sw : P.swFromRI(ok(rt) ? rt.data[i] : NaN, r0, I.n) <= I.cut.sw) ? 1 : 0;
   }
-  if (ok(gr)) addComputed(w, 'VSH_GR', 'V/V', `Vshale from GR (${I.vshMethod}, clean ${clean}, shale ${shale} API)`, vsh);
+  const PH = I.swPhi === 'total' ? 'PHIT' : 'PHIE';
+  if (vshSrc === 'GR') addComputed(w, 'VSH_GR', 'V/V', `Vshale from GR (${I.vshMethod}, clean ${clean}, shale ${shale} API)`, vsh);
+  if (vshSrc === 'SP') addComputed(w, 'VSH_SP', 'V/V', `Vshale from SP (${I.vshMethod}, clean ${spB.sand.toFixed(0)}, shale ${spB.shale.toFixed(0)} mV)`, vsh);
   if (ok(rhob)) addComputed(w, 'PHID', 'V/V', `Density porosity, matrix ${mat.rho} (${mat.name}), fluid ${I.rhoFl}`, phid);
-  if (ok(rhob)) addComputed(w, 'PHIT_ND', 'V/V', I.porMethod === 'density' || !ok(nphi) ? 'Total porosity from density' : `Neutron-density porosity (${I.porMethod})`, phit);
-  if (ok(rhob)) addComputed(w, 'PHIE', 'V/V', 'Effective porosity = PHIT x (1 - Vsh)', phie);
-  if (ok(rhob)) addComputed(w, 'PHI_SW', 'V/V', `Porosity used for Sw (${I.swPhi === 'total' ? 'PHIT' : 'PHIE'})`, I.swPhi === 'total' ? phit : phie);
-  if (ok(rt) && ok(rhob)) { addComputed(w, 'SW', 'V/V', `Water saturation, ${I.swMethod} on ${I.swPhi} porosity, a ${I.a} m ${I.m} n ${I.n}, Rw ${I.rw} at ${I.rwTemp} F`, sw); addComputed(w, 'BVW', 'V/V', `Bulk volume water = ${I.swPhi === 'total' ? 'PHIT' : 'PHIE'} x Sw`, bvw); }
-  if (ok(cal) || ok(drho)) addComputed(w, 'FLAG_BH', '', 'Bad hole: caliper > bit + 1 in, or |DRHO| > 0.15 g/cc', bh);
-  if (ok(rhob)) { addComputed(w, 'NET_RES', '', `Net reservoir: Vsh < ${I.cut.vsh}, ${I.swPhi === 'total' ? 'PHIT' : 'PHIE'} >= ${I.cut.phi}, not bad hole`, nres); if (ok(rt)) addComputed(w, 'NET_PAY', '', `Net pay: net reservoir and Sw <= ${I.cut.sw}`, npay); }
+  if (porSrc) {
+    addComputed(w, ok(rhob) ? 'PHIT_ND' : 'PHIT', 'V/V', { density: 'Total porosity from density', 'neutron-density': `Neutron-density porosity (${I.porMethod})`, NMR: `Total porosity from NMR ${nmr?.mnemonic}`, sonic: `Sonic porosity, Raymer-Hunt-Gardner, DT matrix ${dtMa}`, neutron: 'Apparent neutron porosity' }[porSrc], phit);
+    addComputed(w, 'PHIE', 'V/V', 'Effective porosity = PHIT x (1 - Vsh)', phie);
+    addComputed(w, 'PHI_SW', 'V/V', `Porosity used for Sw (${PH})`, I.swPhi === 'total' ? phit : phie);
+  }
+  if (ok(rt) && porSrc) { addComputed(w, 'SW', 'V/V', `Water saturation, ${I.swMethod} on ${PH}, a ${I.a} m ${I.m} n ${I.n}, Rw ${I.rw} at ${I.rwTemp} F`, sw); addComputed(w, 'BVW', 'V/V', `Bulk volume water = ${PH} x Sw`, bvw); }
+  if (ok(cal) && Number.isFinite(bit)) addComputed(w, 'FLAG_WO', '', `Washout: caliper > bit + 1 in (bit ${bit.toFixed(2)} in)`, wo);
+  if (ok(cal) || ok(drho)) addComputed(w, 'FLAG_BH', '', 'Bad hole: washout, or |DRHO| > 0.15 g/cc', bh);
+  if (porSrc) { addComputed(w, 'NET_RES', '', `Net reservoir: Vsh < ${I.cut.vsh}, ${PH} >= ${I.cut.phi} (${porSrc}), not bad hole`, nres); if (ok(rt)) addComputed(w, 'NET_PAY', '', `Net pay: net reservoir and Sw <= ${I.cut.sw}`, npay); }
+  else if (vshSrc) {
+    addComputed(w, 'NET_RES', '', `Net sand: Vsh < ${I.cut.vsh} from ${vshSrc}, not bad hole (no porosity log)`, nres);
+    if (Number.isFinite(r0)) addComputed(w, 'NET_PAY', '', `Net pay: net sand with Rt >= ${(r0 / Math.pow(I.cut.sw, I.n)).toFixed(1)} ohm.m, resistivity index for Sw <= ${I.cut.sw} over R0 ${r0.toFixed(2)} (P10 of net-sand Rt; assumes some wet sand)`, npay);
+    w.interpNotes.push('no porosity log: net sand from Vshale only' + (Number.isFinite(r0) ? `; pay where Rt is at least ${(1 / Math.pow(I.cut.sw, I.n)).toFixed(1)}x R0 ${r0.toFixed(2)} ohm.m` : ok(rt) ? '; too little clean sand to set R0, no pay flag' : ''));
+  }
   if (I.toc.enabled && ok(rt) && ok(rhob)) computeTOC(w, rt, rhob, vsh);
   if (!Number.isFinite(bht)) w.interpNotes.push('no BHT in header: Rw not temperature-corrected');
   const gb = grBaselines(w); if (gb.auto && gb.hotFrac > 0.02) w.interpNotes.push(`${Math.round(gb.hotFrac * 100)}% of GR is above ${Math.round(gb.hot)} API (organic or uranium-rich) and left out of the shale baseline`);

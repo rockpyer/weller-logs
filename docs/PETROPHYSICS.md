@@ -15,7 +15,8 @@ well with the mnemonics below, so they can be plotted, crossplotted, averaged an
 | `SW` | Water saturation |
 | `BVW` | Bulk volume water, `PHI_SW × SW` |
 | `TOC_DLR` | Total organic carbon, Passey ΔlogR |
-| `FLAG_BH`, `NET_RES`, `NET_PAY` | Bad hole, net reservoir and net pay flags (0/1) |
+| `VSH_SP`, `PHIT` | Vshale from SP and total porosity from NMR, sonic or neutron, when GR or density is missing |
+| `FLAG_WO`, `FLAG_BH`, `NET_RES`, `NET_PAY` | Washout, bad hole, net reservoir and net pay flags (0/1) |
 
 ## Equations
 
@@ -48,8 +49,21 @@ tops. TOC is left blank where the rock is not fine-grained (Vsh < 0.35 and PE < 
 resistivity separation in a clean sand or chalk carrying oil or gas comes from the hydrocarbons, not organic matter.
 Values are clipped at 20 wt%. LOM (level of organic metamorphism) should come from vitrinite reflectance or Tmax.
 
-**Flags and cutoffs.** Bad hole: caliper more than 1 in over bit size, or |DRHO| > 0.15 g/cc. Net reservoir:
-`Vsh < cut`, porosity ≥ cut, not bad hole. Net pay: net reservoir and `Sw ≤ cut`.
+**Flags and cutoffs.** Washout: caliper more than 1 in over bit size (bit from the header, else the caliper's P10 as
+gauge). Bad hole: washout, or |DRHO| > 0.15 g/cc. Net reservoir: `Vsh < cut`, porosity ≥ cut, not bad hole. Net pay:
+net reservoir and `Sw ≤ cut`. The flags track also takes any log with a threshold (e.g. metal loss % for corrosion).
+
+**Reduced log suites.** Older wells often have only GR or SP and one or more resistivities. The workflow uses what is
+there:
+
+| Missing | Fallback |
+|---|---|
+| GR | Vshale from SP between the clean-sand line (P2) and the shale baseline (P90): `(SP − SPsand) / (SPshale − SPsand)`. Rough where SP drifts or formation water is fresher than mud filtrate. |
+| Density | Porosity from NMR total porosity (TCMR, MPHS…), else sonic by Raymer-Hunt-Gardner `φ = 0.625 (Δt − Δtma) / Δt` (Raymer et al., 1980), else apparent neutron porosity. |
+| All porosity logs | Net sand from Vshale alone. Net pay where the resistivity index `Rt / R0` shows `Sw = (R0 / Rt)^(1/n) ≤ cut`, with R0 the P10 resistivity of the net sands. This assumes the well has some water-bearing sand; in a well that is pay throughout, R0 is too high and pay is under-called. |
+| PE | Lithology track shows sandstone, siltstone and shale from Vshale only. |
+
+The Notes button in the Interpretation panel lists which fallbacks each well used.
 
 **Zone summations** (Zone stats tab). Zones run from each top to the next top. Thickness is true vertical in deviated
 wells (from the survey). Per zone: gross, net reservoir, net-to-gross, net pay, average porosity over net reservoir,
