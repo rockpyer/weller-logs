@@ -26,9 +26,56 @@ test('binary and non-LAS files say what they are', () => {
   assert.match(csv.title, /delimited/i); assert.equal(csv.snippet[0].line, 1);
 });
 
-test('LAS 3.0 is named, not reported as generic failure', () => {
-  const r = diagnoseLAS('~Version\nVERS. 3.0 :\n~Log_Definition\nDEPT .F :\n~Log_Data\n1 2\n', 'x.las');
-  assert.match(errs(r)[0].title, /LAS 3\.0/);
+const LAS3 = `~Version
+VERS.  3.0 : CWLS LOG ASCII STANDARD - VERSION 3.0
+WRAP.  NO  : ONE LINE PER DEPTH STEP
+DLM .  COMMA : DELIMITING CHARACTER
+~Well
+STRT.M    1670.0 : First Index Value
+STOP.M    1670.5 : Last Index Value
+STEP.M    0.25   : STEP
+NULL.     -999.25 : NULL VALUE
+WELL.     "ANY ET AL 12-34-12-34" : WELL
+UWI .     100123401234W500 : UNIQUE WELL ID
+~Log_Parameter
+BS  .MM   200.0 : Bit Size {F10.1} | Log_Definition
+~Log_Definition
+DEPT .M     : Depth {F10.3}
+DT   .US/M  : Sonic {F10.1}
+RHOB .K/M3  : Density {F10.1}
+FACI .      : Facies {S}
+~Log_Data | Log_Definition
+1670.000, 123.45, 2550.0, "Shale A"
+1670.250, 123.45, 2550.0, Sand
+1670.500, -999.25, 2560.0, Sand
+~Core_Definition
+CORT.M : Core top
+~Core_Data | Core_Definition
+1670.1
+~Tops_Definition
+TOPN. : Top name {S}
+TOPT.M : Top depth {F}
+~Tops_Data | Tops_Definition
+"Viking Sand", 1670.2
+~Inclinometry_Definition
+MD  .M : Measured depth
+INC .DEG : Inclination
+AZI .DEG : Azimuth
+~Inclinometry_Data | Inclinometry_Definition
+0, 0, 0
+1000, 10, 45
+1700, 30, 45
+`;
+test('LAS 3.0: log data, quoted text, tops and inclinometry are read', () => {
+  const r = diagnoseLAS(LAS3, 'x.las');
+  assert.equal(errs(r).length, 0, JSON.stringify(errs(r)));
+  assert.ok(r.problems.some(p => /skipped Core/.test(p.title)));
+  const w = normalizeWell(r.parsed, 'x.las');
+  assert.equal(w.name, 'ANY ET AL 12-34-12-34');
+  assert.deepEqual(w.curves.map(c => c.mnemonic), ['DEPT', 'DT', 'RHOB', 'FACI']);
+  assert.equal(w.rows, 3); assert.equal(w.curves[2].data[2], 2560); assert.ok(Number.isNaN(w.curves[1].data[2]));
+  assert.equal(w.depthUnit, 'm'); assert.equal(w.tops[0].name, 'Viking Sand'); assert.equal(w.tops[0].md, 1670.2);
+  assert.ok(w.survey && w.survey.md.length === 3);
 });
 
 test('missing sections, empty data and text in data are errors with the line', () => {
