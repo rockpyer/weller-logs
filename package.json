@@ -1,6 +1,6 @@
 {
   "name": "weller-logs",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Well log viewer with correlation panels (web app)",
   "private": true,
   "scripts": {

@@ -47,7 +47,7 @@ function renderMap() {
   initMap(); MAP.layer.clearLayers();
   const ink = cssVar('--ink'), accent = cssVar('--accent'), focus = cssVar('--focus'), paper = cssVar('--paper');
   const placed = S.wells.map(w => ({ w, ll: wgs84Of(w) })).filter(p => p.ll);
-  const inPanel = S.mode === 'corr' ? S.panel.map(wellById).filter(Boolean) : [];
+  const inPanel = S.mode === 'corr' ? sectionWells() : [];
   const sec = inPanel.map(w => wgs84Of(w)).filter(Boolean);
   if (sec.length > 1) {
     L.polyline(sec, { color: accent, weight: 2.5, dashArray: '6 4' }).addTo(MAP.layer);
@@ -67,11 +67,11 @@ function renderMap() {
     if (fits) boxes.push(box);
     L.circleMarker(ll, { radius: 6, weight: sel ? 3 : 1.5, color: sel ? focus : ink, fillColor: inSec ? accent : paper, fillOpacity: 1 })
       .bindTooltip(w.name, { permanent: fits, direction: 'right', offset: [7, 0], className: 'wlabel' })
-      .on('click', () => clickWell(w.id)).addTo(MAP.layer);
+      .on('click', () => (S.mode === 'corr' ? toggleSection(w.id) : clickWell(w.id))).addTo(MAP.layer);
   }
   if (!MAP.zoomHooked) { MAP.zoomHooked = true; MAP.map.on('zoomend', () => renderMap()); }
   const off = S.wells.length - placed.length;
-  $('mapHint').textContent = (S.mode === 'corr' ? 'Click wells to add or remove them from section A–A′, in order.' : 'Click a well to show it.')
+  $('mapHint').textContent = (S.mode === 'corr' ? 'Click a well to add or remove it from section A–A′. Section order follows the Wells list: drag to reorder.' : 'Click a well to show it.')
     + (off ? ` ${off} well${off > 1 ? 's have' : ' has'} no location: set it in well settings.` : '');
 }
 

@@ -56,8 +56,23 @@ const norm=s=>s.toUpperCase().replace(/[:_-]\d+$/,'');
 function resolveCurve(well,cfg){ for(const a of cfg.aliases){ const c=well.curves.find(c=>norm(c.mnemonic)===a.toUpperCase()); if(c) return c; } return null; }
 
 /* ---------- State ---------- */
-const S={ mode:'single', wells:[], selected:null, panel:[], showEmpty:false, tracks:loadTrackDefaults(), view:{top:0,bottom:6000,pxPerFt:0.35}, datum:'MD', picking:false, hiddenPoints:[], stats:null, basemap:'map', interp:interpDefaults(), corr:{gap:64,spacing:'equal',scale:0.75} };
+const newViews=()=>({single:{pxPerFt:0.35,top:0,bottom:1000},corr:{pxPerFt:0.35,top:0,bottom:1000}});
+const lsGet=(k,d)=>{ try{ const v=localStorage.getItem(k); return v==null?d:JSON.parse(v); }catch(e){ return d; } };
+const lsSet=(k,v)=>{ try{ localStorage.setItem(k,JSON.stringify(v)); return true; }catch(e){ return false; } };
+const S={ mode:'single', wells:[], selected:null, panel:[], showEmpty:false, tracks:loadTrackDefaults(), views:newViews(), datum:'MD', picking:false, hiddenPoints:[], stats:null, basemap:'map', interp:interpDefaults(), corr:{gap:64,spacing:'equal',scale:0.75},
+  units:lsGet('weller.units','imperial'), depthLabels:lsGet('weller.depthLabels',{md:true,ss:true}), topColors:lsGet('weller.topColors',{}) };
+S.view=S.views.single;   // the active tab's zoom and scroll; Logs and Correlation each keep their own
 const $=id=>document.getElementById(id);
+/* ---------- Display units. Data stay in each well's own unit; only labels and inputs convert. ---------- */
+const dispU=()=>S.units==='metric'?'m':'ft';
+const unitK=w=>{ const u=w?.depthUnit||'ft'; return u===dispU()?1:u==='ft'?0.3048:1/0.3048; };
+const toDisp=(v,w)=>v*unitK(w), fromDisp=(v,w)=>v/unitK(w);
+function fmtD(v,w,dec=0){ return Number.isFinite(v)?toDisp(v,w).toLocaleString(undefined,{minimumFractionDigits:dec,maximumFractionDigits:dec}).replace(/^-/,'−'):'—'; }
+function fmtDist(km){ return S.units==='metric'?`${Math.round(km*100)*10} m`:`${(Math.round(km*328.084)*10).toLocaleString()} ft`; }
+// Subsea TVD as an elevation: KB (or GL) minus TVD, negative below sea level, the way US well files and Petra show it.
+function ssArr(w){ const e=WellerLAS.datumElevation(w); if(!Number.isFinite(e)) return null; if(!w._ss||w._ssE!==e||w._ss.length!==depthOf(w).length){ w._ss=(tvdOf(w)||depthOf(w)).map(v=>e-v); w._ssE=e; } return w._ss; }
+function ssAt(w,md){ const e=WellerLAS.datumElevation(w); return Number.isFinite(e)?e-mdToTvd(w,md):NaN; }
+function depthText(w,md){ const ss=ssAt(w,md), u=dispU(); return `MD ${fmtD(md,w)} ${u}`+(Number.isFinite(ss)?` · ssTVD ${fmtD(ss,w)} ${u}`:''); }
 function presetWell(cfg){ const w={...WellerSynth.makeWell(cfg),preset:cfg.id}; for(const p of w.points) w.curves.push(makePointCurve(p.mnemonic,p.unit,p.description,p.md,p.data)); delete w.points; return w; }
 function loadPresets(){ S.wells=WellerSynth.PRESET_WELLS.map(presetWell); S.selected=S.wells[0].id; S.panel=['w1','w2','w4']; S.datum='MD'; pointSeriesNames().forEach(placePointSeries); computeAllInterp(); }
 const wellById=id=>S.wells.find(w=>w.id===id);
@@ -94,30 +109,54 @@ function effCfg(w,cfg){
 /* ---------- Rendering ---------- */
 function visibleTracks(w){ return S.tracks.filter(t=>(S.mode==='single'||t.panel)&&(S.showEmpty||t.curves.some(c=>resolveCurve(w,c)))); }
 function fmtDepth(v){ return Math.round(v).toLocaleString(); }
-function tickInterval(px){ for(const i of [10,20,25,50,100,200,250,500,1000,2000]) if(i*px>=44) return i; return 5000; }
+function tickStep(pxPerUnit){ for(const i of [1,2,5,10,20,25,50,100,200,250,500,1000,2000]) if(i*pxPerUnit>=44) return i; return 5000; }
 const trackW=t=>Math.round((t.width||190)*(S.mode==='corr'?(S.corr?.scale??0.75):1));
+const sectionWells=()=>S.wells.filter(w=>S.panel.includes(w.id));
+const viewWells=()=>S.mode==='single'?[wellById(S.selected)].filter(Boolean):sectionWells();
+// Section order is the well-list order, so dragging a well in the list moves it in the section.
+function syncPanel(){ S.panel=S.wells.filter(w=>S.panel.includes(w.id)).map(w=>w.id); }
+function frameExtent(wells){ let lo=Infinity,hi=-Infinity;
+  for(const w of wells){ const a=frameOf(w).arr; for(let i=0;i<a.length;i+=8){ if(a[i]<lo) lo=a[i]; if(a[i]>hi) hi=a[i]; } lo=Math.min(lo,a[0],a[a.length-1]); hi=Math.max(hi,a[0],a[a.length-1]); }
+  return Number.isFinite(lo)?[lo,hi]:[0,1000]; }
+/* Depth ticks in display units, found where each well's MD or ssTVD crosses a round number. They are placed through the
+   frame, so they read true in any hang (MD, sea level, flattened) and in deviated wells. */
+function depthTicks(w,F,y,H){
+  const d=depthOf(w), k=unitK(w), step=tickStep(S.view.pxPerFt/k), minor=step/5, [i0,i1]=visibleRange(F,S.view.top,S.view.bottom), a=F.arr, ss=ssArr(w);
+  const walk=(q,withMinor)=>{ const out=[]; let lastV=NaN;
+    for(let i=Math.max(1,i0);i<=i1;i++){ const qa=q(i-1)*k, qb=q(i)*k; if(!Number.isFinite(qa)||!Number.isFinite(qb)||qa===qb) continue; const lo=Math.min(qa,qb), hi=Math.max(qa,qb);
+      for(let v=Math.ceil(lo/minor)*minor;v<=hi;v+=minor){ const major=Math.abs(v/step-Math.round(v/step))<1e-6; if(!major&&!withMinor) continue; if(v===lastV) continue; lastV=v;
+        const t=(v-qa)/(qb-qa), yy=y(a[i-1]+t*(a[i]-a[i-1])); if(yy>=0&&yy<=H) out.push({y:yy,v,major}); } }
+    return out; };
+  const thin=(list,gap)=>{ const out=[]; for(const t of list){ if(out.length&&Math.abs(out[out.length-1].y-t.y)<gap) continue; out.push(t); } return out; };
+  const hasSS=!!ss&&S.depthLabels.ss, showMD=S.depthLabels.md||!hasSS;
+  const primary=(hasSS&&(!showMD||(S.mode==='corr'&&S.datum==='TVDSS')))?(i=>ss[i]):(i=>d[i]);
+  return { grid:thin(walk(primary,true),3), md:showMD?thin(walk(i=>d[i],false),14):[], ss:hasSS?thin(walk(i=>ss[i],false),14):[], showMD, showSS:hasSS, hasSS:!!ss };
+}
 function render(){
   const statsMode=S.mode==='stats'; $('statsView').hidden=!statsMode; $('logView').hidden=statsMode;
+  syncPanel();
   if(statsMode){ renderSidebar(); renderStats(); autosave(); return; }
   const panel=$('logPanel'); panel.querySelectorAll('.column,.gaplbl').forEach(c=>c.remove()); const ov=$('overlay'); ov.innerHTML=''; ov.setAttribute('width',0); ov.setAttribute('height',0);
-  const wells=S.mode==='single'?[wellById(S.selected)].filter(Boolean):S.panel.map(wellById).filter(Boolean);
+  const wells=viewWells();
   $('datumWrap').hidden=S.mode!=='corr'; $('spacingWrap').hidden=S.mode!=='corr';
   $('vbWell').textContent=S.mode==='single'?(wells[0]?.name||'No well'):`Section A–A′ · ${wells.length} wells`;
-  $('scaleLbl').textContent=`${(100*S.view.pxPerFt).toFixed(0)} px / 100 ft`;
+  // The window always spans every log shown; zoom and scroll move within it, so nothing is ever cut off.
+  const [lo,hi]=frameExtent(wells), pad=Math.max(20,(hi-lo)*0.01); S.view.top=Math.floor((lo-pad)/50)*50; S.view.bottom=Math.ceil((hi+pad)/50)*50;
+  renderScale(wells[0]);
   const {top,bottom,pxPerFt}=S.view; const H=Math.max(10,(bottom-top)*pxPerFt); const y=d3.scaleLinear([top,bottom],[0,H]);
-  const tickI=tickInterval(pxPerFt), minorI=tickI/5, zc=zoneColorMap();
+  const zc=zoneColorMap(); S._zc=zc;
   const gaps=S.mode==='corr'?wellGaps(wells):[];
   const cols=[];
   wells.forEach((w,k)=>{
-    const F=frameOf(w);
-    const col=document.createElement('div'); col.className='column'; col.dataset.well=w.id; if(k>0&&S.mode==='corr') col.style.marginLeft=gaps[k-1].px+'px';
+    const F=frameOf(w), ticks=depthTicks(w,F,y,H);
+    const col=document.createElement('div'); col.className='column'+(S.mode==='corr'&&w.id===S.selected?' sel':''); col.dataset.well=w.id; if(k>0&&S.mode==='corr') col.style.marginLeft=gaps[k-1].px+'px';
     const head=document.createElement('div'); head.className='colhead';
     const warn=(w.notes||[]).some(n=>/ignored|corrected/.test(n));
-    head.innerHTML=`<span>${esc(w.name)}${w.synthetic?' <small>synthetic</small>':''}${warn?' <small class="warn" title="'+esc(w.notes.join('; '))+'">⚠ header</small>':''}</span><small>${esc(w.api||'')}${F.note?' · '+F.note:''}</small>`;
+    head.innerHTML=`<span class="wname" data-wellmeta="${w.id}"${S.mode==='corr'?` data-selwell="${w.id}"`:''}>${esc(w.name)}${w.synthetic?' <small>synthetic</small>':''}${warn?' <small class="warn" title="'+esc(w.notes.join('; '))+'">⚠ header</small>':''}</span><small>${esc(w.api||'')}${F.note?' · '+F.note:''}</small>`;
     col.appendChild(head);
     const tr=document.createElement('div'); tr.className='tracks';
-    tr.appendChild(depthTrack(w,F,y,H,tickI,minorI,zc));
-    for(const t of visibleTracks(w)) tr.appendChild(logTrack(w,t,F,y,H,tickI,minorI));
+    tr.appendChild(depthTrack(w,F,y,H,ticks,zc));
+    for(const t of visibleTracks(w)) tr.appendChild(logTrack(w,t,F,y,H,ticks));
     col.appendChild(tr); panel.insertBefore(col,ov); cols.push({w,el:col,F});
   });
   const heads=[...panel.querySelectorAll('.thead')]; heads.forEach(h=>h.style.height=''); const mh=Math.max(0,...heads.map(h=>h.offsetHeight)); heads.forEach(h=>h.style.height=mh+'px');
@@ -132,47 +171,56 @@ function wellGaps(wells){ const out=[]; const base=S.corr?.gap??64;
   const dmax=Math.max(0,...d.filter(v=>v!=null));
   d.forEach(km=>out.push({km,px:S.corr?.spacing==='distance'&&km!=null&&dmax>0?Math.round(36+220*km/dmax):base}));
   return out; }
-function depthTrack(w,F,y,H,tickI,minorI,zc){
-  const div=document.createElement('div'); div.className='track'; div.style.width='64px';
-  const u=w.depthUnit||'ft', lbl=F.kind==='MD'?`MD ${u}`:F.kind==='TVDSS'?`TVDSS ${u}`:`${u} from ${S.datum}`;
-  div.innerHTML=`<div class="thead"><div class="tn">Depth</div><div class="scale" style="color:var(--muted)"><span></span><span class="c">${lbl}</span><span></span></div></div>`;
-  const svg=d3.create('svg').attr('width',64).attr('height',H).attr('class','depthsvg');
+/* Depth track: MD and subsea TVD side by side, each switchable from the chips in its header. */
+function depthTrack(w,F,y,H,ticks,zc){
+  const cols=[ticks.showMD&&'md',ticks.showSS&&'ss'].filter(Boolean);
+  const W=12+44*cols.length, u=dispU();
+  const div=document.createElement('div'); div.className='track dtrack'; div.style.width=W+'px';
+  const chip=(k,lbl,dis)=>`<button type="button" data-dl="${k}" aria-pressed="${!!S.depthLabels[k]&&!dis}"${dis?` disabled title="No KB or GL elevation in this well"`:` title="Show ${k==='md'?'measured depth':'subsea TVD (KB minus TVD, negative below sea level)'}"`}>${lbl}</button>`;
+  div.innerHTML=`<div class="thead"><div class="tn">Depth</div><div class="dchips">${chip('md','MD',false)}${chip('ss','ssTVD',!ticks.hasSS)}</div><div class="scale" style="color:var(--muted)"><span></span><span class="c">${u}</span><span></span></div></div>`;
+  const svg=d3.create('svg').attr('width',W).attr('height',H).attr('class','depthsvg');
   // Zone strip: the same zone colors as the stats tab and the correlation fills.
   for(const z of zonesOf(w)){ if(z.name==='Whole well') continue; const y0=y(F.z(z.top)), y1=y(F.z(z.base)); if(y1<0||y0>H) continue;
     svg.append('rect').attr('x',0).attr('width',7).attr('y',Math.max(0,y0)).attr('height',Math.max(0,Math.min(H,y1)-Math.max(0,y0))).attr('fill',zc.get(z.name)||'transparent').append('title').text(z.name); }
-  const [t,b]=[S.view.top,S.view.bottom]; const start=Math.ceil(t/minorI)*minorI;
-  for(let v=start;v<=b;v+=minorI){ const major=Math.abs(v/tickI-Math.round(v/tickI))<1e-6; svg.append('line').attr('x1',major?40:52).attr('x2',64).attr('y1',y(v)).attr('y2',y(v)).attr('class','grid'+(major?' s':''));
-    if(major) svg.append('text').attr('x',38).attr('y',y(v)+3.5).attr('text-anchor','end').attr('class','depth').text(fmtDepth(v)); }
-  for(const tp of w.tops){ const yy=y(F.z(tp.md)); if(yy<0||yy>H) continue; svg.append('line').attr('x1',8).attr('x2',64).attr('y1',yy).attr('y2',yy).attr('class','top').attr('data-top',tp.name); }
-  const node=svg.node(); attachTopDrag(node,w,F,y); div.appendChild(node); return div;
+  for(const t of ticks.grid) svg.append('line').attr('x1',t.major?W-6:W-3).attr('x2',W).attr('y1',t.y).attr('y2',t.y).attr('class','grid s');
+  cols.forEach((c,j)=>{ const x=12+44*j+40; for(const t of ticks[c]) svg.append('text').attr('x',x).attr('y',t.y+3.5).attr('text-anchor','end').attr('class','depth'+(c==='ss'?' ss':'')).text(Math.round(t.v).toLocaleString().replace(/^-/,'−')); });
+  for(const tp of w.tops){ const yy=y(F.z(tp.md)); if(yy<0||yy>H) continue; svg.append('line').attr('x1',8).attr('x2',W).attr('y1',yy).attr('y2',yy).attr('class','top').attr('data-top',tp.name).style('stroke',zc.get(tp.name)||null); }
+  const node=svg.node();
+  node.addEventListener('mousemove',e=>{ if(S.drag) return; const r=node.getBoundingClientRect(); const z=y.invert(e.clientY-r.top); showCursor(e.clientY-$('logPanel').getBoundingClientRect().top,mdAtZ(w,F,z),w,[]); });
+  node.addEventListener('mouseleave',()=>{ $('cursor').style.display='none'; });
+  attachTopDrag(node,w,F,y); div.appendChild(node); return div;
 }
 const fillHex=c=>c&&c.startsWith('var(')?cssVarHex(c.slice(4,-1)):c;
 function scaleFor(c,width){ return c.log?d3.scaleLog([c.min,c.max],[0,width]).clamp(true):d3.scaleLinear([c.min,c.max],[0,width]).clamp(true); }
 const LITHO={Sandstone:'#EDC84A',Siltstone:'#C0CCC6',Shale:'#465445',Marl:'#A2DBDB','Limestone / chalk':'#4E86C4'};   // petroplots LITHOLOGY colors
-const LITHO_RULE={PE:{'Limestone / chalk':'PE ≥ 4, Vsh < 0.4',Marl:'PE ≥ 3.5, Vsh < 0.75',Sandstone:'PE < 2.6, Vsh < 0.4',Siltstone:'Vsh < 0.4 otherwise, or 0.4–0.65',Shale:'Vsh ≥ 0.65'},
-  GR:{Sandstone:'Vsh < 0.4',Siltstone:'Vsh 0.4–0.65',Shale:'Vsh ≥ 0.65'}};
-function showLithTip(e,k,hasPE){ const R=LITHO_RULE[hasPE?'PE':'GR'], tip=$('tip');
-  tip.innerHTML=`<div style="margin-bottom:4px;color:var(--muted)">Quick-look lithology from ${hasPE?'GR and PE':'GR only'}</div>`+Object.entries(R).map(([n,r])=>`<div class="lr${n===k?' on':''}"><i style="background:${LITHO[n]}"></i>${esc(n)} <small>${r}</small></div>`).join('');
-  tip.hidden=false; const x=e.clientX+14, y=e.clientY+14; tip.style.left=Math.min(x,innerWidth-tip.offsetWidth-8)+'px'; tip.style.top=Math.min(y,innerHeight-tip.offsetHeight-8)+'px'; }
+// Quick-look cutoffs, editable per lithology track (gear on the track).
+const LITH_DEF={sandVsh:0.4,shaleVsh:0.65,limePE:4,marlPE:3.5,marlVsh:0.75,sandPE:2.6};
+function lithParams(t){ return {...LITH_DEF,...(t?.lith||{}),colors:{...LITHO,...(t?.lith?.colors||{})}}; }
+function lithRules(P,hasPE){ return hasPE?{'Limestone / chalk':`PE ≥ ${P.limePE}, Vsh < ${P.sandVsh}`,Marl:`PE ≥ ${P.marlPE}, Vsh < ${P.marlVsh}`,Sandstone:`PE < ${P.sandPE}, Vsh < ${P.sandVsh}`,Siltstone:`Vsh < ${P.sandVsh} otherwise, or ${P.sandVsh}–${P.shaleVsh}`,Shale:`Vsh ≥ ${P.shaleVsh}`}
+  :{Sandstone:`Vsh < ${P.sandVsh}`,Siltstone:`Vsh ${P.sandVsh}–${P.shaleVsh}`,Shale:`Vsh ≥ ${P.shaleVsh}`}; }
+function quickLith(vsh,pe,P=LITH_DEF){ if(!Number.isFinite(vsh)) return null;
+  if(Number.isFinite(pe)){ if(pe>=P.limePE&&vsh<P.sandVsh) return 'Limestone / chalk'; if(pe>=P.marlPE&&vsh<P.marlVsh) return 'Marl'; if(pe<P.sandPE&&vsh<P.sandVsh) return 'Sandstone'; if(vsh<P.sandVsh) return 'Siltstone'; }
+  return vsh<P.sandVsh?'Sandstone':vsh<P.shaleVsh?'Siltstone':'Shale'; }
+function showTip(e,html){ const tip=$('tip'); tip.innerHTML=html; tip.hidden=false;
+  const x=e.clientX+14, y=e.clientY+14; tip.style.left=Math.max(8,Math.min(x,innerWidth-tip.offsetWidth-8))+'px'; tip.style.top=Math.max(8,Math.min(y,innerHeight-tip.offsetHeight-8))+'px'; }
 function hideTip(){ $('tip').hidden=true; }
-function quickLith(vsh,pe){ if(!Number.isFinite(vsh)) return null;
-  if(Number.isFinite(pe)){ if(pe>=4&&vsh<0.4) return 'Limestone / chalk'; if(pe>=3.5&&vsh<0.75) return 'Marl'; if(pe<2.6&&vsh<0.4) return 'Sandstone'; if(vsh<0.4) return 'Siltstone'; }
-  return vsh<0.4?'Sandstone':vsh<0.65?'Siltstone':'Shale'; }
-function logTrack(w,t,F,y,H,tickI,minorI){
+const legendTip=(title,rows)=>`<div class="tiph">${esc(title)}</div>`+rows.map(([n,c,r])=>`<div class="lr"><i style="background:${c}"></i>${esc(n)} <small>${esc(r||'')}</small></div>`).join('');
+function logTrack(w,t,F,y,H,ticks){
   const width=trackW(t), dep=depthOf(w), zA=F.arr; const div=document.createElement('div'); div.className='track'; div.style.width=width+'px';
   const head=document.createElement('div'); head.className='thead';
   head.innerHTML=`<div class="tn"><span>${esc(t.name)}</span><button title="Edit track" data-edit="${t.id}">⚙</button></div>`;
   const resolved=t.curves.map(c=>{ const curve=resolveCurve(w,c); return {cfg:curve?effCfg(w,c):c,curve}; });
   const gr=resolveCurve(w,{aliases:A.GR}), pe=resolveCurve(w,{aliases:A.PE}); let lithCls=null;
   if(t.type==='lithpct'){ const have=resolved.filter(r=>r.curve&&!r.curve.sparse); head.innerHTML+=`<div class="scale" style="color:var(--muted)"><span>0</span><span class="c">${have.length?have.length+' components':'no cuttings curves'}</span><span class="r">100%</span></div><div class="legend">${have.map(r=>`<i style="background:${r.cfg.color}" title="${r.cfg.label} (${r.curve.mnemonic})"></i>`).join('')}</div>`; }
-  else if(t.type==='lith') head.innerHTML+=`<div class="scale" style="color:var(--muted)"><span></span><span class="c">${pe&&!pe.sparse?'GR + PE':'GR'} quick look</span><span></span></div><div class="legend">${Object.entries(LITHO).filter(([k])=>pe&&!pe.sparse||!/Marl|Lime/.test(k)).map(([k,c])=>`<i style="background:${c}"></i>`).join('')}</div>`;
-  else if(t.type==='flags') head.innerHTML+=`<div class="legend">${resolved.filter(r=>r.curve).map(r=>`<i style="background:${r.cfg.color}" title="${r.cfg.label}: ${esc(r.curve.description||'')}"></i>`).join('')}</div>`;
+  const LP=lithParams(t), hasPE=!!(pe&&!pe.sparse);
+  if(t.type==='lith') head.innerHTML+=`<div class="scale" style="color:var(--muted)"><span></span><span class="c">${hasPE?'GR + PE':'GR'} quick look</span><span></span></div><div class="legend">${Object.keys(lithRules(LP,hasPE)).map(k=>`<i style="background:${LP.colors[k]}"></i>`).join('')}</div>`;
+  else if(t.type==='flags') head.innerHTML+=`<div class="legend">${resolved.filter(r=>r.curve).map(r=>`<i style="background:${r.cfg.color}"></i>`).join('')}</div>`;
   else for(const {cfg,curve} of resolved){ const s=document.createElement('div'); s.className='scale'; s.style.color=cfg.color; s.style.opacity=curve?1:.35; s.title=curve?.description||'';
     s.innerHTML=`<span>${cfg.min}</span><span class="c">${curve?curve.mnemonic:cfg.label+' (none)'}${cfg.unit?' '+cfg.unit:''}${cfg.tag?' · '+cfg.tag:''}</span><span class="r">${cfg.max}</span><span class="bar${curve?.sparse?' pts':cfg.dash?' dash':''}"></span>`; head.appendChild(s); }
   div.appendChild(head);
   const svg=d3.create('svg').attr('width',width).attr('height',H).classed('pick',S.picking);
   const [top,bot]=[S.view.top,S.view.bottom];
-  for(let v=Math.ceil(top/minorI)*minorI;v<=bot;v+=minorI){ const major=Math.abs(v/tickI-Math.round(v/tickI))<1e-6; svg.append('line').attr('x1',0).attr('x2',width).attr('y1',y(v)).attr('y2',y(v)).attr('class','grid'+(major?' s':'')); }
+  for(const tk of ticks.grid) svg.append('line').attr('x1',0).attr('x2',width).attr('y1',tk.y).attr('y2',tk.y).attr('class','grid'+(tk.major?' s':''));
   const first=resolved[0]?.cfg||t.curves[0];
   if(t.type==='lithpct'){ for(let i=1;i<10;i++){ const x=width*i/10; svg.append('line').attr('x1',x).attr('x2',x).attr('y1',0).attr('y2',H).attr('class','grid'+(i%5===0?' s':'')); } }
   else if(first&&!t.type){ if(first.log){ const dec=Math.round(Math.log10(Math.max(first.max,first.min)/Math.min(first.max,first.min))); const sx=scaleFor(first,width); const lo=Math.min(first.min,first.max);
@@ -186,8 +234,9 @@ function logTrack(w,t,F,y,H,tickI,minorI){
       for(let k=0;k<idx.length;k++){ const i=idx[k], j=idx[k+1]??Math.min(i1,i+stride); let x=0;
         for(const r of have){ const v=r.curve.data[i]; if(!Number.isFinite(v)||v<=0) continue; band(g,i,j,x,v*sx,r.cfg.color); x+=v*sx; } } } }
   else if(t.type==='lith'){ if(gr&&!gr.sparse){ const g=svg.append('g'); const bl=grBaselines(w); const vs=resolveCurve(w,{aliases:['VSH_GR']}); let run=null;
-      const cls=lithCls=i=>quickLith(vs?vs.data[i]:WellerPetro.igr(gr.data[i],bl.clean??20,bl.shale??130),pe&&!pe.sparse?pe.data[i]:NaN);
-      const flush=(k,a,b)=>{ if(k) band(g,a,b,0,width,LITHO[k],k); };
+      const vshAt=i=>vs?vs.data[i]:WellerPetro.igr(gr.data[i],bl.clean??20,bl.shale??130), peAt=i=>hasPE?pe.data[i]:NaN;
+      const cls=i=>quickLith(vshAt(i),peAt(i),LP); lithCls=i=>({k:cls(i),vsh:vshAt(i),pe:peAt(i)});
+      const flush=(k,a,b)=>{ if(k) band(g,a,b,0,width,LP.colors[k]); };
       for(const i of idx){ const k=cls(i); if(!run||run.k!==k){ if(run) flush(run.k,run.a,i); run={k,a:i}; } }
       if(run) flush(run.k,run.a,i1); } }
   else if(t.type==='flags'){ const have=resolved.filter(r=>r.curve&&!r.curve.sparse); const wd=width/Math.max(1,have.length);
@@ -209,13 +258,20 @@ function logTrack(w,t,F,y,H,tickI,minorI){
       svg.append('path').attr('d',line(idx)).attr('fill','none').attr('stroke',cfg.color).attr('stroke-width',1.2).attr('stroke-dasharray',cfg.dash||null); }
   }
   const firstVis=visibleTracks(w)[0];
-  for(const tp of w.tops){ const yy=y(F.z(tp.md)); if(yy<0||yy>H) continue; svg.append('line').attr('x1',0).attr('x2',width).attr('y1',yy).attr('y2',yy).attr('class','top').attr('data-top',tp.name);
+  for(const tp of w.tops){ const yy=y(F.z(tp.md)); if(yy<0||yy>H) continue; svg.append('line').attr('x1',0).attr('x2',width).attr('y1',yy).attr('y2',yy).attr('class','top').attr('data-top',tp.name).style('stroke',S._zc?.get(tp.name)||null);
     if(t===firstVis) svg.append('text').attr('x',3).attr('y',yy-3).attr('class','toplbl').attr('data-top',tp.name).text(tp.name); }
   const node=svg.node();
-  node.addEventListener('mousemove',e=>{ if(S.drag) return; const r=node.getBoundingClientRect(); const z=y.invert(e.clientY-r.top), md=mdAtZ(w,F,z); showCursor(e.clientY-$('logPanel').getBoundingClientRect().top,md,z,F,w,resolved);
-    if(lithCls){ const dep=depthOf(w); showLithTip(e,lithCls(Math.min(dep.length-1,Math.max(0,d3.bisectCenter(dep,md)))),pe&&!pe.sparse); } });
+  const flagsOn=resolved.filter(r=>r.curve&&!r.curve.sparse);
+  node.addEventListener('mousemove',e=>{ if(S.drag) return; const r=node.getBoundingClientRect(); const z=y.invert(e.clientY-r.top), md=mdAtZ(w,F,z); showCursor(e.clientY-$('logPanel').getBoundingClientRect().top,md,w,resolved);
+    const i=Math.min(dep.length-1,Math.max(0,d3.bisectCenter(dep,md)));
+    if(lithCls){ const L=lithCls(i); if(!L.k) return hideTip(); const rule=lithRules(LP,hasPE)[L.k];
+      showTip(e,`<div class="lr on"><i style="background:${LP.colors[L.k]}"></i>${esc(L.k)}</div><div class="tipv">Vsh <b>${L.vsh.toFixed(2)}</b>${Number.isFinite(L.pe)?` · PE <b>${L.pe.toFixed(2)}</b> b/e`:''}</div><div class="tipr">Rule: ${esc(rule)}</div><div class="tipd">${depthText(w,md)}</div>`); }
+    else if(t.type==='flags'){ const on=flagsOn.filter(f=>f.curve.data[i]>0.5);
+      showTip(e,(on.length?on.map(f=>`<div class="lr on"><i style="background:${f.cfg.color}"></i>${esc(f.cfg.label)}</div>`).join(''):'<div class="tipv">No flag at this depth</div>')+`<div class="tipd">${depthText(w,md)}</div>`); } });
   node.addEventListener('mouseleave',()=>{ $('cursor').style.display='none'; hideTip(); });
-  if(t.type==='lith') head.querySelector('.legend')?.addEventListener('mousemove',e=>showLithTip(e,null,pe&&!pe.sparse)), head.querySelector('.legend')?.addEventListener('mouseleave',hideTip);
+  const leg=head.querySelector('.legend');
+  if(leg&&t.type==='lith'){ leg.addEventListener('mousemove',e=>showTip(e,legendTip(`Quick-look lithology from ${hasPE?'GR and PE':'GR only'}`,Object.entries(lithRules(LP,hasPE)).map(([n,r])=>[n,LP.colors[n],r])))); leg.addEventListener('mouseleave',hideTip); }
+  if(leg&&t.type==='flags'){ leg.addEventListener('mousemove',e=>showTip(e,legendTip('Flags',flagsOn.map(f=>[f.cfg.label,f.cfg.color,(f.curve.description||'').replace(/^[^:]*:\s*/,'')])))); leg.addEventListener('mouseleave',hideTip); }
   node.addEventListener('click',e=>{ if(!S.picking) return; const r=node.getBoundingClientRect(); const md=Math.round(mdAtZ(w,F,y.invert(e.clientY-r.top))*2)/2; placeTop(w,md); });
   attachTopDrag(node,w,F,y);
   div.appendChild(node); return div;
@@ -230,14 +286,14 @@ function attachTopDrag(node,w,F,y){
   node.addEventListener('pointermove',e=>{ const D=S.drag; if(!D||D.w!==w) return;
     const z=D.y.invert(e.clientY-D.top); D.md=Math.round(mdAtZ(w,D.F,z)*2)/2; const yy=D.y(D.F.z(D.md));
     D.col.querySelectorAll(`[data-top="${CSS.escape(D.tp.name)}"]`).forEach(el=>{ if(el.tagName==='line'){ el.setAttribute('y1',yy); el.setAttribute('y2',yy); } else el.setAttribute('y',yy-3); });
-    $('stNote').textContent=`${D.tp.name}: ${D.md.toFixed(1)} ${w.depthUnit||'ft'} MD in ${w.name}`; });
+    $('stNote').textContent=`${D.tp.name}: ${depthText(w,D.md)} in ${w.name}`; });
   const end=e=>{ const D=S.drag; if(!D||D.w!==w) return; S.drag=null; document.body.classList.remove('dragging');
     if(Math.abs(D.md-D.tp.md)>=0.5){ D.tp.md=D.md; D.tp.source='user'; w._grP=null; if(S.interp?.enabled) computeInterp(w); } render(); };
   node.addEventListener('pointerup',end); node.addEventListener('pointercancel',end);
 }
-function showCursor(yPx,md,z,F,w,resolved){ const dep=depthOf(w); const c=$('cursor'); c.style.display='block'; c.style.top=(yPx)+'px';
-  const i=Math.min(dep.length-1,Math.max(0,d3.bisectCenter(dep,md))); const u=w.depthUnit||'ft';
-  $('stCursor').innerHTML=`<b>${esc(w.name)}</b> MD ${md.toFixed(1)} ${u}${F.kind!=='MD'?` · ${F.kind==='TVDSS'?'TVDSS':'rel.'} ${z.toFixed(1)}`:''}`;
+function showCursor(yPx,md,w,resolved){ const dep=depthOf(w); const c=$('cursor'); c.style.display='block'; c.style.top=(yPx)+'px';
+  const i=Math.min(dep.length-1,Math.max(0,d3.bisectCenter(dep,md)));
+  $('stCursor').innerHTML=`<b>${esc(w.name)}</b> ${depthText(w,md)}`;
   $('stVals').innerHTML=resolved.filter(r=>r.curve).map(r=>{ const c=r.curve; if(c.sparse){ const k=nearestPoint(c,md); return k<0?'':`${c.mnemonic} <b>${fmtVal(c.data[k],r.cfg)}</b> @${c.md[k]}`; } return `${c.mnemonic} <b>${fmtVal(c.data[i],r.cfg)}</b>`; }).filter(Boolean).join(' · '); }
 function drawCorrelations(cols,y,gaps,zc){
   const ov=d3.select('#overlay'), panel=$('logPanel'), panelR=panel.getBoundingClientRect();
@@ -258,31 +314,54 @@ function drawCorrelations(cols,y,gaps,zc){
     const missing=names.filter(n=>(yOf(a,n)===null)!==(yOf(b,n)===null)&&cols.slice(i).some(c=>c.w.tops.some(t=>t.name===n))&&cols.slice(0,i+1).some(c=>c.w.tops.some(t=>t.name===n)));
     if(missing.length) warn.push(`${missing.join(', ')} not picked in ${(yOf(a,missing[0])===null?a:b).c.w.name}`);
     const g=gaps[i]; if(g?.km!=null&&b.l-a.r>30){ const lbl=document.createElement('div'); lbl.className='gaplbl'; lbl.style.left=(a.r)+'px'; lbl.style.width=(b.l-a.r)+'px'; lbl.style.top=(geo[i].y0-54)+'px';
-      lbl.textContent=g.km<1.6?`${Math.round(g.km*3280.84).toLocaleString()} ft`:`${(g.km*0.621371).toFixed(1)} mi`; lbl.title=`${g.km.toFixed(2)} km between wellheads`; panel.appendChild(lbl); }
+      lbl.textContent=fmtDist(g.km); lbl.title='Distance between wellheads'; panel.appendChild(lbl); }
   }
   S._corrWarn=warn.join(' · '); if(warn.length) $('stNote').textContent='⚠ '+S._corrWarn;
 }
-function placeTop(w,md){ const name=$('topName').value.trim(); if(!name) return; const ex=w.tops.find(t=>t.name===name); if(ex) ex.md=md; else w.tops.push({name,md,source:'user'}); S.picking=false; $('btnPick').classList.remove('primary'); $('stNote').textContent=`${name} set at ${md} ft in ${w.name}`; if(S.interp?.enabled) computeInterp(w); render(); }
+function placeTop(w,md){ const name=$('topName').value.trim(); if(!name) return; const ex=w.tops.find(t=>t.name===name); if(ex) ex.md=md; else w.tops.push({name,md,source:'user'}); S.picking=false; $('btnPick').classList.remove('primary'); $('stNote').textContent=`${name} set at ${depthText(w,md)} in ${w.name}`; if(S.interp?.enabled) computeInterp(w); render(); }
 
 /* ---------- Sidebar: map, wells, tracks, tops ---------- */
-function clickWell(id){ if(S.mode==='corr'){ const i=S.panel.indexOf(id); if(i>=0) S.panel.splice(i,1); else S.panel.push(id); } else S.selected=id; render(); }
+// A click selects a well (the one the Tops panel edits). The dot adds it to or drops it from the section.
+function clickWell(id){ S.selected=id; render(); }
+function toggleSection(id){ const i=S.panel.indexOf(id); if(i>=0) S.panel.splice(i,1); else S.panel.push(id); S.selected=id; if(S.mode==='corr'&&S.panel.length===1) fitView(); else render(); }
 // Rebuild a list only when its markup changed, so a click in progress never loses its target.
 function setHTML(el,html){ if(el._html!==html){ el.innerHTML=html; el._html=html; } }
 function renderSidebar(){
   renderMap();
   $('wellCount').textContent=S.wells.length;
-  setHTML($('wellList'),S.wells.map(w=>{ const [a,b]=wellRange(w); return `<li data-well="${w.id}" class="${w.id===S.selected?'sel':''}"><span class="dot${S.mode==='corr'&&S.panel.includes(w.id)?' in':''}"></span><span>${w.name}</span><span class="meta">${w.curves.filter(c=>!c.sparse).length-1} crv${w.curves.some(c=>c.sparse)?' · pts':''} · ${fmtDepth(b)} ${w.depthUnit}</span><button class="small" data-wellset="${w.id}" title="Well settings">⚙</button></li>`; }).join(''));
+  setHTML($('wellList'),S.wells.map(w=>{ const inSec=S.panel.includes(w.id); return `<li data-well="${w.id}" data-wellmeta="${w.id}" draggable="true" class="${w.id===S.selected?'sel':''}"><span class="grip" aria-hidden="true">⋮⋮</span><button type="button" class="dot${inSec?' in':''}" data-sect="${w.id}" aria-pressed="${inSec}" title="${inSec?'In the correlation section: click to remove':'Add to the correlation section'}"></button><span class="wn">${esc(w.name)}</span><button class="small" data-wellset="${w.id}" title="Well settings">⚙</button></li>`; }).join(''));
   setHTML($('trackList'),S.tracks.map((t,i)=>`<div class="trackrow"><span class="sw">${t.curves.slice(0,4).map(c=>`<i style="background:${c.color||'var(--muted)'}"></i>`).join('')}</span><span class="nm">${t.name}</span><label title="Show in correlation panel" style="display:${S.mode==='corr'?'inline':'none'};font-size:11px;color:var(--muted)"><input type="checkbox" data-panel="${i}"${t.panel?' checked':''}> panel</label><button class="small" data-up="${i}" title="Move left">◂</button><button class="small" data-dn="${i}" title="Move right">▸</button><button class="small" data-edit="${t.id}">⚙</button></div>`).join(''));
   renderPointList(); renderInterpPanel();
-  const w=S.mode==='corr'?wellById(S.panel[S.panel.length-1]||S.selected):wellById(S.selected);
-  $('topsWell').textContent=w?w.name:'';
-  setHTML($('topsTable'),w?[...w.tops].sort((a,b)=>a.md-b.md).map(t=>`<tr><td>${t.name}</td><td style="text-align:right">${t.md.toFixed(1)}</td><td><button class="small" data-deltop="${t.name}">×</button></td></tr>`).join(''):'');
+  const w=wellById(S.selected), zc=S._zc||zoneColorMap();
+  setHTML($('topsWellSel'),S.wells.map(x=>`<option value="${x.id}"${x.id===S.selected?' selected':''}>${esc(x.name)}</option>`).join('')); $('topsWellSel').value=S.selected||'';
+  $('topsUnit').textContent=`MD ${dispU()}`;
+  setHTML($('topsTable'),w?[...w.tops].sort((a,b)=>a.md-b.md).map(t=>{ const c=zc.get(t.name)||'#888888';
+    return `<tr><td><button type="button" class="swatchbtn tiny" data-topcolor="${esc(t.name)}" data-color="${c}" style="background:${c}" title="Color for ${esc(t.name)} in every well"></button></td><td class="tn">${esc(t.name)}</td><td style="text-align:right"><input type="number" step="0.5" data-topmd="${esc(t.name)}" value="${+toDisp(t.md,w).toFixed(1)}" aria-label="${esc(t.name)} MD"></td><td><button class="small" data-deltop="${esc(t.name)}" title="Delete this pick">×</button></td></tr>`; }).join(''):'');
   const names=[...new Set(S.wells.flatMap(w=>[...w.tops].sort((a,b)=>a.md-b.md).map(t=>t.name)))];
-  $('topNames').innerHTML=names.map(n=>`<option value="${n}">`).join('');
-  const dsel=$('datum'); const cur=S.datum; dsel.innerHTML=`<option value="MD">Measured depth</option><option value="TVDSS">Sea level (TVDSS)</option>`+names.map(n=>`<option value="${n}">Flatten on ${n}</option>`).join(''); dsel.value=names.includes(cur)||cur==='MD'||cur==='TVDSS'?cur:'MD';
-  $('spacing').value=S.corr.spacing; $('winTop').value=S.view.top; $('winBot').value=S.view.bottom; $('showEmpty').checked=S.showEmpty;
-  const sw=wellById(S.selected); if(sw) $('stFile').innerHTML=`<b>${sw.fileName||sw.name+'.las (synthetic)'}</b> · ${sw.rows||depthOf(sw).length} rows · KB ${sw.elevation.kb??'?'} ft · null ${sw.nullv??-999.25}${sw.wrap?' · wrapped':''}`;
+  $('topNames').innerHTML=names.map(n=>`<option value="${esc(n)}">`).join('');
+  const dsel=$('datum'); const cur=S.datum; dsel.innerHTML=`<option value="MD">Measured depth</option><option value="TVDSS">Sea level (TVDSS)</option>`+names.map(n=>`<option value="${esc(n)}">Flatten on ${esc(n)}</option>`).join(''); dsel.value=names.includes(cur)||cur==='MD'||cur==='TVDSS'?cur:'MD';
+  $('spacing').value=S.corr.spacing; $('showEmpty').checked=S.showEmpty;
+  document.querySelectorAll('[data-units]').forEach(b=>b.setAttribute('aria-pressed',b.dataset.units===S.units));
+  const sw=wellById(S.selected); $('stFile').innerHTML=sw?`<b>${esc(sw.fileName||sw.name+'.las (synthetic)')}</b> · ${sw.rows||depthOf(sw).length} rows · KB ${Number.isFinite(sw.elevation.kb)?fmtD(sw.elevation.kb,sw)+' '+dispU():'?'} · null ${sw.nullv??-999.25}${sw.wrap?' · wrapped':''}`:'';
 }
+/* Well list: drag a row to reorder wells, and with them the section. */
+{ const list=$('wellList'); let dragId=null;
+  list.addEventListener('dragstart',e=>{ const li=e.target.closest('li[data-well]'); if(!li) return; dragId=li.dataset.well; e.dataTransfer.effectAllowed='move'; e.dataTransfer.setData('text/x-weller-well',dragId); li.classList.add('dragsrc'); });
+  list.addEventListener('dragover',e=>{ if(!dragId) return; e.preventDefault(); e.stopPropagation(); list.querySelectorAll('.dropb,.dropa').forEach(x=>x.classList.remove('dropb','dropa'));
+    const li=e.target.closest('li[data-well]'); if(!li||li.dataset.well===dragId) return; const r=li.getBoundingClientRect(); li.classList.add(e.clientY<r.top+r.height/2?'dropb':'dropa'); });
+  list.addEventListener('drop',e=>{ if(!dragId) return; e.preventDefault(); e.stopPropagation(); const li=e.target.closest('li[data-well]');
+    if(li&&li.dataset.well!==dragId){ const after=li.classList.contains('dropa'); const w=wellById(dragId); S.wells=S.wells.filter(x=>x!==w); const j=S.wells.findIndex(x=>x.id===li.dataset.well); S.wells.splice(after?j+1:j,0,w); }
+    dragId=null; list._html=null; render(); });
+  list.addEventListener('dragend',()=>{ dragId=null; list.querySelectorAll('.dragsrc,.dropb,.dropa').forEach(x=>x.classList.remove('dragsrc','dropb','dropa')); }); }
+// West to east (left to right, as on the map); wells without a location keep their order at the end.
+function sortWestEast(wells){ const lon=w=>wgs84Of(w)?.[1]; return [...wells].sort((a,b)=>{ const x=lon(a), y=lon(b); return Number.isFinite(x)&&Number.isFinite(y)?x-y:Number.isFinite(x)?-1:Number.isFinite(y)?1:0; }); }
+$('topsWellSel').onchange=e=>{ S.selected=e.target.value; render(); };
+document.addEventListener('change',e=>{ const t=e.target; if(t.dataset.topmd===undefined) return; const w=wellById(S.selected), tp=w?.tops.find(x=>x.name===t.dataset.topmd), v=parseFloat(t.value);
+  if(!tp||!Number.isFinite(v)) return; tp.md=fromDisp(v,w); tp.source='user'; w._grP=null; if(S.interp?.enabled) computeInterp(w); render(); });
+document.addEventListener('colorpicked',e=>{ const n=e.target.dataset.topcolor; if(n===undefined) return; S.topColors={...S.topColors,[n]:e.detail}; render(); });
+$('btnTopColorsSave').onclick=()=>{ const zc=zoneColorMap(), all={}; for(const w of S.wells) for(const t of w.tops) all[t.name]=zc.get(t.name);
+  $('stNote').textContent=lsSet('weller.topColors',{...lsGet('weller.topColors',{}),...all})?`Top colors saved as your default (${Object.keys(all).length} tops)`:'Could not save (storage blocked)'; };
+$('btnTopColorsReset').onclick=()=>{ try{ localStorage.removeItem('weller.topColors'); }catch(e){} S.topColors={}; render(); $('stNote').textContent='Top colors reset to the built-in palette'; };
 
 /* ---------- Color popover: pick a swatch and it closes (native pickers stay open on macOS) ---------- */
 const SWATCHES=['#172029','#4A5560','#6B7680','#9AA6B2','#D5DBE2','#FFFFFF','#8C7B62','#A89A84',
@@ -296,7 +375,7 @@ function openColorPop(btn){ colorTarget=btn; const pop=$('colorPop'), r=btn.getB
   pop.hidden=false; const pw=pop.offsetWidth, ph=pop.offsetHeight;
   pop.style.left=Math.max(8,Math.min(innerWidth-pw-8,r.left))+'px'; pop.style.top=(r.bottom+ph+8>innerHeight?r.top-ph-4:r.bottom+4)+'px';
   pop.querySelector('button').focus(); }
-function pickColor(c){ if(colorTarget&&/^#[0-9a-f]{6}$/i.test(c)){ colorTarget.dataset.color=c; colorTarget.style.background=c; } closeColorPop(); }
+function pickColor(c){ const t=colorTarget; if(t&&/^#[0-9a-f]{6}$/i.test(c)){ t.dataset.color=c; t.style.background=c; } closeColorPop(); if(t&&/^#[0-9a-f]{6}$/i.test(c)) t.dispatchEvent(new CustomEvent('colorpicked',{bubbles:true,detail:c})); }
 function closeColorPop(){ $('colorPop').hidden=true; colorTarget?.focus(); colorTarget=null; }
 document.addEventListener('click',e=>{ const sb=e.target.closest('.swatchbtn'); if(sb){ openColorPop(sb); return; }
   const pk=e.target.closest('[data-pick]'); if(pk){ pickColor(pk.dataset.pick); return; }
@@ -308,7 +387,13 @@ document.addEventListener('keydown',e=>{ if(e.key==='Escape'&&!$('colorPop').hid
 /* ---------- Track editor ---------- */
 let editing=null;
 function openTrackDlg(id){ const t=S.tracks.find(t=>t.id===id); if(!t) return; editing=JSON.parse(JSON.stringify(t)); $('tdName').value=editing.name; $('tdWidth').value=editing.width||190; drawTdCurves(); $('trackDlg').hidden=false; }
-function drawTdCurves(){ const w=wellById(S.selected)||S.wells[0]; const tb=$('tdCurves'); tb.innerHTML='';
+// Lithology tracks edit their cutoffs and colors instead of a curve list.
+function drawTdLith(){ const P=lithParams(editing), n=(k,st)=>`<input type="number" data-lp="${k}" value="${P[k]}" step="${st||0.05}" style="width:4.2em">`, c=k=>`<button type="button" class="swatchbtn" data-lc="${k}" data-color="${P.colors[k]}" style="background:${P.colors[k]}" title="${k} color"></button>`;
+  $('tdLithBody').innerHTML=[['Sandstone',`Vsh &lt; ${n('sandVsh')}; where PE exists, also PE &lt; ${n('sandPE',0.1)}`],['Siltstone',`Vsh from the sand cutoff to ${n('shaleVsh')}, or clean rock no PE class fits`],['Shale','Vsh at or above the shale cutoff'],
+    ['Limestone / chalk',`PE ≥ ${n('limePE',0.1)} and Vsh below the sand cutoff`],['Marl',`PE ≥ ${n('marlPE',0.1)} and Vsh &lt; ${n('marlVsh')}`]].map(([k,r])=>`<tr><td>${c(k)} ${k}</td><td>${r}</td></tr>`).join(''); }
+function readTdLith(){ const P={colors:{}}; document.querySelectorAll('#tdLithBody [data-lp]').forEach(i=>{ const v=parseFloat(i.value); if(Number.isFinite(v)) P[i.dataset.lp]=v; }); document.querySelectorAll('#tdLithBody [data-lc]').forEach(b=>P.colors[b.dataset.lc]=b.dataset.color); editing.lith=P; }
+function drawTdCurves(){ const lith=editing.type==='lith'; $('tdLith').hidden=!lith; $('tdCurveWrap').hidden=lith; $('tdAddRow').hidden=lith; if(lith) return drawTdLith();
+  const w=wellById(S.selected)||S.wells[0]; const tb=$('tdCurves'); tb.innerHTML=''; if(!w) return;
   const toHex=c=>c.startsWith('var(')?cssVarHex(c.slice(4,-1)):c;
   editing.curves.forEach((c,i)=>{ const tr=document.createElement('tr'); const cur=resolveCurve(w,c);
     tr.innerHTML=`<td><select data-i="${i}" class="tdm">${w.curves.slice(1).map(x=>`<option value="${x.mnemonic}"${cur&&cur.mnemonic===x.mnemonic?' selected':''}>${x.mnemonic} (${x.unit||'-'})${x.sparse?' · points':''}</option>`).join('')}${cur?'':`<option selected value="">${c.label} (not in well)</option>`}</select><div class="hint" style="font-size:10px">${c.label}</div></td>
@@ -324,7 +409,7 @@ function autoScale(curve,log){ const v=Array.from(curve.data).filter(x=>Number.i
   const lo=v[Math.floor(v.length*.02)], hi=v[Math.floor(v.length*.98)]; if(log){ return [10**Math.floor(Math.log10(lo)),10**Math.ceil(Math.log10(hi))]; }
   const [a,b]=d3.scaleLinear().domain([lo,hi]).nice(5).domain(); return [a,b]; }
 function cssVarHex(name){ const v=cssVar(name); if(/^#/.test(v)) return v; const m=v.match(/\d+/g); return m?'#'+m.slice(0,3).map(n=>(+n).toString(16).padStart(2,'0')).join(''):'#333333'; }
-function readTd(){ editing.name=$('tdName').value; editing.width=+$('tdWidth').value||190;
+function readTd(){ editing.name=$('tdName').value; editing.width=+$('tdWidth').value||190; if(editing.type==='lith') return readTdLith();
   document.querySelectorAll('#tdCurves tr').forEach((tr,i)=>{ const c=editing.curves[i]; const m=tr.querySelector('.tdm').value; if(m){ const mu=m.toUpperCase(); if(!c.aliases.some(a=>a.toUpperCase()===mu)) c.label=m; c.aliases=[m,...c.aliases.filter(a=>a.toUpperCase()!==mu)]; }
     const mn=+tr.querySelector('.tdmin').value, mx=+tr.querySelector('.tdmax').value; if(c.matchNeutron&&(mn!==c.min||mx!==c.max)) c.matchNeutron=false; c.min=mn; c.max=mx; c.log=tr.querySelector('.tdlog').checked; c.color=tr.querySelector('.tdcol').dataset.color; c.dash=tr.querySelector('.tddash').checked?'4 3':undefined;
     c.fill=tr.querySelector('.tdfill').value; c.fillStyle=tr.querySelector('.tdfs').value; c.fillColor=tr.querySelector('.tdfc').dataset.color; c.fillColor2=tr.querySelector('.tdfc2').dataset.color; c.fillOpacity=+tr.querySelector('.tdfo').value; }); }
@@ -334,12 +419,16 @@ document.addEventListener('click',e=>{
   if(b.dataset.edit) openTrackDlg(b.dataset.edit);
   if(b.dataset.up!==undefined){ const i=+b.dataset.up; if(i>0){ [S.tracks[i-1],S.tracks[i]]=[S.tracks[i],S.tracks[i-1]]; render(); } }
   if(b.dataset.dn!==undefined){ const i=+b.dataset.dn; if(i<S.tracks.length-1){ [S.tracks[i+1],S.tracks[i]]=[S.tracks[i],S.tracks[i+1]]; render(); } }
-  if(b.dataset.deltop){ const w=S.mode==='corr'?wellById(S.panel[S.panel.length-1]||S.selected):wellById(S.selected); w.tops=w.tops.filter(t=>t.name!==b.dataset.deltop); render(); }
+  if(b.dataset.deltop){ const w=wellById(S.selected); if(w){ w.tops=w.tops.filter(t=>t.name!==b.dataset.deltop); if(S.interp?.enabled) computeInterp(w); render(); } }
+  if(b.dataset.sect){ toggleSection(b.dataset.sect); return; }
+  if(b.dataset.dl){ const k=b.dataset.dl, o=k==='md'?'ss':'md'; S.depthLabels={...S.depthLabels,[k]:!S.depthLabels[k]}; if(!S.depthLabels[k]&&!S.depthLabels[o]) S.depthLabels[o]=true; lsSet('weller.depthLabels',S.depthLabels); render(); }
+  if(b.dataset.units&&b.dataset.units!==S.units){ S.units=b.dataset.units; lsSet('weller.units',S.units); render(); }
   if(b.classList.contains('tdrm')){ readTd(); editing.curves.splice(+b.dataset.i,1); drawTdCurves(); }
   if(b.classList.contains('tdauto')){ readTd(); const c=editing.curves[+b.dataset.i]; const w=wellById(S.selected)||S.wells[0]; const cur=resolveCurve(w,c); const r=cur&&autoScale(cur,c.log); if(r){ [c.min,c.max]=(c.min>c.max)?[r[1],r[0]]:r; drawTdCurves(); } }
   if(b.dataset.wellset) openWellDlg(b.dataset.wellset);
 });
 $('tdSaveDefaults').onclick=()=>{ readTd(); const i=S.tracks.findIndex(t=>t.id===editing.id); const set=S.tracks.map(t=>t.id===editing.id?editing:t); if(i<0) set.push(editing); try{ localStorage.setItem('weller.trackDefaults2',JSON.stringify(set)); $('stNote').textContent='Track defaults saved for new projects'; }catch(e){ $('stNote').textContent='Could not save defaults (storage blocked)'; } };
+$('tdLithReset').onclick=()=>{ delete editing.lith; drawTdLith(); };
 $('tdResetDefaults').onclick=()=>{ try{ localStorage.removeItem('weller.trackDefaults2'); }catch(e){} S.tracks=defaultTracks(); $('trackDlg').hidden=true; render(); };
 $('tdAddCurve').onclick=()=>{ readTd(); const w=wellById(S.selected)||S.wells[0]; const c=w.curves[1]; editing.curves.push({label:c.mnemonic,aliases:[c.mnemonic],min:0,max:100,color:'#333333'}); drawTdCurves(); };
 $('tdSave').onclick=()=>{ readTd(); const i=S.tracks.findIndex(t=>t.id===editing.id); if(i>=0) S.tracks[i]=editing; else S.tracks.push(editing); $('trackDlg').hidden=true; render(); };
@@ -349,11 +438,48 @@ $('btnAddTrack').onclick=()=>{ editing={id:'t'+Date.now().toString(36),name:'New
 
 let wellEditing=null;
 function openWellDlg(id){ const w=wellById(id); if(!w) return; wellEditing=w; $('wdName').value=w.name; $('wdApi').value=w.api||''; $('wdField').value=w.field||''; $('wdKb').value=w.elevation.kb??''; $('wdGl').value=w.elevation.gl??''; $('wdUnit').value=w.depthUnit;
-  $('wdLat').value=w.location.lat??''; $('wdLon').value=w.location.lon??''; $('wdCrs').value=w.location.crs||''; $('wdNotes').textContent=(w.notes||[]).join(' · '); $('wellDlg').hidden=false; }
+  $('wdLat').value=w.location.lat??''; $('wdLon').value=w.location.lon??''; $('wdCrs').value=w.location.crs||''; $('wdNotes').textContent=(w.notes||[]).join(' · ');
+  $('wdOp').value=w.company||''; $('wdCounty').value=w.county||''; $('wdState').value=w.state||'';
+  const logs=w.curves.slice(1).filter(c=>!c.sparse&&!c.computed), comp=w.curves.filter(c=>c.computed), pts=w.curves.filter(c=>c.sparse);
+  $('wdCurves').innerHTML=`<b>${logs.length} logged curves</b>: ${logs.map(c=>`<span title="${esc(c.description||'')}">${esc(c.mnemonic)}${c.unit?` <small>${esc(c.unit)}</small>`:''}</span>`).join(', ')}`+(comp.length?`<br><b>${comp.length} computed</b>: ${comp.map(c=>esc(c.mnemonic)).join(', ')}`:'')+(pts.length?`<br><b>${pts.length} point series</b>: ${pts.map(c=>esc(c.mnemonic)).join(', ')}`:'');
+  $('wellDlg').hidden=false; }
 $('wdSave').onclick=()=>{ const w=wellEditing; const n=v=>v===''?undefined:+v; w.name=$('wdName').value; w.api=$('wdApi').value; w.field=$('wdField').value; w.elevation.kb=n($('wdKb').value); w.elevation.gl=n($('wdGl').value); w.depthUnit=$('wdUnit').value;
-  w.location.lat=n($('wdLat').value); w.location.lon=n($('wdLon').value); w.location.crs=$('wdCrs').value; $('wellDlg').hidden=true; render(); };
+  w.location.lat=n($('wdLat').value); w.location.lon=n($('wdLon').value); w.location.crs=$('wdCrs').value; w.company=$('wdOp').value; w.county=$('wdCounty').value; w.state=$('wdState').value; w._ss=null; $('wellDlg').hidden=true; render(); };
 $('wdCancel').onclick=()=>{ $('wellDlg').hidden=true; };
-$('wdRemove').onclick=()=>{ S.wells=S.wells.filter(w=>w!==wellEditing); S.panel=S.panel.filter(id=>wellById(id)); if(!wellById(S.selected)) S.selected=S.wells[0]?.id||null; $('wellDlg').hidden=true; render(); };
+$('wdRemove').onclick=()=>{ removeWells([wellEditing]); $('wellDlg').hidden=true; };
+function removeWells(list){ S.wells=S.wells.filter(w=>!list.includes(w)); S.panel=S.panel.filter(id=>wellById(id)); if(!wellById(S.selected)) S.selected=S.wells[0]?.id||null; render(); }
+
+/* ---------- Manage wells: rename and fill header fields in bulk, remove or clear wells ---------- */
+const MW_FIELDS=[['name','Name','text'],['api','API','text'],['company','Operator','text'],['field','Field','text'],['county','County','text'],['state','State','text'],['kb','KB','number'],['gl','GL','number']];
+let mwRows=null;
+function mwGet(w,k){ return k==='kb'||k==='gl'?w.elevation[k]:w[k]; }
+function openManageWells(){ mwRows=S.wells.map(w=>({w,sel:false,gone:false,v:Object.fromEntries(MW_FIELDS.map(([k])=>[k,mwGet(w,k)??'']))})); drawMW(); $('mwDlg').hidden=false; }
+function drawMW(){ $('mwBody').innerHTML=mwRows.map((r,i)=>r.gone?'':`<tr><td><input type="checkbox" data-mwsel="${i}"${r.sel?' checked':''} aria-label="Select ${esc(r.w.name)}"></td>${MW_FIELDS.map(([k,,t])=>`<td><input type="${t}" data-mw="${i}" data-k="${k}" value="${esc(r.v[k])}"${t==='number'?' step="0.1"':''} class="mw-${k}"></td>`).join('')}<td class="num">${r.w.curves.filter(c=>!c.sparse&&!c.computed).length-1}</td></tr>`).join('')
+    ||'<tr><td colspan="10" class="hint">No wells. Apply to clear the project.</td></tr>';
+  const n=mwRows.filter(r=>r.sel&&!r.gone).length; $('mwCount').textContent=n?`${n} selected`:'Select rows to edit or remove several at once'; $('mwSet').disabled=$('mwRemove').disabled=!n; }
+$('mwDlg').addEventListener('input',e=>{ const t=e.target; if(t.dataset.mw!==undefined) mwRows[+t.dataset.mw].v[t.dataset.k]=t.value; });
+$('mwDlg').addEventListener('change',e=>{ const t=e.target; if(t.dataset.mwsel!==undefined){ mwRows[+t.dataset.mwsel].sel=t.checked; drawMW(); } });
+$('mwAll').onclick=()=>{ const on=mwRows.some(r=>!r.sel&&!r.gone); mwRows.forEach(r=>r.sel=on); drawMW(); };
+$('mwSort').onclick=()=>{ const order=sortWestEast(mwRows.map(r=>r.w)); mwRows.sort((a,b)=>order.indexOf(a.w)-order.indexOf(b.w)); drawMW(); };
+$('mwSet').onclick=()=>{ const k=$('mwField').value, v=$('mwVal').value; mwRows.forEach(r=>{ if(r.sel&&!r.gone) r.v[k]=v; }); drawMW(); };
+$('mwRemove').onclick=()=>{ mwRows.forEach(r=>{ if(r.sel) r.gone=true; }); drawMW(); };
+$('mwClear').onclick=()=>{ mwRows.forEach(r=>r.gone=true); drawMW(); };
+$('mwCancel').onclick=()=>{ $('mwDlg').hidden=true; };
+$('mwSave').onclick=()=>{ const keep=mwRows.filter(r=>!r.gone), n=v=>v===''||v==null?undefined:+v;
+  for(const {w,v} of keep){ for(const [k] of MW_FIELDS){ if(k==='kb'||k==='gl') w.elevation[k]=n(v[k]); else w[k]=String(v[k]).trim()||(k==='name'?w.name:''); } w._ss=null; }
+  S.wells=keep.map(r=>r.w); $('mwDlg').hidden=true; removeWells([]); $('stNote').textContent=`${S.wells.length} well${S.wells.length===1?'':'s'}`; };
+$('btnManageWells').onclick=e=>{ e.preventDefault(); e.stopPropagation(); openManageWells(); };
+
+/* ---------- Well header on hover: the key facts from the LAS header ---------- */
+function wellMetaHTML(w){ const m=w.meta||{}, e=w.elevation||{}, u=dispU(), d=depthOf(w), td=w.params?.td;
+  const loc=[m.location,[w.county&&w.county+' Co.',w.state].filter(Boolean).join(', ')].filter(Boolean).join(' · ');
+  const rows=[['Operator',w.company],['Field',w.field],['Location',loc],['API',w.api],['Spud',m.spud],['Logged',[m.logDate,m.service].filter(Boolean).join(', ')],
+    ['Elevation',[Number.isFinite(e.kb)?`KB ${fmtD(e.kb,w)}`:'',Number.isFinite(e.gl)?`GL ${fmtD(e.gl,w)}`:''].filter(Boolean).join(' · ')+(Number.isFinite(e.kb)||Number.isFinite(e.gl)?' '+u:'')],
+    ['TD',Number.isFinite(td)?`${fmtD(td,w)} ${u} MD`:''],['Logged interval',`${fmtD(d[0],w)}–${fmtD(d[d.length-1],w)} ${u} MD`],['Deviated',w.survey?'yes, TVD from the survey in the file':'']].filter(r=>r[1]);
+  return `<div class="tiph">${esc(w.name)}</div><table class="tipt">${rows.map(([k,v])=>`<tr><td>${k}</td><td>${esc(v)}</td></tr>`).join('')}</table>`; }
+document.addEventListener('mouseover',e=>{ const el=e.target.closest('[data-wellmeta]'); if(!el||e.target.closest('button')) return; const w=wellById(el.dataset.wellmeta); if(w) showTip(e,wellMetaHTML(w)); });
+document.addEventListener('mouseout',e=>{ const el=e.target.closest('[data-wellmeta]'); if(el&&!el.contains(e.relatedTarget)) hideTip(); });
+document.addEventListener('dragstart',hideTip);
 
 /* ---------- Tops CSV, PNG export ---------- */
 let hostedDownloads=null; (async()=>{ try{ if(window.claude?.use) hostedDownloads=await window.claude.use('downloads'); }catch(e){} })();
@@ -401,22 +527,46 @@ $('btnPng').onclick=async()=>{ if(S.mode==='stats'){ $('stXp').toBlob(b=>downloa
 
 /* ---------- View controls ---------- */
 $('wellList').addEventListener('click',e=>{ const li=e.target.closest('li[data-well]'); if(li&&!e.target.closest('button')) clickWell(li.dataset.well); });
+$('logPanel').addEventListener('click',e=>{ const h=e.target.closest('[data-selwell]'); if(h&&h.dataset.selwell!==S.selected){ S.selected=h.dataset.selwell; render(); } });
 document.querySelectorAll('[data-mode]').forEach(b=>b.onclick=()=>setMode(b.dataset.mode));
-function setMode(m){ const was=S.mode; S.mode=m; document.querySelectorAll('[data-mode]').forEach(b=>b.setAttribute('aria-selected',b.dataset.mode===m)); if(m==='corr'&&S.panel.length===0) S.panel=[S.selected]; if(m!=='stats'&&was==='stats'){ render(); fitView(); } else render(); }
+const viewKey=m=>m==='corr'?'corr':'single';
+// Logs and Correlation keep their own zoom and scroll: leaving a flattened section never strands the Logs tab.
+function setMode(m){ const was=S.mode; if(was!=='stats') S.view.scroll=$('logScroll').scrollTop;
+  S.mode=m; document.querySelectorAll('[data-mode]').forEach(b=>b.setAttribute('aria-selected',b.dataset.mode===m));
+  if(m==='corr'&&S.panel.length===0&&S.selected) S.panel=[S.selected];
+  if(m==='stats'){ render(); return; }
+  S.view=S.views[viewKey(m)]||(S.views[viewKey(m)]={pxPerFt:0.35});
+  if(!S.view.fitted) return fitView();
+  render(); $('logScroll').scrollTop=S.view.scroll||0; }
 $('datum').onchange=e=>{ S.datum=e.target.value; fitView(); };
 $('spacing').onchange=e=>{ S.corr.spacing=e.target.value; render(); };
-$('winTop').onchange=e=>{ if(+e.target.value!==S.view.top){ S.view.top=+e.target.value; render(); } }; $('winBot').onchange=e=>{ if(+e.target.value!==S.view.bottom){ S.view.bottom=+e.target.value; render(); } };
 $('btnFit').onclick=fitView;
 $('showEmpty').onchange=e=>{ S.showEmpty=e.target.checked; render(); };
-function fitView(){ if(S.mode==='stats') return render(); const wells=(S.mode==='single'?[wellById(S.selected)]:S.panel.map(wellById)).filter(Boolean); let lo=Infinity,hi=-Infinity;
-  for(const w of wells){ const a=frameOf(w).arr; for(let i=0;i<a.length;i+=8){ if(a[i]<lo) lo=a[i]; if(a[i]>hi) hi=a[i]; } lo=Math.min(lo,a[0]); hi=Math.max(hi,a[a.length-1]); }
-  // A correlation hung on a top opens on the interval around it, not the whole well.
-  if(S.mode==='corr'&&!['MD','TVDSS'].includes(S.datum)&&Number.isFinite(lo)){ lo=Math.max(lo,-400); hi=Math.min(hi,1200); }
-  if(!Number.isFinite(lo)) {lo=0;hi=1000;} S.view.top=Math.floor(lo/100)*100; S.view.bottom=Math.ceil(hi/100)*100;
-  const vh=$('logScroll').clientHeight-80; S.view.pxPerFt=Math.max(0.05,vh/(S.view.bottom-S.view.top)*2); render(); }
-function zoom(f,anchorPx){ const sc=$('logScroll'); const before=(anchorPx??sc.scrollTop+sc.clientHeight/2); const depthAt=S.view.top+before/S.view.pxPerFt; S.view.pxPerFt=Math.min(20,Math.max(0.02,S.view.pxPerFt*f)); render(); sc.scrollTop=(depthAt-S.view.top)*S.view.pxPerFt-(anchorPx??sc.clientHeight/2)+(anchorPx?0:0); }
-$('zoomIn').onclick=()=>zoom(1.5); $('zoomOut').onclick=()=>zoom(1/1.5);
-$('logScroll').addEventListener('wheel',e=>{ if(!(e.ctrlKey||e.metaKey)) return; e.preventDefault(); const r=$('logScroll').getBoundingClientRect(); const yIn=e.clientY-r.top; const sc=$('logScroll'); const depthAt=S.view.top+(sc.scrollTop+yIn-10)/S.view.pxPerFt; S.view.pxPerFt=Math.min(20,Math.max(0.02,S.view.pxPerFt*(e.deltaY<0?1.2:1/1.2))); render(); sc.scrollTop=(depthAt-S.view.top)*S.view.pxPerFt+10-yIn; },{passive:false});
+/* Fit: the whole log fits the screen height. A section flattened on a top fits the interval around that top and
+   scrolls there; the rest of the logs stay a scroll away. */
+function fitView(){ if(S.mode==='stats') return render(); const wells=viewWells();
+  render(); let [lo,hi]=frameExtent(wells);
+  if(S.mode==='corr'&&!['MD','TVDSS'].includes(S.datum)&&wells.length){ const k=wells[0].depthUnit==='m'?0.3048:1; lo=Math.max(lo,-400*k); hi=Math.min(hi,1200*k); }
+  const sc=$('logScroll'), svg=$('logPanel').querySelector('.tracks svg'), hdr=svg?svg.getBoundingClientRect().top-$('logPanel').getBoundingClientRect().top:120;
+  const vh=Math.max(120,sc.clientHeight-hdr-24); S.view.pxPerFt=Math.min(20,Math.max(0.01,vh/Math.max(1,hi-lo))); S.view.fitted=true;
+  render(); sc.scrollTop=Math.max(0,(lo-S.view.top)*S.view.pxPerFt); S.view.scroll=sc.scrollTop; }
+/* Vertical scale as a ratio, the way log prints are specified: 1:240 is 5 in per 100 ft, 1:200 is 5 mm per m.
+   Screen size assumes the CSS standard of 96 px per inch, so it is nominal on screen and exact in a 96 dpi PNG. */
+const SCALES={imperial:[48,120,240,600,1200,2400,4800,9600,20000],metric:[40,100,200,500,1000,2000,5000,10000,20000]};
+const ratioK=w=>(w?.depthUnit==='m'?96/0.0254:96*12);   // ratio × px per depth unit
+const ratioOf=w=>ratioK(w)/S.view.pxPerFt;
+function scaleHint(r){ return S.units==='metric'?`${+(1000/r).toFixed(2)} cm per 10 m`:`${+(1200/r).toFixed(2)} in per 100 ft`; }
+function renderScale(w){ const sel=$('scaleSel'), r=ratioOf(w), std=SCALES[S.units]; const hit=std.find(x=>Math.abs(x/r-1)<0.03);
+  const opts=std.map(x=>`<option value="${x}">1:${x.toLocaleString()} · ${scaleHint(x)}</option>`); if(!hit) opts.unshift(`<option value="${r}">1:${Math.round(r).toLocaleString()}</option>`);
+  setHTML(sel,opts.join('')); sel.value=String(hit||r); }
+function setRatio(r,anchorPx){ const w=viewWells()[0]; zoomTo(ratioK(w)/r,anchorPx); }
+function zoomTo(px,anchorPx){ const sc=$('logScroll'); const a=anchorPx??sc.clientHeight/2; const depthAt=S.view.top+(sc.scrollTop+a)/S.view.pxPerFt;
+  S.view.pxPerFt=Math.min(20,Math.max(0.01,px)); render(); sc.scrollTop=(depthAt-S.view.top)*S.view.pxPerFt-a; S.view.scroll=sc.scrollTop; }
+function stepScale(dir){ const r=ratioOf(viewWells()[0]), std=SCALES[S.units]; const next=dir>0?[...std].reverse().find(x=>x<r*0.97):std.find(x=>x>r*1.03); if(next) setRatio(next); }
+$('scaleSel').onchange=e=>setRatio(+e.target.value);
+$('zoomIn').onclick=()=>stepScale(1); $('zoomOut').onclick=()=>stepScale(-1);
+$('logScroll').addEventListener('wheel',e=>{ if(!(e.ctrlKey||e.metaKey)) return; e.preventDefault(); const yIn=e.clientY-$('logScroll').getBoundingClientRect().top; zoomTo(S.view.pxPerFt*(e.deltaY<0?1.2:1/1.2),yIn); },{passive:false});
+$('logScroll').addEventListener('scroll',()=>{ if(S.mode!=='stats') S.view.scroll=$('logScroll').scrollTop; },{passive:true});
 $('btnPick').onclick=()=>{ if(!$('topName').value.trim()){ $('topName').focus(); return; } S.picking=!S.picking; $('btnPick').classList.toggle('primary',S.picking); render(); };
 
 /* ---------- Browser cache of opened LAS text (IndexedDB), so a session resumes without re-picking files ---------- */
@@ -436,11 +586,12 @@ async function openFiles(files){ const by={project:[],las:[],tops:[],points:[]};
   for(const f of by.tops){ try{ notes.push(importTopsCSV(f.text)); }catch(err){ notes.push(`${f.name}: ${err.message}`); } }
   for(const f of by.points){ try{ notes.push('Points: '+importPointsCSV(f.text,f.name)); }catch(err){ notes.push(`${f.name}: ${err.message}`); } }
   render(); $('stNote').textContent=notes.filter(Boolean).join(' · '); }
-function addLASFiles(files){ let first=null; const notes=[];
-  for(const f of files){ try{ const p=parseLAS(f.text); if(!p.curves.length||!p.rows) throw new Error('no curve data found'); const w=normalizeWell(p,f.name); if(f.demo) w.demo=f.demo; S.wells.push(w); first=first||w.id; if(!f.demo) lasCache.put(f.name,f.text); computeInterp(w);
+function addLASFiles(files){ let first=null; const notes=[], added=[];
+  for(const f of files){ try{ const p=parseLAS(f.text); if(!p.curves.length||!p.rows) throw new Error('no curve data found'); const w=normalizeWell(p,f.name); if(f.demo) w.demo=f.demo; added.push(w); S.wells.push(w); if(!f.demo) lasCache.put(f.name,f.text); computeInterp(w);
       if(!Number.isFinite(w.location.lat)) notes.push(`${w.name}: no location in header, not on map`); if(w.elevation.kb===undefined) notes.push(`${w.name}: no KB elevation, TVDSS unavailable`); const conv=w.curves.filter(c=>c.note).map(c=>c.mnemonic+' '+c.note); if(conv.length) notes.push(`${w.name}: ${conv.join(', ')}`); if(w.notes?.length) notes.push(`${w.name}: ${w.notes.join(', ')}`);
     }catch(err){ notes.push(`${f.name}: could not read (${err.message})`); } }
-  if(first){ S.selected=first; if(S.mode==='corr') S.panel.push(first); if(S.mode!=='stats') fitView(); } return notes; }
+  // New wells join the list west to east, after the wells already open.
+  if(added.length){ const sorted=sortWestEast(added); S.wells=[...S.wells.filter(w=>!added.includes(w)),...sorted]; first=sorted[0].id; S.selected=first; if(S.mode==='corr') S.panel.push(first); if(S.mode!=='stats') fitView(); } return notes; }
 let dragDepth=0;
 addEventListener('dragenter',e=>{ if(e.dataTransfer?.types?.includes('Files')){ dragDepth++; document.body.classList.add('dropping'); } });
 addEventListener('dragleave',()=>{ if(--dragDepth<=0){ dragDepth=0; document.body.classList.remove('dropping'); } });
@@ -448,24 +599,26 @@ addEventListener('dragover',e=>e.preventDefault());
 addEventListener('drop',async e=>{ e.preventDefault(); dragDepth=0; document.body.classList.remove('dropping'); const files=[]; for(const f of e.dataTransfer.files) files.push({name:f.name,text:await f.text()}); if(files.length) openFiles(files); });
 
 /* ---------- Project save / load / autosave ---------- */
-function projectJSON(){ return { version:2, app:'weller-logs', savedAt:new Date().toISOString(), mode:S.mode, selected:S.selected, panel:S.panel, datum:S.datum, view:S.view, tracks:S.tracks, hiddenPoints:S.hiddenPoints, stats:S.stats, basemap:S.basemap, interp:S.interp, corr:S.corr,
-  wells:S.wells.map(w=>({id:w.id,name:w.name,api:w.api,field:w.field,preset:w.preset,demo:w.demo,fileName:w.fileName,location:w.location,elevation:w.elevation,depthUnit:w.depthUnit,tops:w.tops,points:pointsJSON(w),curveList:w.curves.filter(c=>!c.sparse).map(c=>c.mnemonic)})) }; }
+function projectJSON(){ return { version:3, app:'weller-logs', savedAt:new Date().toISOString(), mode:S.mode, selected:S.selected, panel:S.panel, datum:S.datum, views:S.views, tracks:S.tracks, hiddenPoints:S.hiddenPoints, stats:S.stats, basemap:S.basemap, interp:S.interp, corr:S.corr, topColors:S.topColors,
+  wells:S.wells.map(w=>({id:w.id,name:w.name,api:w.api,field:w.field,company:w.company,county:w.county,state:w.state,preset:w.preset,demo:w.demo,fileName:w.fileName,location:w.location,elevation:w.elevation,depthUnit:w.depthUnit,tops:w.tops,points:pointsJSON(w),curveList:w.curves.filter(c=>!c.sparse).map(c=>c.mnemonic)})) }; }
 async function loadProject(p){ if(!p||p.app!=='weller-logs') throw new Error('not a Weller Logs project'); const missing=[];
   const fromCache={}; for(const r of p.wells){ if(r.preset||S.wells.some(w=>w.fileName===r.fileName)) continue; const text=r.demo?await fetchText('data/'+r.demo):await lasCache.get(r.fileName); if(text){ try{ fromCache[r.fileName]=normalizeWell(parseLAS(text),r.fileName); }catch(e){} } }
   S.wells=p.wells.map(ref=>{ if(ref.preset){ const cfg=WellerSynth.PRESET_WELLS.find(c=>c.id===ref.preset); const w=presetWell(cfg); w.tops=ref.tops; w.elevation=ref.elevation; restorePoints(w,ref.points); return w; }
-    const live=S.wells.find(w=>w.fileName===ref.fileName)||fromCache[ref.fileName]; if(live){ if(ref.demo) live.demo=ref.demo; Object.assign(live,{tops:ref.tops,elevation:ref.elevation,location:ref.location,name:ref.name,api:ref.api,field:ref.field,id:ref.id}); restorePoints(live,ref.points); return live; } missing.push(ref.fileName||ref.name); return null; }).filter(Boolean);
-  S.tracks=p.tracks; S.view=p.view; S.datum=p.datum||'MD'; S.hiddenPoints=p.hiddenPoints||[]; S.stats={...statsDefaults(),...(p.stats||{})}; S.interp={...interpDefaults(),...(p.interp||{})}; S.corr={...S.corr,...(p.corr||{})}; if(!p.tracks.some(t=>t.id==='t8')) S.tracks=[...p.tracks,...defaultTracks().filter(t=>['t8','t9','t10','t11','t12'].includes(t.id))]; setBasemap(p.basemap||'map'); if((p.version||1)<2) pointSeriesNames().forEach(placePointSeries); S.panel=(p.panel||[]).filter(id=>wellById(id)); S.selected=wellById(p.selected)?p.selected:(S.wells[0]?.id||null);
+    const live=S.wells.find(w=>w.fileName===ref.fileName)||fromCache[ref.fileName]; if(live){ if(ref.demo) live.demo=ref.demo; Object.assign(live,{tops:ref.tops,elevation:ref.elevation,location:ref.location,name:ref.name,api:ref.api,field:ref.field,id:ref.id}); for(const k of ['company','county','state']) if(ref[k]!==undefined) live[k]=ref[k]; restorePoints(live,ref.points); return live; } missing.push(ref.fileName||ref.name); return null; }).filter(Boolean);
+  S.tracks=p.tracks; S.views=p.views||newViews(); S.view=S.views[viewKey(S.mode)]||S.views.single; S.datum=p.datum||'MD'; S.topColors=p.topColors||S.topColors; S.hiddenPoints=p.hiddenPoints||[]; S.stats={...statsDefaults(),...(p.stats||{})}; S.interp={...interpDefaults(),...(p.interp||{})}; S.corr={...S.corr,...(p.corr||{})}; if(!p.tracks.some(t=>t.id==='t8')) S.tracks=[...p.tracks,...defaultTracks().filter(t=>['t8','t9','t10','t11','t12'].includes(t.id))]; setBasemap(p.basemap||'map'); if((p.version||1)<2) pointSeriesNames().forEach(placePointSeries); S.panel=(p.panel||[]).filter(id=>wellById(id));
+  // Older projects kept section order separately: move those wells into that order within the list.
+  if((p.version||1)<3){ const pos=S.wells.map((w,i)=>S.panel.includes(w.id)?i:-1).filter(i=>i>=0); S.panel.forEach((id,k)=>{ S.wells[pos[k]]=wellById(id); }); } S.selected=wellById(p.selected)?p.selected:(S.wells[0]?.id||null);
   computeAllInterp(); setMode(p.mode||'single'); $('stNote').textContent=missing.length?`Re-open these LAS files to restore them: ${missing.join(', ')}`:'Project loaded'; }
 function autosave(){ try{ localStorage.setItem('weller.session',JSON.stringify(projectJSON())); }catch(e){} recordHistory(); }
 /* Undo and redo (Cmd/Ctrl+Z, Shift+Cmd/Ctrl+Z or Ctrl+Y). Each render compares an edit snapshot with the last one.
    View, mode and selection are left out, so zooming or switching tabs is not an undo step. */
 const HIST={undo:[],redo:[],last:null,busy:false};
-function editSnapshot(){ const p=projectJSON(); delete p.savedAt; delete p.view; delete p.mode; delete p.selected; return JSON.stringify(p); }
+function editSnapshot(){ const p=projectJSON(); delete p.savedAt; delete p.views; delete p.mode; delete p.selected; return JSON.stringify(p); }
 function recordHistory(){ if(HIST.busy||S.drag) return; const snap=editSnapshot(); if(snap===HIST.last) return;
   if(HIST.last!==null){ HIST.undo.push(HIST.last); if(HIST.undo.length>60) HIST.undo.shift(); HIST.redo=[]; } HIST.last=snap; }
 async function stepHistory(back){ const from=back?HIST.undo:HIST.redo, to=back?HIST.redo:HIST.undo; if(!from.length||HIST.busy){ $('stNote').textContent=back?'Nothing to undo':'Nothing to redo'; return; }
   const snap=from.pop(); to.push(HIST.last); HIST.busy=true;
-  try{ const p={...JSON.parse(snap),view:S.view,mode:S.mode,selected:S.selected}; S.wells.forEach(w=>w._grP=null); await loadProject(p); HIST.last=snap; $('stNote').textContent=(back?'Undone':'Redone')+` · ${HIST.undo.length} more to undo`; }
+  try{ const p={...JSON.parse(snap),views:S.views,mode:S.mode,selected:S.selected}; S.wells.forEach(w=>w._grP=null); await loadProject(p); HIST.last=snap; $('stNote').textContent=(back?'Undone':'Redone')+` · ${HIST.undo.length} more to undo`; }
   finally{ HIST.busy=false; } }
 document.addEventListener('keydown',e=>{ if(!(e.metaKey||e.ctrlKey)) return; const k=e.key.toLowerCase(); if(k!=='z'&&k!=='y') return;
   const el=e.target; if(el.matches?.('textarea,input[type=text],input:not([type])')) return;   // native text undo
@@ -484,11 +637,11 @@ async function fetchText(url){ try{ const r=await fetch(url); return r.ok?await 
 let undoProject=null;
 async function loadExample(name){
   undoProject=S.wells.length?projectJSON():null;
-  if(name==='labasin'){ S.tracks=loadTrackDefaults(); loadPresets(); S.mode='single'; setMode('single'); fitView(); exampleNote('Synthetic LA Basin wells loaded'); return true; }
+  if(name==='labasin'){ S.tracks=loadTrackDefaults(); S.views=newViews(); loadPresets(); S.wells=sortWestEast(S.wells); S.mode='single'; setMode('single'); exampleNote('Synthetic LA Basin wells loaded'); return true; }
   $('stNote').textContent='Loading Denver Basin Niobrara logs…';
   const texts=await Promise.all(NIOBRARA_FILES.map(f=>fetchText('data/niobrara/'+f)));
   if(texts.some(t=>!t)){ $('stNote').textContent='Could not load the example logs (open the app from a web server, not a file).'; return false; }
-  S.wells=[]; S.tracks=loadTrackDefaults(); S.hiddenPoints=[];
+  S.wells=[]; S.tracks=loadTrackDefaults(); S.hiddenPoints=[]; S.views=newViews();
   // Example parameters. Rw: max specific conductance 61.3 mS/cm at 25 C in Niobrara produced water, Weld County
   // (USGS data release doi:10.5066/P14CRSQQ); late-time samples approach formation water, giving Rw 0.16 ohm.m at 77 F.
   S.interp={...interpDefaults(),matrix:'auto',swPhi:'total',rw:0.16,rwTemp:77,
@@ -496,11 +649,11 @@ async function loadExample(name){
   const notes=addLASFiles(NIOBRARA_FILES.map((f,i)=>({name:f,text:texts[i],demo:'niobrara/'+f})));
   const tops=await fetchText('data/niobrara/tops.csv'); if(tops) importTopsCSV(tops);
   computeAllInterp();
-  // Section west to east through the pad.
-  const vert=S.wells.filter(w=>Number.isFinite(w.location.lon)).sort((a,b)=>a.location.lon-b.location.lon);
-  const horiz=S.wells.find(w=>w.survey);
+  // Verticals west to east through the pad, then the Weld County horizontal, which lies ~30 mi south.
+  const horiz=S.wells.find(w=>w.survey), vert=sortWestEast(S.wells.filter(w=>w!==horiz));
+  S.wells=[...vert,horiz].filter(Boolean);
   S.panel=[vert[0],vert[1],vert[3],vert[5],vert[6],horiz].filter(Boolean).map(w=>w.id); S.selected=(vert[3]||S.wells[0]).id;
-  S.datum='Niobrara'; S.stats={...statsDefaults(),curve:'PHI',x:'NPHI',y:'RHOB',type:'nd'}; S.mode='corr'; setMode('corr'); fitView();
+  S.datum='Niobrara'; S.stats={...statsDefaults(),curve:'PHI',x:'NPHI',y:'RHOB',type:'nd'}; S.mode='corr'; setMode('corr');
   exampleNote('Denver Basin Niobrara: 7 Laramie County, WY verticals (WOGCC) and 1 Weld County, CO horizontal. Tops are rule-based picks.'+(notes.length?' · '+notes.join(' · '):''));
   return true; }
 function exampleNote(msg){ $('stNote').innerHTML=esc(msg)+(undoProject?' <button class="small" id="btnUndoEx">Undo</button>':''); }
@@ -525,3 +678,10 @@ document.addEventListener('click',e=>{ if(e.target.closest('[data-close]')){ e.t
 document.addEventListener('keydown',e=>{ if(e.key==='Escape') document.querySelectorAll('.pop:not([hidden])').forEach(p=>p.hidden=true); });
 function setTheme(t){ if(t==='dark') document.documentElement.dataset.theme='dark'; else delete document.documentElement.dataset.theme; try{ localStorage.setItem('weller.theme',t); }catch(e){} }
 $('btnTheme').onclick=()=>{ setTheme(document.documentElement.dataset.theme==='dark'?'light':'dark'); render(); };
+/* Sidebar width: drag the gutter, double-click to reset. Long well names get room without a wider default. */
+{ const side=document.querySelector('.side'), g=$('sideGutter'); const setW=w=>{ side.style.width=Math.max(240,Math.min(innerWidth*0.6,w))+'px'; };
+  const saved=lsGet('weller.sideW',null); if(saved) setW(saved);
+  g.addEventListener('pointerdown',e=>{ e.preventDefault(); g.setPointerCapture(e.pointerId); g.classList.add('on'); const x0=e.clientX, w0=side.offsetWidth;
+    const move=ev=>setW(w0+ev.clientX-x0), up=()=>{ g.classList.remove('on'); g.removeEventListener('pointermove',move); g.removeEventListener('pointerup',up); lsSet('weller.sideW',side.offsetWidth); };
+    g.addEventListener('pointermove',move); g.addEventListener('pointerup',up); });
+  g.addEventListener('dblclick',()=>{ side.style.width=''; try{ localStorage.removeItem('weller.sideW'); }catch(e){} }); }
