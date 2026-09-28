@@ -24,25 +24,50 @@
     const i = l.indexOf('.'); if (i < 0) return null;
     const mnem = l.slice(0, i).trim(); if (!mnem) return null;
     const rest = l.slice(i + 1); const ci = rest.lastIndexOf(':');
-    const body = ci >= 0 ? rest.slice(0, ci) : rest, desc = ci >= 0 ? rest.slice(ci + 1).trim() : '';
+    const body = ci >= 0 ? rest.slice(0, ci) : rest, desc = ci >= 0 ? rest.slice(ci + 1).replace(/\{[^}]*\}/g, '').replace(/\|.*$/, '').trim() : '';
     const m = body.match(/^(\S*)\s*(.*)$/);
-    return { mnem, unit: m[1], value: (m[2] || '').trim(), desc };
+    return { mnem, unit: m[1], value: (m[2] || '').trim().replace(/^"(.*)"$/, '$1'), desc };
   }
 
+  // Section letter for LAS 1.2/2.0 (~V ~W ~P ~C ~O ~A) and LAS 3.0 (~Log_Definition, ~Log_Data | Log_Definition,
+  // ~Inclinometry_Data, ~Tops_Data…). LAS 3 sets other than Log, Tops and Inclinometry are skipped ('X').
+  function sectionOf(l) {
+    const n = l.slice(1).split(/[\s|]/)[0].toUpperCase();
+    if (n === 'TOPS' || n === 'TOPS_DATA') return 'T';
+    if (/^(LOG_)?DEFINITION$|^CURVE/.test(n) || n === 'C') return 'C';
+    if (/^LOG_DATA$|^A/.test(n)) return 'A';
+    if (/^LOG_PARAMETER$|^PARAM/.test(n) || n === 'P') return 'P';
+    if (/^(INCLINOMETRY|DIRECTIONAL|DEVIATION|SURVEY)_DEFINITION$/.test(n)) return 'SD';
+    if (/^(INCLINOMETRY|DIRECTIONAL|DEVIATION|SURVEY)_DATA$/.test(n)) return 'SA';
+    if (/^TOPS_DEFINITION$/.test(n)) return 'X';
+    if (/_(DEFINITION|DATA|PARAMETER)$/.test(n)) return 'X';
+    return n[0] || '';
+  }
+  // Split a data row on the LAS 3 delimiter; quoted strings may hold spaces or commas.
+  function splitRow(l, dlm) {
+    if (dlm === 'COMMA') return (l.match(/"[^"]*"|[^,]+/g) || []).map(t => t.trim().replace(/^"|"$/g, ''));
+    if (dlm === 'TAB') return l.split('\t').map(t => t.trim());
+    return (l.match(/"[^"]*"|[^\s,]+/g) || []).map(t => t.replace(/^"|"$/g, ''));
+  }
   // Parse problems are collected, not thrown: diagnoseLAS turns them into messages with the offending line.
   function parseLAS(text) {
     const lines = String(text).split(/\r?\n/);
     const H = { version: {}, well: {}, params: {}, curves: [], other: [], tops: [] };
-    const rows = [], rowLine = []; let sec = '', wrap = false, buf = [], version = '';
-    const issues = { badRows: [], badRowCount: 0, widthRows: [], widthCount: 0, badHeader: [], sections: [], firstDataLine: 0, dataLines: 0 };
+    const rows = [], rowLine = []; let sec = '', wrap = false, buf = [], version = '', dlm = 'SPACE', las3 = false, survCols = [], survHead = false;
+    const issues = { badRows: [], badRowCount: 0, widthRows: [], widthCount: 0, badHeader: [], sections: [], skipped: [], textCols: 0, firstDataLine: 0, dataLines: 0 };
     for (let ln = 0; ln < lines.length; ln++) {
       const raw = lines[ln], l = raw.trim(); if (!l) continue;
-      if (l[0] === '~') { sec = l[1] ? l[1].toUpperCase() : ''; if (/^~TOP/i.test(l)) sec = 'T'; issues.sections.push({ name: l.split(/\s/)[0], line: ln + 1 }); continue; }
+      if (l[0] === '~') { sec = sectionOf(l); if (sec === 'X') issues.skipped.push(l.slice(1).split(/[\s|]/)[0]); issues.sections.push({ name: l.split(/\s/)[0], line: ln + 1, sec }); continue; }
+      if (sec === 'X') continue;
+      if (sec === 'SD') { const h = parseHeaderLine(l); if (h) survCols.push(h.mnem); continue; }
+      if (sec === 'SA') { if (!survHead && survCols.length) { H.other.push(survCols.join(' ')); survHead = true; } H.other.push(splitRow(l, dlm).join(' ')); continue; }
       if (sec === 'A') {
         if (l[0] === '#') continue;
         issues.dataLines++; if (!issues.firstDataLine) issues.firstDataLine = ln + 1;
-        const words = l.split(/[\s,]+/).filter(Boolean), toks = words.map(Number);
-        const bad = toks.findIndex(Number.isNaN);
+        const words = las3 ? splitRow(l, dlm) : l.split(/[\s,]+/).filter(Boolean), toks = words.map(w => w === '' ? NaN : Number(w));
+        // LAS 3 allows text columns (dates, lithology names): blank them, keep the row. Depth must still be a number.
+        if (las3 && Number.isFinite(toks[0])) toks.forEach((v, i) => { if (Number.isNaN(v)) { toks[i] = NaN; issues.textCols++; } });
+        const bad = las3 ? (Number.isFinite(toks[0]) ? -1 : 0) : toks.findIndex(Number.isNaN);
         if (bad >= 0) { issues.badRowCount++; if (issues.badRows.length < 3) issues.badRows.push({ line: ln + 1, text: raw, token: words[bad] }); continue; }
         if (wrap) { buf.push(...toks); if (buf.length >= H.curves.length) { rows.push(buf.slice(0, H.curves.length)); rowLine.push(ln + 1); buf = []; } }
         else { rows.push(toks); rowLine.push(ln + 1); if (H.curves.length && toks.length !== H.curves.length) { issues.widthCount++; if (issues.widthRows.length < 3) issues.widthRows.push({ line: ln + 1, text: raw, n: toks.length }); } }
@@ -50,10 +75,11 @@
       }
       if (sec === 'O') { H.other.push(raw); continue; }
       if (l[0] === '#') { H.other.push(raw); continue; }   // survey column headers are often comments placed before ~Other
-      if (sec === 'T') { const m = l.match(/^(.*?)[\s,]+([-+]?\d+\.?\d*)\s*$/); if (m) H.tops.push({ name: m[1].trim(), md: +m[2] }); continue; }
+      if (sec === 'T') { if (las3) { const t = splitRow(l, dlm), k = t.findIndex(x => x !== '' && Number.isFinite(+x)), nm = t.find(x => x && !Number.isFinite(+x)); if (k >= 0 && nm) H.tops.push({ name: nm, md: +t[k] }); continue; }
+        const m = l.match(/^(.*?)[\s,]+([-+]?\d+\.?\d*)\s*$/); if (m) H.tops.push({ name: m[1].trim(), md: +m[2] }); continue; }
       const h = parseHeaderLine(l);
       if (!h) { if (/^[VWPC]$/.test(sec) && issues.badHeader.length < 3) issues.badHeader.push({ line: ln + 1, text: raw, sec }); continue; }
-      if (sec === 'V') { H.version[h.mnem.toUpperCase()] = h.value; if (h.mnem.toUpperCase() === 'WRAP') wrap = /yes/i.test(h.value); if (h.mnem.toUpperCase() === 'VERS') version = h.value; }
+      if (sec === 'V') { const k = h.mnem.toUpperCase(); H.version[k] = h.value; if (k === 'WRAP') wrap = /yes/i.test(h.value); if (k === 'VERS') { version = h.value; las3 = /^3/.test(h.value); } if (k === 'DLM') dlm = h.value.toUpperCase(); }
       else if (sec === 'W' || sec === 'P') {
         // LAS 1.2 ~W often reads "COMP. COMPANY: Acme": the label sits where the value belongs and the value after the colon.
         if (sec === 'W' && !/^(STRT|STOP|STEP|NULL)$/i.test(h.mnem) && h.desc && LABEL_WORDS.test(h.value.replace(/:$/, '').toUpperCase()) && !LABEL_WORDS.test(h.desc.toUpperCase())) {
@@ -64,7 +90,7 @@
       else if (sec === 'C') H.curves.push({ mnemonic: h.mnem, unit: h.unit, description: h.desc });
     }
     const nullv = leadingNumber(H.well.NULL?.value) ?? -999.25;
-    const isNull = v => v === undefined || Math.abs(v - nullv) < 1e-6 || NULLS.some(n => Math.abs(v - n) < 1e-6);
+    const isNull = v => v === undefined || Number.isNaN(v) || Math.abs(v - nullv) < 1e-6 || NULLS.some(n => Math.abs(v - n) < 1e-6);
     // Unique mnemonics: a repeated GR becomes GR:2, the convention the alias lookup already strips.
     const seen = {};
     for (const c of H.curves) { const k = c.mnemonic.toUpperCase(); seen[k] = (seen[k] || 0) + 1; if (seen[k] > 1) c.mnemonic += ':' + seen[k]; }
@@ -81,7 +107,7 @@
       const rl = keep.map(i => rowLine[i]); rowLine.length = 0; rowLine.push(...rl);
     }
     issues.rowLine = rowLine;
-    return { header: H, curves, wrap, nullv, rows: n, version, reversed, issues };
+    return { header: H, curves, wrap, nullv, rows: n, version, reversed, issues, las3 };
   }
 
   /* ---------- Diagnosis: say why a file will not load, show the line, suggest the fix ---------- */
@@ -143,13 +169,10 @@
       return { problems: P, parsed: null };
     }
     const p = parseLAS(src), I = p.issues, secs = I.sections.map(s => s.name.toUpperCase());
-    const has = c => I.sections.some(s => s.name.toUpperCase()[1] === c);
-    const secLine = c => I.sections.find(s => s.name.toUpperCase()[1] === c)?.line;
-    if (/^3/.test(p.version) || secs.some(s => /^~LOG_/.test(s))) {
-      add('error', 'File type', `LAS ${p.version || '3.0'} is not supported yet`, { detail: 'LAS 3.0 keeps curves in ~Log_Definition and ~Log_Data sections, which this reader does not parse.',
-        snippet: I.sections.slice(0, 5).map(s => ({ line: s.line, text: lines[s.line - 1] })), fix: 'Save it as LAS 2.0. In lasio: las = lasio.read(f); las.write(out, version=2.0).' });
-      return { problems: P, parsed: p };
-    }
+    const has = c => I.sections.some(s => s.sec === c);
+    const secLine = c => I.sections.find(s => s.sec === c)?.line;
+    if (p.las3 && I.skipped.length) add('info', 'Parsing', `LAS 3.0: read the Log data; skipped ${[...new Set(I.skipped)].join(', ')}`, { detail: 'Core, test and other LAS 3 data sets are not shown as logs.' });
+    if (p.las3 && I.textCols) add('info', 'Parsing', `LAS 3.0 text values left blank (${I.textCols.toLocaleString()} cells)`);
     if (!has('C')) add('error', 'Parsing', 'No ~Curve section', { detail: 'The ~Curve section names each data column (DEPT, GR, …). Without it the numbers cannot be assigned to curves.', snippet: I.sections.map(s => ({ line: s.line, text: lines[s.line - 1] })), fix: 'Add a ~CURVE INFORMATION section before ~A with one line per column, depth first.', template: true });
     else if (!p.header.curves.length) add('error', 'Parsing', '~Curve section lists no curves', { line: secLine('C'), detail: 'Each curve line needs MNEMONIC.UNIT then a colon, e.g. "GR .GAPI : Gamma ray".', snippet: I.badHeader.filter(b => b.sec === 'C').map(b => ({ line: b.line, text: b.text })), template: true });
     if (!has('A')) add('error', 'No data', 'No ~A (data) section', { detail: 'The file has a header but no curve values. It may be a header-only file or cut off during download.', snippet: I.sections.map(s => ({ line: s.line, text: lines[s.line - 1] })), fix: 'Download the file again, or ask for the complete LAS.' });

@@ -35,7 +35,7 @@ Methods, equations, defaults and limits: [docs/PETROPHYSICS.md](docs/PETROPHYSIC
   gross, net, net-to-gross, net pay, average porosity and Sw, porosity-feet and hydrocarbon-feet per zone, with true
   vertical thickness in deviated wells. Everything exports as CSV.
 - **Map.** USGS National Map topo or satellite imagery. NAD27 coordinates are shifted to WGS84.
-- **Robust LAS reading.** LAS 1.2 and 2.0, wrapped data, several null values, headers with label and value swapped,
+- **Robust LAS reading.** LAS 1.2, 2.0 and 3.0 (Log, Tops and Inclinometry data sets; comma or tab delimiters, quoted text), wrapped data, several null values, headers with label and value swapped,
   elevations in `~Parameter`, bottom-up logs, surveys in `~Other`, and implausible KB elevations flagged rather
   than used. Covered by unit tests on the bundled real files.
 - **Several files, one well.** LAS files whose API names the same borehole (first 12 digits; a 10-digit API is the
@@ -49,7 +49,9 @@ Methods, equations, defaults and limits: [docs/PETROPHYSICS.md](docs/PETROPHYSIC
   marked cased hole. The lithology track is labeled *computed* and names its GR, since it comes from cutoffs.
 - **Header clean-up.** Latitude and longitude in degrees-minutes-seconds, drill time (min/ft) converted to ROP in
   ft/hr, and a TVD curve used for TVD when the file has no survey.
-- **Import report.** A file that will not load says why: wrong file type (PDF, DLIS, TIFF, Excel, CSV, LAS 3.0),
+- **Load summary.** After opening files, one card per well says what came in and what to do: pick between duplicate
+  curves, add curves no track shows, fill a missing location or elevation. Notes are folded under Details.
+  A file that will not load says why: wrong file type (PDF, DLIS, TIFF, Excel, CSV),
   parse errors with the offending line (column count, text or comma decimals in the data), or no usable data
   (empty `~A`, all nulls, time-indexed), each with a fix and a minimal LAS 2.0 template.
 
@@ -60,6 +62,8 @@ Methods, equations, defaults and limits: [docs/PETROPHYSICS.md](docs/PETROPHYSIC
 - **Save** (Cmd+S) writes the `.lasproj`. Brave and Chrome save back to the same file; Firefox downloads a copy.
 - **Export PNG** (Cmd+E) renders the log view, or the crossplot on the stats tab.
 - **Undo / redo**: Cmd+Z and Shift+Cmd+Z (Ctrl on Windows and Linux) step through edits to tops, tracks, parameters and the section.
+- **Esc** closes any dialog or popover without applying it. New curves in a track get their own range and a color that
+  reads in both themes.
 - **ft / m** in the top bar switches display units; data stay in each file's own unit. ◐ switches to a dark theme.
 - **Scale** is a print ratio: 1:240 is 5 in per 100 ft, 1:600 is 2 in per 100 ft (nominal on screen at 96 px per inch).
   **Fit** fits the logs to the window. Logs and Correlation keep their own zoom and scroll.
