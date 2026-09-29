@@ -65,14 +65,27 @@ Methods, equations, defaults and limits: [docs/PETROPHYSICS.md](docs/PETROPHYSIC
   ft/hr, and a TVD curve used for TVD when the file has no survey.
 - **Load summary.** After opening files, one card per well says what came in and what to do: pick between duplicate
   curves, add curves no track shows, fill a missing location or elevation. Notes are folded under Details.
-  A file that will not load says why: wrong file type (PDF, DLIS, TIFF, Excel, CSV),
+  A file that will not load says why: wrong file type (DLIS, Excel, CSV),
   parse errors with the offending line (column count, text or comma decimals in the data), or no usable data
   (empty `~A`, all nulls, time-indexed), each with a fix and a minimal LAS 2.0 template.
+- **Mudlogs (beta).** A separate tab lines up to 8 PDF or TIFF mudlogs side by side, hung in MD, in subsea
+  (elevation − MD, vertical hole assumed) or flattened on a pick. Where the PDF has text (vector output, or a scan
+  already run through OCR), the depth column is found and fitted page by page, stray numbers outvoted, and header and
+  legend pages are hidden. Scans without text take two clicks on ruled depth lines (the click snaps to the line); later
+  pages continue at that scale, and one more click on any page fixes its offset. Well name, API, operator, field,
+  KB/GL and latitude/longitude are read from the header text and can be edited; **Sort west → east** orders the panel by
+  longitude. Link a LAS well (matched by API or name) to share picks with its tops, which then show in Correlation, and
+  to draw one of its curves over the scan. Images are cut into strips at import (in a background worker for TIFF) and
+  kept in the browser's IndexedDB, with a quarter-resolution copy for zoomed-out views, so the panel scrolls smoothly
+  whatever the file size. A 40 MB uncompressed TIFF (3435 × 98,000 px) imports in about 16 s without freezing
+  the page; files over 35 MB ask first. Projects save the calibration and picks; reopen the same file to restore
+  images on another machine.
 
 ## Use it
 
 - **Open…** (Cmd+O), or drop files anywhere: LAS, `.lasproj`, tops CSV (`well, top, md`) or point-data CSV
-  (`well, md`, then one column per measurement, units in the header such as `k (mD)`).
+  (`well, md`, then one column per measurement, units in the header such as `k (mD)`). PDF and TIFF files open in
+  the Mudlogs tab.
 - **Save** (Cmd+S) writes the `.lasproj`. Brave and Chrome save back to the same file; Firefox downloads a copy.
 - **Export PNG** (Cmd+E) renders the log view, or the crossplot on the stats tab.
 - **Undo / redo**: Cmd+Z and Shift+Cmd+Z (Ctrl on Windows and Linux) step through edits to tops, tracks, parameters and the section.
@@ -107,7 +120,7 @@ histogram by formation, using the app's zone colors.
 
 ```
 npm run web     # serves app/ on http://localhost:8080
-npm test        # LAS parser and petrophysics unit tests (Node 18+)
+npm test        # LAS parser, petrophysics and mudlog calibration unit tests (Node 18+)
 npm run tops    # re-pick the example tops (Python 3 with numpy)
 ```
 
@@ -122,6 +135,10 @@ app/js/core.js       state, tracks, depth frames, correlation, files, project
 app/js/stats.js      zone summations, box plots, crossplots, CSV exports
 app/js/map.js        Leaflet map, basemaps, NAD27 to WGS84
 app/js/points.js     point-data import and drawing
+app/js/mudcal.js     mudlog depth-label fitting, page calibration, header reading (browser and Node)
+app/js/mudlog.js     Mudlogs tab: import, strip storage, correlation canvas, calibration, picks
+app/js/mudworker.js  TIFF decoding in a worker (UTIF.js)
+app/vendor/          d3, Leaflet, pdf.js 3.11 (Apache-2.0), UTIF.js and pako (MIT)
 app/data/niobrara/   example LAS files and tops
 tests/               node:test suites
 tools/               petroplots figure script
