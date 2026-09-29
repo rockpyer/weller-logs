@@ -90,7 +90,8 @@ Methods, equations, defaults and limits: [docs/PETROPHYSICS.md](docs/PETROPHYSIC
   longitude. Link a LAS well (matched by API or name) to share picks with its tops, which then show in Correlation, and
   to draw one of its curves over the scan. Images are cut into strips at import (in a background worker for TIFF) and
   kept in the browser's IndexedDB, with a quarter-resolution copy for zoomed-out views, so the panel scrolls smoothly
-  whatever the file size. A 40 MB uncompressed TIFF (3435 × 98,000 px) imports in about 16 s without freezing
+  whatever the file size. The panel opens at 1:2400 and keeps its scale when you change the hang; **Fit** shows
+  everything. The mudlog panel on the left can be dragged wider. A 40 MB uncompressed TIFF (3435 × 98,000 px) imports in about 16 s without freezing
   the page; files over 35 MB ask first. Projects save the calibration and picks; reopen the same file to restore
   images on another machine.
 
