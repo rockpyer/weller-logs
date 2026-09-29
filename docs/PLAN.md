@@ -29,7 +29,19 @@ from surveys, distance spacing, draggable tops and crossing checks; deterministi
 Sw, TOC, net pay) documented in [PETROPHYSICS.md](PETROPHYSICS.md); zone summations and chartbook-style
 crossplots; petroplots export and figure script; real Denver Basin Niobrara example; CI.
 
-Next, in order of value: core-to-log and run-to-run depth shift; neutron-density clay volume and spectral GR as
+Also done: LAS 2.0 export with computed curves; off-scale wrap; FGDC-style lithology patterns; curve QC (coverage,
+gaps, flat runs, spikes, range, units), despiking and GR normalization; lasio-style reader tolerance.
+
+Next (chosen from the survey of free tools, September 2026):
+1. **Help picking tops.** A live match score while dragging a top (windowed cross-correlation, as in CSDCO
+   [Correlator](https://github.com/corewall/correlator)), then suggested "ghost" tops in neighboring wells by dynamic time
+   warping on GR ([DTW correlation](https://github.com/luthfigeo/DTW-Stratigraphic-Correlation)), with Accept/Reject.
+2. **Maps from tops.** Structure and isochore contours on the map (d3-contour over IDW or Delaunay), three-point dip for TST,
+   and a section drawn as a polyline with wells projected onto it.
+3. **Stretch and squeeze (maybe).** Flatten on two tops (webviz SyncLogViewer's `wellpickFlatting`), and a saved
+   piecewise-linear depth map per well that also carries the core-to-log shift.
+
+Then: core-to-log and run-to-run depth shift; neutron-density clay volume and spectral GR as
 alternatives to GR Vsh; raster (PDF/TIFF) logs stretched to depth; directional survey import from CSV; State
 Plane coordinates through proj4js; horizontal-well cross sections along the wellbore (esv-intersection).
 

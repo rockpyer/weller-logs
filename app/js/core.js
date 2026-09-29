@@ -158,7 +158,7 @@ const curveInfo=cfg=>CURVE_INFO[famKey(cfg)]||CURVE_INFO[String(cfg.label||'').t
 function trackTipHTML(w,t,resolved){ const rows=resolved.filter(r=>r.curve).map(({cfg,curve})=>{ const src=(curve.sources||[w.fileName]).filter(Boolean).join(' + ');
     const others=cfg.aliases?curveCandidates(w,cfg).filter(c=>c!==curve&&!c.computed).map(c=>c.mnemonic):[];
     return `<div class="lr"><i style="background:${visibleColor(cfg.color)}"></i><b>${esc(curve.mnemonic)}</b>${curve.unit?` <small>${esc(curve.unit)}</small>`:''}${curve.cased?' <small>cased hole</small>':''}</div>
-      <div class="tipr">${esc(curveInfo(cfg)||curve.description||cfg.label)}${src?`<br><small>From ${esc(src)}</small>`:''}${others.length?`<br><small>Also in this well: ${esc(others.slice(0,5).join(', '))}${others.length>5?'…':''}. Pick in well settings.</small>`:''}</div>`; });
+      <div class="tipr">${esc(curveInfo(cfg)||curve.description||cfg.label)}${curve.editNote?`<br><small>${esc(curve.editNote)}</small>`:''}${src?`<br><small>From ${esc(src)}</small>`:''}${others.length?`<br><small>Also in this well: ${esc(others.slice(0,5).join(', '))}${others.length>5?'…':''}. Pick in well settings.</small>`:''}</div>`; });
   const missing=resolved.filter(r=>!r.curve).map(r=>r.cfg.label);
   return `<div class="tiph">${esc(t.name)}</div>`+(rows.join('')||'<div class="tipv">No curves for this track in this well</div>')+(missing.length?`<div class="tipd">Not in this well: ${esc(missing.join(', '))}</div>`:''); }
 // Saved track sets and projects keep their styling but pick up new built-in tracks, curves and vendor aliases.
@@ -344,6 +344,36 @@ function lithRules(P,hasPE){ return hasPE?{'Limestone / chalk':`PE ≥ ${P.limeP
 function quickLith(vsh,pe,P=LITH_DEF){ if(!Number.isFinite(vsh)) return null;
   if(Number.isFinite(pe)){ if(pe>=P.limePE&&vsh<P.sandVsh) return 'Limestone / chalk'; if(pe>=P.marlPE&&vsh<P.marlVsh) return 'Marl'; if(pe<P.sandPE&&vsh<P.sandVsh) return 'Sandstone'; if(vsh<P.sandVsh) return 'Siltstone'; }
   return vsh<P.sandVsh?'Sandstone':vsh<P.shaleVsh?'Siltstone':'Shale'; }
+/* Lithology ornaments after the FGDC 600 series (the patterns petroplots redraws): dots for sand, dashes for shale,
+   brick for limestone, slanted brick for dolomite. Drawn over each lithology's color, as SVG patterns in tracks and
+   as CSS backgrounds in legends. */
+const LITH_PAT={Sandstone:'sand',Siltstone:'silt',Shale:'shale',Marl:'marl','Limestone / chalk':'lime',Clay:'clay',Claystone:'clay',Kaolinite:'clay','Fine sand':'sandF','Med sand':'sand','Coarse sand':'sandC',
+  Limestone:'lime',Anhydrite:'anhy',Cement:'cement','Silty shale':'siltysh','Shaly sandstone':'shsand',Marlstone:'marl',Chalk:'chalk',Dolomite:'dolo',Bentonite:'bent',Salt:'salt'};
+function patTile(key,ink){ const L=(x1,y1,x2,y2)=>`<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${ink}" stroke-width="0.8"/>`, D=(x,y,r=0.8)=>`<circle cx="${x}" cy="${y}" r="${r}" fill="${ink}"/>`;
+  const brick=L(0,0.5,16,0.5)+L(0,4.5,16,4.5)+L(0.5,0.5,0.5,4.5)+L(8.5,4.5,8.5,8.5);
+  const T={sand:[10,8,D(2.5,2)+D(7.5,6)], sandF:[8,6,D(2,1.5,0.55)+D(6,4.5,0.55)], sandC:[12,10,D(3,2.5,1.2)+D(9,7.5,1.2)],
+    silt:[12,8,L(1,2,5,2)+D(8.5,2,0.6)+D(2.5,6,0.6)+L(6,6,10,6)], shale:[12,6,L(0,1.5,5,1.5)+L(6,4.5,11,4.5)], clay:[14,5,L(0,2.5,9,2.5)],
+    siltysh:[12,8,L(0,2,5,2)+L(6,6,11,6)+D(9,2,0.6)], shsand:[12,8,D(2.5,2)+D(8.5,6)+L(6,2,10,2)],
+    lime:[16,8,brick], chalk:[16,8,L(0,0.5,16,0.5)+L(0.5,0.5,0.5,4.5)+L(8.5,4.5,8.5,8.5)+D(4.5,2.5,0.5)+D(12.5,6.5,0.5)],
+    dolo:[16,8,L(0,0.5,16,0.5)+L(0,4.5,16,4.5)+L(0,0.5,2,4.5)+L(8,4.5,10,8.5)], marl:[16,8,L(0,0.5,16,0.5)+L(0.5,0.5,0.5,4.5)+L(4,6.5,12,6.5)],
+    anhy:[8,8,L(0,8,8,0)+L(-1,1,1,-1)+L(7,9,9,7)], salt:[8,8,L(0,0.5,8,0.5)+L(0.5,0,0.5,8)], cement:[8,8,L(0,8,8,0)+L(0,0,8,8)], bent:[12,8,L(1,6,3,2)+L(3,2,5,6)+L(7,2,11,2)] };
+  return T[key]||null; }
+const patInk=c=>{ const x=d3.color(fillHex(c)); if(!x) return 'rgba(0,0,0,.5)'; const r=d3.rgb(x); return (.299*r.r+.587*r.g+.114*r.b)<90?'rgba(255,255,255,.6)':'rgba(0,0,0,.5)'; };
+// Fill for one lithology in an SVG: a pattern in its defs (color plus ornament), or the plain color.
+function patFill(svg,name,color,uid){ const key=LITH_PAT[name], tl=key&&patTile(key,patInk(color)); if(!tl) return color;
+  const id=('p_'+uid+'_'+key+'_'+String(color).replace(/\W/g,'')).replace(/[^\w-]/g,''); let defs=svg.select('defs'); if(defs.empty()) defs=svg.insert('defs',':first-child');
+  if(defs.select('#'+id).empty()){ const [pw,ph,body]=tl; defs.append('pattern').attr('id',id).attr('patternUnits','userSpaceOnUse').attr('width',pw).attr('height',ph).html(`<rect width="${pw}" height="${ph}" fill="${color}"/>${body}`); }
+  return `url(#${id})`; }
+// The same pattern as a CSS background, for legend swatches.
+function patCSS(name,color,on=true){ const key=on&&LITH_PAT[name], tl=key&&patTile(key,patInk(color)); if(!tl) return color;
+  const [pw,ph,body]=tl; return `${color} url('data:image/svg+xml,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="${pw}" height="${ph}">${body}</svg>`)}')`; }
+/* Off-scale values wrap back into the track, the way a log print's backup trace does: past the right edge the curve
+   continues from the left edge, dotted, one scale width over. Returns runs of [x, sample index]. */
+function scaleT(cfg){ const f=cfg.log?(v=>v>0?Math.log10(v):NaN):(v=>v), a=f(cfg.min), span=f(cfg.max)-a; return v=>span?(f(v)-a)/span:NaN; }
+function wrapRuns(cfg,data,idx,width){ const tOf=scaleT(cfg), runs=[]; let cur=null, ck=0;
+  for(const i of idx){ const t=tOf(data[i]); if(!Number.isFinite(t)||(t>=0&&t<=1)){ cur=null; continue; } const k=Math.floor(t);
+    if(!cur||k!==ck){ cur=[]; runs.push(cur); ck=k; } cur.push([(t-k)*width,i]); }
+  return runs; }
 function showTip(e,html){ const tip=$('tip'); tip.innerHTML=html; tip.hidden=false;
   const x=e.clientX+14, y=e.clientY+14; tip.style.left=Math.max(8,Math.min(x,innerWidth-tip.offsetWidth-8))+'px'; tip.style.top=Math.max(8,Math.min(y,innerHeight-tip.offsetHeight-8))+'px'; }
 function hideTip(){ $('tip').hidden=true; }
@@ -359,10 +389,10 @@ function logTrack(w,t,F,y,H,ticks){
   const grp={}; for(const r of resolved) if(r.cfg.auto&&r.curve){ const k=String(r.cfg.unit||''), [a,b]=r.curve._as||[r.cfg.min,r.cfg.max]; const g=grp[k]||(grp[k]=[Infinity,-Infinity]); g[0]=Math.min(g[0],a,b); g[1]=Math.max(g[1],a,b); }
   for(const r of resolved) if(r.cfg.auto&&r.curve){ const [a,b]=grp[String(r.cfg.unit||'')]; r.cfg={...r.cfg,...(r.cfg.min>r.cfg.max?{min:b,max:a}:{min:a,max:b})}; }
   const gr=resolveCurve(w,{aliases:A.GR}), pe=resolveCurve(w,{aliases:A.PE}); let lithCls=null;
-  if(t.type==='lithpct'){ const have=resolved.filter(r=>r.curve&&!r.curve.sparse); head.innerHTML+=`<div class="scale" style="color:var(--muted)"><span>0</span><span class="c">${have.length?have.length+' components':'no cuttings curves'}</span><span class="r">100%</span></div><div class="legend">${have.map(r=>`<i style="background:${r.cfg.color}" title="${r.cfg.label} (${r.curve.mnemonic})"></i>`).join('')}</div>`; }
+  if(t.type==='lithpct'){ const have=resolved.filter(r=>r.curve&&!r.curve.sparse); head.innerHTML+=`<div class="scale" style="color:var(--muted)"><span>0</span><span class="c">${have.length?have.length+' components':'no cuttings curves'}</span><span class="r">100%</span></div><div class="legend">${have.map(r=>`<i style="background:${patCSS(r.cfg.label,r.cfg.color,!t.nopat)}" title="${r.cfg.label} (${r.curve.mnemonic})"></i>`).join('')}</div>`; }
   const LP=lithParams(t), hasPE=!!(pe&&!pe.sparse);
   const vs=resolveCurve(w,{aliases:['VSH_GR','VSH_SP']}), vSrc=gr&&!gr.sparse?'GR':vs?'SP':null;
-  if(t.type==='lith') head.innerHTML+=`<div class="scale" style="color:var(--muted)" title="Computed from ${esc(gr?.mnemonic||vSrc||'GR')} cutoffs, not a mud-log or core description${gr?.cased?'. This gamma ray was logged through casing and reads low; pick an open-hole GR in well settings':''}"><span></span><span class="c">${vSrc?'computed* '+esc(vSrc==='GR'?gr.mnemonic:'SP')+(hasPE?' + PE':''):'needs GR or SP'}${gr?.cased?' · cased':''}</span><span></span></div><div class="legend">${Object.keys(lithRules(LP,hasPE)).map(k=>`<i style="background:${LP.colors[k]}"></i>`).join('')}</div>`;
+  if(t.type==='lith') head.innerHTML+=`<div class="scale" style="color:var(--muted)" title="Computed from ${esc(gr?.mnemonic||vSrc||'GR')} cutoffs, not a mud-log or core description${gr?.cased?'. This gamma ray was logged through casing and reads low; pick an open-hole GR in well settings':''}"><span></span><span class="c">${vSrc?'computed* '+esc(vSrc==='GR'?gr.mnemonic:'SP')+(hasPE?' + PE':''):'needs GR or SP'}${gr?.cased?' · cased':''}</span><span></span></div><div class="legend">${Object.keys(lithRules(LP,hasPE)).map(k=>`<i style="background:${patCSS(k,LP.colors[k],!t.nopat)}"></i>`).join('')}</div>`;
   else if(t.type==='flags') head.innerHTML+=`<div class="legend">${resolved.filter(r=>r.curve).map(r=>`<i style="background:${r.cfg.color}"></i>`).join('')}</div>`;
   else for(const {cfg,curve} of resolved){ const s=document.createElement('div'); s.className='scale'; s.style.color=cfg.color; s.style.opacity=curve?1:.35; s.title=curve?.description||'';
     s.innerHTML=`<span>${cfg.min}</span><span class="c">${curve?curve.mnemonic:cfg.label+' (none)'}${cfg.unit?' '+cfg.unit:''}${cfg.tag?' · '+cfg.tag:''}</span><span class="r">${cfg.max}</span><span class="bar${curve?.sparse?' pts':cfg.dash?' dash':''}"></span>`; head.appendChild(s); }
@@ -381,11 +411,11 @@ function logTrack(w,t,F,y,H,ticks){
   const band=(g,a,b,x,wd,fill,title)=>{ const y0=Y(a), h=Math.max(.6,Y(b)-y0); const r=g.append('rect').attr('x',x).attr('y',y0).attr('width',wd).attr('height',h).attr('fill',fill); if(title) r.append('title').text(title); };
   if(t.type==='lithpct'){ const have=resolved.filter(r=>r.curve&&!r.curve.sparse); if(have.length){ const g=svg.append('g'); const sx=width/100;
       for(let k=0;k<idx.length;k++){ const i=idx[k], j=idx[k+1]??Math.min(i1,i+stride); let x=0;
-        for(const r of have){ const v=r.curve.data[i]; if(!Number.isFinite(v)||v<=0) continue; band(g,i,j,x,v*sx,r.cfg.color); x+=v*sx; } } } }
+        for(const r of have){ const v=r.curve.data[i]; if(!Number.isFinite(v)||v<=0) continue; band(g,i,j,x,v*sx,t.nopat?r.cfg.color:patFill(svg,r.cfg.label,r.cfg.color,t.id+w.id)); x+=v*sx; } } } }
   else if(t.type==='lith'){ if(vSrc){ const g=svg.append('g').attr('opacity',gr?.cased&&vSrc==='GR'?.5:1); const bl=grBaselines(w); let run=null;
       const vshAt=i=>vs?vs.data[i]:WellerPetro.igr(gr.data[i],bl.clean??20,bl.shale??130), peAt=i=>hasPE?pe.data[i]:NaN;
       const cls=i=>quickLith(vshAt(i),peAt(i),LP); lithCls=i=>({k:cls(i),vsh:vshAt(i),pe:peAt(i)});
-      const flush=(k,a,b)=>{ if(k) band(g,a,b,0,width,LP.colors[k]); };
+      const flush=(k,a,b)=>{ if(k) band(g,a,b,0,width,t.nopat?LP.colors[k]:patFill(svg,k,LP.colors[k],t.id+w.id)); };
       for(const i of idx){ const k=cls(i); if(!run||run.k!==k){ if(run) flush(run.k,run.a,i); run={k,a:i}; } }
       if(run) flush(run.k,run.a,i1); } }
   else if(t.type==='flags'){ const have=resolved.filter(r=>r.curve&&!r.curve.sparse); const wd=width/Math.max(1,have.length);
@@ -403,8 +433,14 @@ function logTrack(w,t,F,y,H,ticks){
           for(const i of idx){ if(!ok(i)) continue; const yy=Y(i); if(yy<0||yy>H) continue; gr2.append('stop').attr('offset',(yy/H).toFixed(5)).attr('stop-color',mix(sx(curve.data[i])/width)); }
           fillRef=`url(#${gid})`; }
         const area=d3.area().defined(ok).x0(cfg.fill==='left'?0:width).x1(i=>sx(curve.data[i])).y(Y); svg.append('path').attr('d',area(idx)).attr('fill',fillRef).attr('opacity',cfg.fillOpacity??.35); }
-      const line=d3.line().defined(ok).x(i=>sx(curve.data[i])).y(Y);
-      svg.append('path').attr('d',line(idx)).attr('fill','none').attr('stroke',visibleColor(cfg.color)).attr('stroke-width',1.2).attr('stroke-dasharray',cfg.dash||null); }
+      const col=visibleColor(cfg.color);
+      if(t.nowrap){ const line=d3.line().defined(ok).x(i=>sx(curve.data[i])).y(Y); svg.append('path').attr('d',line(idx)).attr('fill','none').attr('stroke',col).attr('stroke-width',1.2).attr('stroke-dasharray',cfg.dash||null); continue; }
+      // Main trace: in-range samples, plus the first sample past an edge so the line reaches it. The rest wraps.
+      const tOf=scaleT(cfg), inR=i=>{ const v=tOf(curve.data[i]); return v>=0&&v<=1; }, keep=idx.map((i,k)=>ok(i)&&(inR(i)||(k>0&&ok(idx[k-1])&&inR(idx[k-1]))||(k<idx.length-1&&ok(idx[k+1])&&inR(idx[k+1]))));
+      const line=d3.line().defined((i,k)=>keep[k]).x(i=>sx(curve.data[i])).y(Y);
+      svg.append('path').attr('d',line(idx)).attr('fill','none').attr('stroke',col).attr('stroke-width',1.2).attr('stroke-dasharray',cfg.dash||null);
+      const runs=wrapRuns(cfg,curve.data,idx,width); if(runs.length){ const wl=d3.line().x(p=>p[0]).y(p=>Y(p[1])), g=svg.append('g').attr('class','wrap');
+        for(const r of runs) g.append('path').attr('d',r.length>1?wl(r):`M${r[0][0]},${Y(r[0][1])}h0.01`).attr('fill','none').attr('stroke',col).attr('stroke-width',1).attr('stroke-dasharray','1 2').attr('stroke-linecap','round').attr('opacity',.8); } }
   }
   const firstVis=visibleTracks(w)[0];
   for(const tp of w.tops){ const yy=y(F.z(tp.md)); if(yy<0||yy>H) continue; svg.append('line').attr('x1',0).attr('x2',width).attr('y1',yy).attr('y2',yy).attr('class','top').attr('data-top',tp.name).style('stroke',S._zc?.get(tp.name)||null);
@@ -414,13 +450,13 @@ function logTrack(w,t,F,y,H,ticks){
   node.addEventListener('mousemove',e=>{ if(S.drag) return; const r=node.getBoundingClientRect(); const z=y.invert(e.clientY-r.top), md=mdAtZ(w,F,z); showCursor(e.clientY-$('logPanel').getBoundingClientRect().top,md,w,resolved);
     const i=Math.min(dep.length-1,Math.max(0,d3.bisectCenter(dep,md)));
     if(lithCls){ const L=lithCls(i); if(!L.k) return hideTip(); const rule=lithRules(LP,hasPE)[L.k];
-      showTip(e,`<div class="lr on"><i style="background:${LP.colors[L.k]}"></i>${esc(L.k)}</div><div class="tipv">Vsh <b>${L.vsh.toFixed(2)}</b>${Number.isFinite(L.pe)?` · PE <b>${L.pe.toFixed(2)}</b> b/e`:''}</div><div class="tipr">Rule: ${esc(rule)}</div><div class="tipd">${depthText(w,md)}</div>`); }
+      showTip(e,`<div class="lr on"><i style="background:${patCSS(L.k,LP.colors[L.k],!t.nopat)}"></i>${esc(L.k)}</div><div class="tipv">Vsh <b>${L.vsh.toFixed(2)}</b>${Number.isFinite(L.pe)?` · PE <b>${L.pe.toFixed(2)}</b> b/e`:''}</div><div class="tipr">Rule: ${esc(rule)}</div><div class="tipd">${depthText(w,md)}</div>`); }
     else if(t.type==='flags'){ const on=flagsOn.filter(f=>f.curve.data[i]>=(f.cfg.flagAt??0.5));
       showTip(e,(on.length?on.map(f=>`<div class="lr on"><i style="background:${f.cfg.color}"></i>${esc(f.cfg.label)}</div>`).join(''):'<div class="tipv">No flag at this depth</div>')+`<div class="tipd">${depthText(w,md)}</div>`); } });
   node.addEventListener('mouseleave',()=>{ $('cursor').style.display='none'; hideTip(); });
   if(!t.type){ head.addEventListener('mousemove',e=>{ if(e.target.closest('button')) return hideTip(); showTip(e,trackTipHTML(w,t,resolved)); }); head.addEventListener('mouseleave',hideTip); }
   const leg=head.querySelector('.legend');
-  if(leg&&t.type==='lith'){ leg.addEventListener('mousemove',e=>showTip(e,legendTip(`Computed lithology from ${vSrc==='GR'?gr.mnemonic:vSrc||'GR'}${hasPE?' and PE':' only'}: a quick look from cutoffs, not described cuttings${gr?.cased?'. Cased-hole GR: unreliable':''}`,Object.entries(lithRules(LP,hasPE)).map(([n,r])=>[n,LP.colors[n],r])))); leg.addEventListener('mouseleave',hideTip); }
+  if(leg&&t.type==='lith'){ leg.addEventListener('mousemove',e=>showTip(e,legendTip(`Computed lithology from ${vSrc==='GR'?gr.mnemonic:vSrc||'GR'}${hasPE?' and PE':' only'}: a quick look from cutoffs, not described cuttings${gr?.cased?'. Cased-hole GR: unreliable':''}`,Object.entries(lithRules(LP,hasPE)).map(([n,r])=>[n,patCSS(n,LP.colors[n],!t.nopat),r])))); leg.addEventListener('mouseleave',hideTip); }
   if(leg&&t.type==='flags'){ leg.addEventListener('mousemove',e=>showTip(e,legendTip('Flags',flagsOn.map(f=>[f.cfg.label,f.cfg.color,(f.curve.description||'').replace(/^[^:]*:\s*/,'')])))); leg.addEventListener('mouseleave',hideTip); }
   node.addEventListener('click',e=>{ if(!S.picking) return; const r=node.getBoundingClientRect(); const md=Math.round(mdAtZ(w,F,y.invert(e.clientY-r.top))*2)/2; placeTop(w,md); });
   attachTopDrag(node,w,F,y);
@@ -537,12 +573,13 @@ document.addEventListener('keydown',e=>{ if(e.key==='Escape'&&!$('colorPop').hid
 /* ---------- Track editor ---------- */
 let editing=null;
 function openTrackDlg(id){ const t=S.tracks.find(t=>t.id===id); if(!t) return; editing=JSON.parse(JSON.stringify(t)); $('tdName').value=editing.name; $('tdWidth').value=editing.width||190; drawTdCurves(); $('trackDlg').hidden=false; }
+function drawTdToggles(){ const lith=editing.type==='lith'||editing.type==='lithpct'; $('tdWrapL').hidden=!!editing.type; $('tdPatL').hidden=!lith; $('tdWrap').checked=!editing.nowrap; $('tdPat').checked=!editing.nopat; }
 // Lithology tracks edit their cutoffs and colors instead of a curve list.
 function drawTdLith(){ const P=lithParams(editing), n=(k,st)=>`<input type="number" data-lp="${k}" value="${P[k]}" step="${st||0.05}" style="width:4.2em">`, c=k=>`<button type="button" class="swatchbtn" data-lc="${k}" data-color="${P.colors[k]}" style="background:${P.colors[k]}" title="${k} color"></button>`;
   $('tdLithBody').innerHTML=[['Sandstone',`Vsh &lt; ${n('sandVsh')}; where PE exists, also PE &lt; ${n('sandPE',0.1)}`],['Siltstone',`Vsh from the sand cutoff to ${n('shaleVsh')}, or clean rock no PE class fits`],['Shale','Vsh at or above the shale cutoff'],
     ['Limestone / chalk',`PE ≥ ${n('limePE',0.1)} and Vsh below the sand cutoff`],['Marl',`PE ≥ ${n('marlPE',0.1)} and Vsh &lt; ${n('marlVsh')}`]].map(([k,r])=>`<tr><td>${c(k)} ${k}</td><td>${r}</td></tr>`).join(''); }
 function readTdLith(){ const P={colors:{}}; document.querySelectorAll('#tdLithBody [data-lp]').forEach(i=>{ const v=parseFloat(i.value); if(Number.isFinite(v)) P[i.dataset.lp]=v; }); document.querySelectorAll('#tdLithBody [data-lc]').forEach(b=>P.colors[b.dataset.lc]=b.dataset.color); editing.lith=P; }
-function drawTdCurves(){ const lith=editing.type==='lith'; $('tdLith').hidden=!lith; $('tdCurveWrap').hidden=lith; $('tdAddRow').hidden=lith; if(lith) return drawTdLith();
+function drawTdCurves(){ drawTdToggles(); const lith=editing.type==='lith'; $('tdLith').hidden=!lith; $('tdCurveWrap').hidden=lith; $('tdAddRow').hidden=lith; if(lith) return drawTdLith();
   const w=wellById(S.selected)||S.wells[0]; const tb=$('tdCurves'); tb.innerHTML=''; if(!w) return;
   const flags=editing.type==='flags'; $('tdHead').innerHTML=flags?'<th>Curve</th><th>Flag where value ≥</th><th>Color</th><th></th>':'<th>Curve</th><th>Left</th><th>Right</th><th>Log</th><th>Line</th><th>Dash</th><th>Fill</th><th>Fill colors</th><th>Opacity</th><th></th>';
   $('tdHint').textContent=flags?'Each curve draws as a bar where its value reaches the threshold: 1 for the computed 0/1 flags, or a level on any log, such as metal loss % or caliper minus bit for corrosion and washout.':'Styles apply to this track in every well. Reversed scales (left > right) are fine: that is how NPHI and DT are read. Color by value shades each depth by its reading, from the first color at the left scale value to the second at the right.';
@@ -564,7 +601,7 @@ function autoScale(curve,log){ const v=Array.from(curve.data).filter(x=>Number.i
   const lo=v[Math.floor(v.length*.02)], hi=v[Math.floor(v.length*.98)]; if(log){ return [10**Math.floor(Math.log10(lo)),10**Math.ceil(Math.log10(hi))]; }
   const [a,b]=d3.scaleLinear().domain([lo,hi]).nice(5).domain(); return [a,b]; }
 function cssVarHex(name){ const v=cssVar(name); if(/^#/.test(v)) return v; const m=v.match(/\d+/g); return m?'#'+m.slice(0,3).map(n=>(+n).toString(16).padStart(2,'0')).join(''):'#333333'; }
-function readTd(){ editing.name=$('tdName').value; editing.width=+$('tdWidth').value||190; if(editing.type==='lith') return readTdLith();
+function readTd(){ editing.name=$('tdName').value; editing.width=+$('tdWidth').value||190; if($('tdWrap').checked) delete editing.nowrap; else editing.nowrap=true; if($('tdPat').checked) delete editing.nopat; else editing.nopat=true; if(editing.type==='lith') return readTdLith();
   if(editing.type==='flags'){ document.querySelectorAll('#tdCurves tr').forEach((tr,i)=>{ const c=editing.curves[i], m=tr.querySelector('.tdm').value; if(m){ const mu=m.toUpperCase(); c.aliases=[m,...(c.aliases||[]).filter(a=>a.toUpperCase()!==mu)]; }
     c.label=tr.querySelector('.tdlbl').value.trim()||m||c.label; const fa=parseFloat(tr.querySelector('.tdfa').value); c.flagAt=Number.isFinite(fa)?fa:0.5; c.color=tr.querySelector('.tdcol').dataset.color; }); return; }
   document.querySelectorAll('#tdCurves tr').forEach((tr,i)=>{ const c=editing.curves[i]; const m=tr.querySelector('.tdm').value; if(m){ const mu=m.toUpperCase(); if(!c.aliases.some(a=>a.toUpperCase()===mu)){ c.label=m; c.exact=true; } c.aliases=[m,...c.aliases.filter(a=>a.toUpperCase()!==mu)]; }
@@ -798,12 +835,20 @@ function rebuildWell(prev,parts,prefer='prev'){ const m=WellerLAS.mergeWells(par
     for(const k of HEAD_KEYS) if(ok(prev[k])&&(prefer==='prev'||!ok(m[k]))) m[k]=prev[k];
     for(const g of ['location','elevation']) for(const [k,v] of Object.entries(prev[g]||{})) if(ok(v)&&(prefer==='prev'||!ok(m[g][k]))) m[g][k]=v;
     const tops=[...(prev.tops||[])]; for(const t of m.tops) if(!tops.some(x=>x.name===t.name)) tops.push(t); m.tops=tops;
-    m.curves.push(...prev.curves.filter(c=>c.sparse&&!m.curves.some(x=>x.mnemonic===c.mnemonic))); if(prev.pick) m.pick={...prev.pick}; if(prev.shifts){ m.shifts={...prev.shifts}; applyShifts(m); } }
+    m.curves.push(...prev.curves.filter(c=>c.sparse&&!m.curves.some(x=>x.mnemonic===c.mnemonic))); if(prev.pick) m.pick={...prev.pick}; if(prev.shifts||prev.edits){ if(prev.shifts) m.shifts={...prev.shifts}; if(prev.edits) m.edits=structuredClone(prev.edits); applyShifts(m); } }
   if(parts.length>1) m.parts=parts; return m; }
 // Offsets a well's files report, with the file they came from.
 const offsetsOf=w=>partsOf(w).flatMap(p=>(p.sensorOffsets?.list||[]).map(o=>({...o,file:p.fileName,atBit:p.sensorOffsets.atBit})));
-function applyShifts(w){ const dep=depthOf(w); for(const c of w.curves){ if(c.computed||c.sparse) continue; const off=w.shifts?.[c.mnemonic];
-    if(off){ if(!c._orig) c._orig=c.data; c.data=WellerLAS.shiftCurve(dep,c._orig,off); c.shifted=off; } else if(c._orig){ c.data=c._orig; delete c._orig; delete c.shifted; } } w._grP=null; }
+// Depth shift, then despike, then normalization, always from the values as loaded (kept in c._orig).
+function applyShifts(w){ const dep=depthOf(w); for(const c of w.curves){ if(c.computed||c.sparse) continue; const off=w.shifts?.[c.mnemonic], ed=w.edits?.[c.mnemonic];
+    delete c._as;
+    if(off||ed?.despike||ed?.norm){ if(!c._orig) c._orig=c.data; let d=off?WellerLAS.shiftCurve(dep,c._orig,off):c._orig; const notes=[];
+      if(off) c.shifted=off; else delete c.shifted;
+      if(ed?.despike){ const r=WellerQC.despike(d,ed.despike); d=r.data; notes.push(`despiked: ${r.idx.length} point${r.idx.length===1?'':'s'} (window ${ed.despike.win}, ${ed.despike.z} σ)`); }
+      if(ed?.norm){ const {a,b}=ed.norm; d=d.map(v=>a*v+b); notes.push(`normalized to ${ed.norm.ref}${ed.norm.zone?' over '+ed.norm.zone:''} (×${a.toFixed(3)} ${b<0?'−':'+'} ${Math.abs(b).toFixed(1)})`); }
+      c.data=d; if(notes.length) c.editNote=notes.join('; '); else delete c.editNote; }
+    else if(c._orig){ c.data=c._orig; delete c._orig; delete c.shifted; delete c.editNote; } } w._grP=null; }
+function setEdit(w,m,key,val){ w.edits={...(w.edits||{})}; const e={...(w.edits[m]||{})}; if(val) e[key]=val; else delete e[key]; if(Object.keys(e).length) w.edits[m]=e; else delete w.edits[m]; if(!Object.keys(w.edits).length) delete w.edits; applyShifts(w); computeInterp(w); }
 function setShift(w,mnems,off){ w.shifts={...(w.shifts||{})}; for(const m of mnems){ if(off) w.shifts[m]=off; else delete w.shifts[m]; } applyShifts(w); computeInterp(w); render(); }
 document.addEventListener('click',e=>{ const b=e.target.closest('[data-shift]'); if(!b) return; const w=wellById(b.dataset.wid); if(!w) return; const off=+b.dataset.shift, ms=b.dataset.curves.split(',');
   const on=ms.every(m=>w.shifts?.[m]===off); setShift(w,ms,on?0:off); refreshPickers(); $('stNote').textContent=on?`${ms.join(', ')} back at recorded depth`:`${ms.join(', ')} moved up ${off} ${w.depthUnit} to sensor depth`; });
@@ -814,6 +859,67 @@ function mergeInto(target,others){ const nw=rebuildWell(target,[...partsOf(targe
 function splitWell(w){ const parts=partsOf(w); if(parts.length<2) return [w]; const ids=new Set(S.wells.map(x=>x.id));
   const out=parts.map((p,i)=>{ const nw=rebuildWell(null,[p]); nw.id=i===0?w.id:(!ids.has(p.id)&&p.id!==w.id?p.id:'u'+Math.random().toString(36).slice(2,8)); ids.add(nw.id); computeInterp(nw); return nw; });
   const i=S.wells.indexOf(w); S.wells.splice(i,1,...out); return out; }
+
+/* ---------- LAS 2.0 export of one well: curves as shown, computed curves, tops and survey ---------- */
+function interpNote(){ const I=S.interp; if(!I?.enabled) return [];
+  return [`Interpretation (computed curves): Vsh ${I.vshMethod}; porosity ${I.porMethod}, matrix ${I.matrix}; Sw ${I.swMethod} on ${I.swPhi} porosity, a=${I.a} m=${I.m} n=${I.n}, Rw ${I.rw} ohm.m at ${I.rwTemp} F; net cutoffs Vsh<${I.cut.vsh} PHI>${I.cut.phi} Sw<${I.cut.sw}`,
+    'Methods: https://github.com/rockpyer/weller-logs/blob/main/docs/PETROPHYSICS.md']; }
+function exportLAS(w){ if(!w){ $('stNote').textContent='Select a well to export'; return; }
+  const bl=grBaselines(w), notes=[...interpNote()]; if(S.interp?.enabled&&Number.isFinite(bl.clean)) notes.push(`GR baselines clean ${bl.clean} API, shale ${bl.shale} API`);
+  const text=WellerQC.writeLAS(w,{computed:true,notes});
+  downloadBlob(`${w.name.replace(/[^\w.-]+/g,'_')}.las`,new Blob([text],{type:'text/plain'})); }
+$('btnLas').onclick=()=>exportLAS(wellById(S.selected));
+$('wdLas').onclick=()=>exportLAS(wellEditing);
+
+/* ---------- Curve QC: coverage across wells, checks per curve, despike, GR normalization ---------- */
+const QC_FAMS=[['GR','GR'],['SP','SP'],['CAL','Caliper'],['RD','Deep res'],['RM','Med res'],['RS','Shal res'],['RHOB','Density'],['NPHI','Neutron'],['PE','PE'],['DT','Sonic'],['DPHI','Den por'],['K','Spectral'],['ROP','ROP'],['TG','Gas']];
+const LOG_FAMS=new Set(['RD','RM','RS','TG','C1','C2','C3','C4','C5']);
+const famOf=c=>{ const m=norm(c.mnemonic); return Object.keys(A).find(k=>A[k].some(a=>a.toUpperCase()===m))||null; };
+function coverageOf(w,c){ const d=depthOf(w), span=d[d.length-1]-d[0]; if(!c||c.sparse||!(span>0)) return 0; let n=0; for(let i=0;i<d.length;i++) if(Number.isFinite(c.data[i])) n++; return Math.min(1,n/d.length); }
+let qcWell=null;
+const qcSpike=()=>({win:Math.max(5,Math.min(101,Math.round(+$('qcWin').value||11)))|1,z:Math.max(2,+$('qcZ').value||6)});
+$('qcWin').onchange=$('qcZ').onchange=()=>drawQC();
+function openQC(id){ qcWell=wellById(id)||wellById(S.selected)||S.wells[0]; if(!qcWell) return; drawQC(); $('qcDlg').hidden=false; }
+function drawQC(){ const w=qcWell, fams=QC_FAMS.filter(([k])=>S.wells.some(x=>resolveCurve(x,{aliases:A[k]}))), acc=d3.color(cssVar('--focus'));
+  const cell=f=>{ const c=acc.copy({opacity:0.12+0.6*f}); return `background:${f>0?c.formatRgb():'transparent'}`; };
+  $('qcCov').innerHTML=`<thead><tr><th>Well</th>${fams.map(([,l])=>`<th>${l}</th>`).join('')}</tr></thead><tbody>`+S.wells.map(x=>`<tr class="${x===w?'on':''}"><td class="wl" data-qcwell="${x.id}">${esc(x.name)}</td>${fams.map(([k,l])=>{ const c=resolveCurve(x,{aliases:A[k]}), f=coverageOf(x,c);
+    return `<td class="cv" style="${cell(f)}" title="${c?esc(`${l}: ${curveWhere(x,c)}`):l+': none'}">${c?Math.round(f*100)+'%':'—'}</td>`; }).join('')}</tr>`).join('')+'</tbody>';
+  setHTML($('qcWell'),S.wells.map(x=>`<option value="${x.id}">${esc(x.name)}</option>`).join('')); $('qcWell').value=w.id;
+  const dep=depthOf(w), logs=w.curves.slice(1).filter(c=>!c.computed&&!c.sparse&&!/^(TVD|TVDSS|MD|DEPT|DEPTH)$/i.test(norm(c.mnemonic)));
+  const cols=['coverage','gaps','flat','spikes','range','unit'], heads=['Coverage','Gaps','Flat runs','Spikes','Range','Unit'];
+  const sc=v=>v>=0.99?'#2E7D32':v>=0.66?'#9a7300':'#c1121f';
+  $('qcTable').innerHTML=`<thead><tr><th>Curve</th><th title="Share of checks passed">Score</th>${heads.map(h=>`<th>${h}</th>`).join('')}<th></th></tr></thead><tbody>`+logs.map(c=>{ const fam=famOf(c), r=WellerQC.checkCurve(dep,c,fam,{log:LOG_FAMS.has(fam),spike:qcSpike()}), by=Object.fromEntries(r.checks.map(x=>[x.key,x]));
+    const ed=w.edits?.[c.mnemonic], nsp=by.spikes?.value||0;
+    const act=ed?.despike?`<button class="small" data-qcdes="${esc(c.mnemonic)}" data-off="1" title="${esc(c.editNote||'')}">Undo despike</button>`:nsp?`<button class="small" data-qcdes="${esc(c.mnemonic)}" title="Replace ${nsp} spikes with the rolling median">Despike ${nsp}</button>`:'';
+    return `<tr><td><b>${esc(c.mnemonic)}</b> <small class="hint">${esc(c.unit||'')}${fam?' · '+fam:''}</small>${c.editNote?`<div class="hint" style="white-space:normal">${esc(c.editNote)}</div>`:''}</td><td><span class="qscore" style="background:${sc(r.score)}">${Math.round(r.score*100)}</span></td>${cols.map(k=>by[k]?`<td class="q ${by[k].level}">${esc(by[k].text)}</td>`:'<td class="q ok">—</td>').join('')}<td>${act}</td></tr>`; }).join('')+'</tbody>';
+  drawQCNorm(); }
+function drawQCNorm(){ const w=qcWell, gr=resolveCurve(w,{aliases:A.GR}); if(!gr||gr.sparse){ $('qcNorm').innerHTML=''; return; }
+  const refs=S.wells.filter(x=>x!==w&&resolveCurve(x,{aliases:A.GR})), zones=[...new Set(S.wells.flatMap(x=>zonesOf(x).map(z=>z.name)))].filter(n=>n!=='Whole well'), cur=w.edits?.[gr.mnemonic]?.norm;
+  $('qcNorm').innerHTML=`<h4 class="qch">Normalize gamma ray</h4><p class="hint" style="margin:0">Rescale ${esc(gr.mnemonic)} so its P5 and P95 match a reference well's, over the whole log or one zone. Evens out tool, vintage and borehole differences before GR cutoffs and Vsh are compared between wells.</p>
+    <div class="row">${cur?`<span>${esc(gr.mnemonic)} is ${esc(gr.editNote||'normalized')}</span><button class="small" id="qcNormOff">Remove</button>`:''}
+    <label>Reference <select id="qcRef">${refs.map(x=>`<option value="${x.id}"${cur&&cur.ref===x.name?' selected':''}>${esc(x.name)}</option>`).join('')}</select></label>
+    <label>over <select id="qcZone"><option value="">Whole log</option>${zones.map(z=>`<option${cur?.zone===z?' selected':''}>${esc(z)}</option>`).join('')}</select></label>
+    <button class="small" id="qcNormGo"${refs.length?'':' disabled'}>Normalize ${esc(w.name)}</button><button class="small" id="qcNormAll"${refs.length?'':' disabled'} title="Every other well with GR, to the chosen reference">Normalize all wells to the reference</button></div>`; }
+// GR values inside a zone (or the whole log) for percentiles.
+function grSample(w,c,zone){ if(!zone) return c.data; const z=zonesOf(w).find(z=>z.name===zone); if(!z) return new Float64Array(0); const d=depthOf(w); return c.data.filter((v,i)=>d[i]>=z.top&&d[i]<z.base); }
+function normalizeGR(w,ref,zone){ const gr=resolveCurve(w,{aliases:A.GR}), rg=resolveCurve(ref,{aliases:A.GR}); if(!gr||!rg) return `${w.name}: no GR`;
+  setEdit(w,gr.mnemonic,'norm',null);   // percentiles from the curve before any earlier normalization
+  const k=WellerQC.normCoeffs(grSample(w,gr,zone),grSample(ref,rg,zone)); if(!k) return `${w.name}: too few GR values${zone?' in '+zone:''}`;
+  setEdit(w,gr.mnemonic,'norm',{a:+k.a.toFixed(5),b:+k.b.toFixed(3),ref:ref.name,zone:zone||undefined,p:[k.src.map(v=>+v.toFixed(1)),k.ref.map(v=>+v.toFixed(1))]}); return null; }
+$('btnQC').onclick=e=>{ e.preventDefault(); e.stopPropagation(); openQC(S.selected); };
+$('wdQC').onclick=()=>{ $('wellDlg').hidden=true; openQC(wellEditing?.id); };
+$('qcClose').onclick=()=>{ $('qcDlg').hidden=true; };
+$('qcWell').onchange=e=>{ qcWell=wellById(e.target.value); drawQC(); };
+$('qcDlg').addEventListener('click',e=>{ const t=e.target, w=qcWell; if(!w) return;
+  const wl=t.closest('[data-qcwell]'); if(wl){ qcWell=wellById(wl.dataset.qcwell); drawQC(); return; }
+  const ds=t.closest('[data-qcdes]'); if(ds){ const m=ds.dataset.qcdes, c=w.curves.find(x=>x.mnemonic===m), fam=c&&famOf(c);
+    setEdit(w,m,'despike',ds.dataset.off?null:{...qcSpike(),log:LOG_FAMS.has(fam)||undefined}); render(); drawQC(); $('stNote').textContent=`${w.name} ${m}: ${ds.dataset.off?'spikes restored':(w.curves.find(c=>c.mnemonic===m)?.editNote||'despiked')}`; return; }
+  if(t.id==='qcNormOff'){ const gr=resolveCurve(w,{aliases:A.GR}); setEdit(w,gr.mnemonic,'norm',null); render(); drawQC(); return; }
+  if(t.id==='qcNormGo'||t.id==='qcNormAll'){ const ref=wellById($('qcRef').value), zone=$('qcZone').value; if(!ref) return;
+    // The reference stays as logged: normalizing all wells to it first clears its own normalization.
+    if(t.id==='qcNormAll'&&ref.edits) for(const m of Object.keys(ref.edits)) if(ref.edits[m].norm) setEdit(ref,m,'norm',null);
+    const list=t.id==='qcNormAll'?S.wells.filter(x=>x!==ref&&resolveCurve(x,{aliases:A.GR})):[w]; const errs=list.map(x=>normalizeGR(x,ref,zone)).filter(Boolean);
+    render(); drawQC(); $('stNote').textContent=`GR normalized to ${ref.name}${zone?' over '+zone:''}: ${list.length-errs.length} well${list.length-errs.length===1?'':'s'}`+(errs.length?' · '+errs.join(' · '):''); } });
 
 // Curve families (GR, ROP, …) with more than one matching curve in a well: the user picks, or shows all.
 function curveChoices(w){ const seen=new Set(), out=[];
@@ -898,7 +1004,17 @@ function methodsHTML(){ const tr=S.tracks.filter(t=>t.curves?.length&&t.type!=='
   S_.push(['read','Reading files',`<ul><li>LAS 1.2, 2.0 and 3.0 (Log, Tops and Inclinometry data sets). Wrapped data, comma or tab delimiters, several null values (-999.25, -9999…), bottom-up logs.</li>
     <li>Header quirks handled: LAS 1.2 label and value swapped, elevations in ~Parameter, coordinates in degrees-minutes-seconds, KB more than 60 ft from GL ignored (depths hang on GL until corrected).</li>
     <li>Unit fixes: neutron and density porosity in pu become v/v; sonic in µs/m becomes µs/ft; drill time (min/ft) becomes ROP in ft/hr.</li>
+    <li>Tolerated the way lasio does: values run together ("-999.25-999.25") are split; comma decimal marks are read as periods when splitting on spaces gives one value per curve; text such as NA, INF or NULL, and the sentinels 9999.25, 999.25 and ±2147483647, are null; header lines without the period after the mnemonic are read. The load summary notes each.</li>
     <li>A file that will not load is named with the reason, the line and a fix. Binary logs (DLIS, LIS, PDF, TIFF) are not read.</li></ul>`]);
+  S_.push(['qc','Curve QC, despiking and normalization',`<ul><li>Checks per curve: coverage of the well's logged interval; gaps (null runs longer than 3 samples inside the curve's range); flat runs (one value over 20+ samples and 10+ ft, a stuck tool or filled interval); spikes; share outside a physical range (GR 0–1500 API, RHOB 1–3.5 g/cc, NPHI −0.15–1, DT 30–300 µs/ft…); unit against the family's usual unit. The score is the share of checks passed.</li>
+    <li>A spike is a sample more than z robust standard deviations (1.4826 × MAD) from the median of the window around it (default 11 samples, z = 6). Resistivity and gas are judged on log10 values. Despike replaces spikes with that median. Thin real beds (bentonites, coals) can look like spikes: check before despiking GR or density.</li>
+    <li>GR normalization maps this well's P5 and P95 onto the reference well's (a two-point linear rescale), over the whole log or one zone. The coefficients are stored with the project.</li>
+    <li>Order applied: sensor-offset shift, despike, normalization, always from the values as loaded.</li></ul>`]);
+  S_.push(['export','LAS export',`<ul><li>LAS 2.0, one line per depth, null −999.25, ASCII. STEP is the sample step, or 0 when sampling is irregular.</li>
+    <li>Curves as shown (with shifts, despiking and normalization), then computed curves marked "computed by Weller Logs". A repeated mnemonic (GR:2) is written GR_2.</li>
+    <li>Tops go in ~Parameter as TOP_NAME (MD); the directional survey (MD INC AZI TVD) and the interpretation parameters go in ~Other.</li></ul>`]);
+  S_.push(['display','Display',`<ul><li>Off-scale values wrap: past the right edge the curve continues, dotted, from the left edge (one scale width over), and past the left edge from the right. Log scales wrap by decades of the scale. Each track's ⚙ turns it off.</li>
+    <li>Lithology ornaments follow the FGDC 600 series as redrawn by petroplots: dots (sand; size by grain), dashes (shale, clay), dot-dash (silt), brick (limestone), slanted brick (dolomite), brick with dashes (marl), hatching (anhydrite), squares (salt).</li></ul>`]);
   S_.push(['merge','Several files, one well',`<ul><li>Files join a well when their API matches in the first 12 digits (10-digit API = original hole, 00). Digits 13–14 (event) do not split a well; a sidetrack code (01, 02) does.</li>
     <li>A file without an API joins the open well of the same name (case and punctuation ignored) unless the APIs disagree.</li>
     <li>All curves go on one depth grid at the finest step. Runs of one curve that follow each other are spliced (the first file wins any short overlap). Curves that overlap a lot stay separate (GR, GR:2) because they are different tools.</li>
@@ -934,7 +1050,7 @@ addEventListener('drop',async e=>{ e.preventDefault(); dragDepth=0; document.bod
 
 /* ---------- Project save / load / autosave ---------- */
 function projectJSON(){ return { version:3, app:'weller-logs', savedAt:new Date().toISOString(), mode:S.mode, selected:S.selected, panel:S.panel, datum:S.datum, views:S.views, tracks:S.tracks, hiddenPoints:S.hiddenPoints, stats:S.stats, basemap:S.basemap, interp:S.interp, corr:S.corr, topColors:S.topColors,
-  wells:S.wells.map(w=>({id:w.id,name:w.name,api:w.api,field:w.field,company:w.company,county:w.county,state:w.state,preset:w.preset,demo:w.demo,fileName:w.fileName,pick:w.pick,shifts:w.shifts,files:partsOf(w).length>1?partsOf(w).map(p=>({fileName:p.fileName,demo:p.demo})):undefined,location:w.location,elevation:w.elevation,depthUnit:w.depthUnit,tops:w.tops,points:pointsJSON(w),curveList:w.curves.filter(c=>!c.sparse).map(c=>c.mnemonic)})) }; }
+  wells:S.wells.map(w=>({id:w.id,name:w.name,api:w.api,field:w.field,company:w.company,county:w.county,state:w.state,preset:w.preset,demo:w.demo,fileName:w.fileName,pick:w.pick,shifts:w.shifts,edits:w.edits,files:partsOf(w).length>1?partsOf(w).map(p=>({fileName:p.fileName,demo:p.demo})):undefined,location:w.location,elevation:w.elevation,depthUnit:w.depthUnit,tops:w.tops,points:pointsJSON(w),curveList:w.curves.filter(c=>!c.sparse).map(c=>c.mnemonic)})) }; }
 async function loadProject(p){ if(!p||p.app!=='weller-logs') throw new Error('not a Weller Logs project'); const missing=[];
   // A file may be a well on its own or one part of a merged well; find it wherever it is now.
   const findPart=fn=>{ for(const w of S.wells){ const ps=partsOf(w); if(ps.length===1&&w.fileName===fn) return w; const q=ps.find(q=>q.fileName===fn); if(q) return q; } return null; };
@@ -942,11 +1058,11 @@ async function loadProject(p){ if(!p||p.app!=='weller-logs') throw new Error('no
     const text=f.demo?await fetchText('data/'+f.demo):await lasCache.get(f.fileName); if(text){ try{ const w=normalizeWell(parseLAS(text),f.fileName); if(f.demo) w.demo=f.demo; fromCache[f.fileName]=w; }catch(e){} } } }
   const getPart=fn=>findPart(fn)||fromCache[fn];
   const byFiles=fs=>S.wells.find(w=>sourcesOf(w).join('\n')===fs.join('\n'));
-  S.wells=p.wells.map(ref=>{ if(ref.preset){ const cfg=WellerSynth.PRESET_WELLS.find(c=>c.id===ref.preset); const w=presetWell(cfg); w.tops=ref.tops; w.elevation=ref.elevation; restorePoints(w,ref.points); return w; }
+  S.wells=p.wells.map(ref=>{ if(ref.preset){ const cfg=WellerSynth.PRESET_WELLS.find(c=>c.id===ref.preset); const w=presetWell(cfg); w.tops=ref.tops; w.elevation=ref.elevation; if(ref.edits){ w.edits=ref.edits; applyShifts(w); } restorePoints(w,ref.points); return w; }
     let live;
     if(ref.files){ const fs=ref.files.map(f=>f.fileName); live=byFiles(fs); if(!live){ const parts=fs.map(getPart); if(parts.some(x=>!x)){ missing.push(...fs.filter((f,i)=>!parts[i])); return null; } live=rebuildWell(null,parts); } }
     else live=byFiles([ref.fileName])||getPart(ref.fileName);
-    if(live){ if(ref.demo) live.demo=ref.demo; Object.assign(live,{tops:ref.tops,elevation:ref.elevation,location:ref.location,name:ref.name,api:ref.api,field:ref.field,id:ref.id,pick:ref.pick,shifts:ref.shifts,_grP:null}); for(const k of ['company','county','state']) if(ref[k]!==undefined) live[k]=ref[k]; applyShifts(live); restorePoints(live,ref.points); return live; } missing.push(ref.fileName||ref.name); return null; }).filter(Boolean);
+    if(live){ if(ref.demo) live.demo=ref.demo; Object.assign(live,{tops:ref.tops,elevation:ref.elevation,location:ref.location,name:ref.name,api:ref.api,field:ref.field,id:ref.id,pick:ref.pick,shifts:ref.shifts,edits:ref.edits,_grP:null}); for(const k of ['company','county','state']) if(ref[k]!==undefined) live[k]=ref[k]; applyShifts(live); restorePoints(live,ref.points); return live; } missing.push(ref.fileName||ref.name); return null; }).filter(Boolean);
   S.tracks=migrateTracks(p.tracks); S.views=p.views||newViews(); S.view=S.views[viewKey(S.mode)]||S.views.single; S.datum=p.datum||'MD'; S.topColors=p.topColors||S.topColors; S.hiddenPoints=p.hiddenPoints||[]; S.stats={...statsDefaults(),...(p.stats||{})}; S.interp={...interpDefaults(),...(p.interp||{})}; S.corr={...S.corr,...(p.corr||{})}; if(!p.tracks.some(t=>t.id==='t8')) S.tracks=[...p.tracks,...defaultTracks().filter(t=>['t8','t9','t10','t11','t12'].includes(t.id))]; setBasemap(p.basemap||'map'); if((p.version||1)<2) pointSeriesNames().forEach(placePointSeries); S.panel=(p.panel||[]).filter(id=>wellById(id));
   // Older projects kept section order separately: move those wells into that order within the list.
   if((p.version||1)<3){ const pos=S.wells.map((w,i)=>S.panel.includes(w.id)?i:-1).filter(i=>i>=0); S.panel.forEach((id,k)=>{ S.wells[pos[k]]=wellById(id); }); } S.selected=wellById(p.selected)?p.selected:(S.wells[0]?.id||null);

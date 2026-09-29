@@ -3,7 +3,14 @@
    of ~W, numbers followed by words ("41.31 degrees"), bottom-up depth order, wrapped data, several null sentinels,
    neutron matrix from the header, directional surveys in ~Other, and implausible KB elevations. */
 (function (root) {
-  const NULLS = [-999.25, -999, -9999, -999.99, -99999, 1e30, -1e30];
+  // Numeric null sentinels beyond the header's NULL, from lasio's 'common' policy plus integer overflow codes.
+  const NULLS = [-999.25, -999, -9999, -999.99, -99999, 1e30, -1e30, 9999.25, -9999.25, 999.25, 2147483647, -2147483647, -2147483648];
+  // Text a logging or export program writes for "no value". Read as null, not as a bad row.
+  const TEXT_NULL = /^(NA|N\/A|NAN|-?INF|\+INF|-?INFINITY|\(NULL\)|NULL|NONE|-|--|IND|IO)$/i;
+  const NUM = /[-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?/g;
+  // "-999.25-999.25" or "12.5-3.4": fixed-width exports whose columns ran together. Split at each sign after a digit.
+  function runOn(t) { if (!/^[-+]?[\d.]/.test(t) || !/\d[-+]\d|\d[-+]\.\d/.test(t.replace(/[eE][-+]\d/g, 'e0'))) return null;
+    const parts = t.match(NUM); return parts && parts.join('') === t ? parts.map(Number) : null; }
   const LABEL_WORDS = /^(WELL|COMPANY|FIELD|LOCATION|COUNTY|STATE|PROVINCE|COUNTRY|NATION|SERVICE COMPANY|LATITUDE|LONGITUDE|API NUMBER|UWI|UNIQUE WELL ID|LOG DATE|DATE|LICENSE|LICENCE NUMBER|RANGE|TOWNSHIP|SECTION)$/;
 
   function median(a) { const v = Array.from(a).filter(Number.isFinite).sort((x, y) => x - y); if (!v.length) return NaN; const m = v.length >> 1; return v.length % 2 ? v[m] : (v[m - 1] + v[m]) / 2; }
@@ -51,10 +58,11 @@
   }
   // Parse problems are collected, not thrown: diagnoseLAS turns them into messages with the offending line.
   function parseLAS(text) {
-    const lines = String(text).split(/\r?\n/);
+    const lines = String(text).replace(/^\uFEFF/, '').split(/\r\n|\r|\n/);   // byte-order mark; old Mac line ends
     const H = { version: {}, well: {}, params: {}, curves: [], other: [], tops: [] };
     const rows = [], rowLine = []; let sec = '', wrap = false, buf = [], version = '', dlm = 'SPACE', las3 = false, survCols = [], survHead = false;
-    const issues = { badRows: [], badRowCount: 0, widthRows: [], widthCount: 0, badHeader: [], sections: [], skipped: [], textCols: 0, firstDataLine: 0, dataLines: 0 };
+    const issues = { badRows: [], badRowCount: 0, widthRows: [], widthCount: 0, badHeader: [], sections: [], skipped: [], textCols: 0, firstDataLine: 0, dataLines: 0, runOn: 0, textNulls: 0, decimalComma: false, looseHeader: 0, runOnLine: 0 };
+    let comma = null;   // decimal comma in ~A, decided on the first data line that has a comma
     for (let ln = 0; ln < lines.length; ln++) {
       const raw = lines[ln], l = raw.trim(); if (!l) continue;
       if (l[0] === '~') { sec = sectionOf(l); if (sec === 'X') issues.skipped.push(l.slice(1).split(/[\s|]/)[0]); issues.sections.push({ name: l.split(/\s/)[0], line: ln + 1, sec }); continue; }
@@ -64,10 +72,21 @@
       if (sec === 'A') {
         if (l[0] === '#') continue;
         issues.dataLines++; if (!issues.firstDataLine) issues.firstDataLine = ln + 1;
-        const words = las3 ? splitRow(l, dlm) : l.split(/[\s,]+/).filter(Boolean), toks = words.map(w => w === '' ? NaN : Number(w));
+        let words;
+        if (las3) words = splitRow(l, dlm);
+        else {
+          // "1000,5  85,2": a comma decimal mark, when splitting on spaces alone gives one value per curve.
+          if (comma === null && l.includes(',')) { const ws = l.split(/\s+/).filter(Boolean); comma = !wrap && H.curves.length > 1 && ws.length === H.curves.length && ws.some(t => /^[-+]?\d+,\d+$/.test(t)) && ws.every(t => !/,.*,/.test(t)); if (comma) issues.decimalComma = true; }
+          words = comma ? l.split(/\s+/).filter(Boolean).map(t => t.replace(',', '.')) : l.split(/[\s,]+/).filter(Boolean);
+          // Text nulls become the null value; run-together numbers are split into their columns.
+          const fixed = [];
+          for (const w of words) { if (TEXT_NULL.test(w)) { fixed.push('NaN'); issues.textNulls++; continue; } if (Number.isNaN(Number(w))) { const r = runOn(w); if (r) { fixed.push(...r.map(String)); issues.runOn++; if (!issues.runOnLine) issues.runOnLine = ln + 1; continue; } } fixed.push(w); }
+          words = fixed;
+        }
+        const toks = words.map(w => w === '' || w === 'NaN' ? NaN : Number(w));
         // LAS 3 allows text columns (dates, lithology names): blank them, keep the row. Depth must still be a number.
         if (las3 && Number.isFinite(toks[0])) toks.forEach((v, i) => { if (Number.isNaN(v)) { toks[i] = NaN; issues.textCols++; } });
-        const bad = las3 ? (Number.isFinite(toks[0]) ? -1 : 0) : toks.findIndex(Number.isNaN);
+        const bad = las3 ? (Number.isFinite(toks[0]) ? -1 : 0) : words.findIndex((w, i) => Number.isNaN(toks[i]) && w !== 'NaN');
         if (bad >= 0) { issues.badRowCount++; if (issues.badRows.length < 3) issues.badRows.push({ line: ln + 1, text: raw, token: words[bad] }); continue; }
         if (wrap) { buf.push(...toks); if (buf.length >= H.curves.length) { rows.push(buf.slice(0, H.curves.length)); rowLine.push(ln + 1); buf = []; } }
         else { rows.push(toks); rowLine.push(ln + 1); if (H.curves.length && toks.length !== H.curves.length) { issues.widthCount++; if (issues.widthRows.length < 3) issues.widthRows.push({ line: ln + 1, text: raw, n: toks.length }); } }
@@ -77,7 +96,10 @@
       if (l[0] === '#') { H.other.push(raw); continue; }   // survey column headers are often comments placed before ~Other
       if (sec === 'T') { if (las3) { const t = splitRow(l, dlm), k = t.findIndex(x => x !== '' && Number.isFinite(+x)), nm = t.find(x => x && !Number.isFinite(+x)); if (k >= 0 && nm) H.tops.push({ name: nm, md: +t[k] }); continue; }
         const m = l.match(/^(.*?)[\s,]+([-+]?\d+\.?\d*)\s*$/); if (m) H.tops.push({ name: m[1].trim(), md: +m[2] }); continue; }
-      const h = parseHeaderLine(l);
+      let h = parseHeaderLine(l);
+      // A header line with no period after the mnemonic ("STRT 1000 : start"): read the first word as the mnemonic.
+      if (!h && /^[VWPC]$/.test(sec)) { const m = l.match(/^([A-Za-z][\w-]*)\s+([^:]*?)\s*:\s*(.*)$/) || l.match(/^([A-Za-z][\w-]*)\s*:\s*(.*)$/);
+        if (m) { h = m.length === 4 ? { mnem: m[1], unit: '', value: m[2].trim(), desc: m[3].trim() } : { mnem: m[1], unit: '', value: '', desc: m[2].trim() }; issues.looseHeader++; } }
       if (!h) { if (/^[VWPC]$/.test(sec) && issues.badHeader.length < 3) issues.badHeader.push({ line: ln + 1, text: raw, sec }); continue; }
       if (sec === 'V') { const k = h.mnem.toUpperCase(); H.version[k] = h.value; if (k === 'WRAP') wrap = /yes/i.test(h.value); if (k === 'VERS') { version = h.value; las3 = /^3/.test(h.value); } if (k === 'DLM') dlm = h.value.toUpperCase(); }
       else if (sec === 'W' || sec === 'P') {
@@ -157,7 +179,7 @@
     const P = []; const add = (level, cat, title, o = {}) => P.push({ level, cat, title, ...o });
     const bin = sniffBinary(text, name, bytes);
     if (bin) { add('error', 'File type', `This is ${bin.type}, not a LAS text file`, { fix: bin.fix }); return { problems: P, parsed: null }; }
-    const src = String(text), lines = src.split(/\r?\n/);
+    const src = String(text).replace(/^\uFEFF/, ''), lines = src.split(/\r\n|\r|\n/);
     const firstLines = lines.map((t, i) => ({ line: i + 1, text: t })).filter(x => x.text.trim()).slice(0, 3);
     if (!src.trim()) { add('error', 'No data', 'The file is empty'); return { problems: P, parsed: null }; }
     if (!/^\s*~/m.test(src)) {
@@ -184,6 +206,10 @@
 
     // Loadable from here on: the rest are warnings shown with the result.
     const nc = p.header.curves.length, names = p.header.curves.map(c => c.mnemonic);
+    if (I.decimalComma) add('info', 'Parsing', 'Comma decimal marks (1000,5) read as periods');
+    if (I.runOn) add('info', 'Parsing', `${I.runOn.toLocaleString()} run-together value${I.runOn > 1 ? 's' : ''} split into columns`, { detail: 'Fixed-width exports can print "-999.25-999.25" with no space between columns.', snippet: [{ line: I.runOnLine, text: lines[I.runOnLine - 1] }] });
+    if (I.textNulls) add('info', 'Parsing', `${I.textNulls.toLocaleString()} text value${I.textNulls > 1 ? 's' : ''} (NA, INF, NULL…) read as null`);
+    if (I.looseHeader) add('info', 'Parsing', `${I.looseHeader} header line${I.looseHeader > 1 ? 's' : ''} without a period after the mnemonic, read anyway`);
     if (I.badRowCount) add('warn', 'Parsing', `${I.badRowCount.toLocaleString()} data line${I.badRowCount > 1 ? 's' : ''} skipped: not all numbers`, { snippet: I.badRows.map(r => ({ line: r.line, text: r.text, mark: r.token })), fix: 'Replace text in the data with the NULL value.' });
     if (I.widthCount) {
       const most = I.widthCount > p.rows / 2;
