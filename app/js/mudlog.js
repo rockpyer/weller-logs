@@ -11,7 +11,8 @@ const HEAD=50, RULER=40, GAP=34, PADL=12;
 const FT_PER_M=1/0.3048;
 const PAL=['#2a78d6','#eb6834','#1baf7a','#eda100','#e87ba4','#4a3aa7','#8c6d31','#17becf'];
 
-const M={ logs:[], panel:[], sel:null, hang:'MD', pxPerFt:null, tool:'view', trackW:280, topName:'', cal:{scale:null}, cursor:null, warn:'' };
+const DEFAULT_RATIO=2400;
+const M={ logs:[], panel:[], sel:null, hang:'MD', pxPerFt:1152/DEFAULT_RATIO, goto:null, z0:null, tool:'view', trackW:280, topName:'', cal:{scale:null}, cursor:null, warn:'' };
 const byId=id=>M.logs.find(m=>m.id===id);
 const panelLogs=()=>M.panel.map(byId).filter(Boolean);
 const selLog=()=>byId(M.sel);
@@ -25,18 +26,21 @@ const db={ p:null,
   drop(id){ return Promise.all([this.run('bands','readwrite',s=>s.delete(IDBKeyRange.bound(id+'/',id+'/￿'))),this.run('logs','readwrite',s=>s.delete(id))]); } };
 const bandKey=(m,level,page,idx)=>`${m.id}/${level}/${page}/${idx}`;
 
-/* Decoded bands, least recently used first, capped at ~90 megapixels (~360 MB of GPU/CPU memory). */
-const cache=new Map(); let cachePx=0; const CACHE_PX=90e6;
-function bitmap(key){ const e=cache.get(key); if(e){ cache.delete(key); cache.set(key,e); return e.bmp; }
-  const n={bmp:null}; cache.set(key,n);
+/* Decoded bands, least recently used first, capped at ~90 megapixels (~360 MB). Bands drawn in this frame or the
+   last are never evicted: evicting a band the screen still needs makes it reload every frame, which flashes. */
+const cache=new Map(); let cachePx=0, frameNo=0; const CACHE_PX=90e6;
+function bitmap(key){ const e=cache.get(key); if(e){ e.f=frameNo; cache.delete(key); cache.set(key,e); return e.bmp; }
+  const n={bmp:null,f:frameNo}; cache.set(key,n);
   db.get('bands',key).then(b=>b?createImageBitmap(b):null).then(bmp=>{ if(!bmp){ n.missing=true; return; } if(cache.get(key)!==n){ bmp.close(); return; } n.bmp=bmp; cachePx+=bmp.width*bmp.height; trim(); schedule(); }).catch(()=>{ n.missing=true; });
   return null; }
-function peek(key){ const e=cache.get(key); return e&&e.bmp; }
-function trim(){ for(const [k,e] of cache){ if(cachePx<=CACHE_PX) break; if(e.bmp){ cachePx-=e.bmp.width*e.bmp.height; e.bmp.close(); } cache.delete(k); } }
+function peek(key){ const e=cache.get(key); if(e) e.f=frameNo; return e&&e.bmp; }
+function trim(){ for(const [k,e] of cache){ if(cachePx<=CACHE_PX) break; if(e.f>=frameNo-1) continue; if(e.bmp){ cachePx-=e.bmp.width*e.bmp.height; e.bmp.close(); } cache.delete(k); } }
 function evict(id){ for(const [k,e] of cache) if(k.startsWith(id+'/')){ if(e.bmp){ cachePx-=e.bmp.width*e.bmp.height; e.bmp.close(); } cache.delete(k); } }
 
 /* ---------- Import ---------- */
 let queue=Promise.resolve();
+// "040373058000 WEZU 24F Mud Log.pdf": a leading 10, 12 or 14 digit API.
+function apiFromName(f){ const m=f.match(/^(\d{2})(\d{3})(\d{5})(\d{2})?(\d{2})?(?=\D|$)/); return m?m.slice(1).filter(Boolean).join('-'):undefined; }
 const niceName=f=>f.replace(/\.(pdf|tiff?)$/i,'').replace(/^[0-9a-f]{8}-/i,'').replace(/[_]+/g,' ').replace(/\s{2,}/g,' ').trim();
 function openFiles(files,force){
   files=[...files].filter(f=>/\.(pdf|tiff?)$/i.test(f.name)); if(!files.length) return;
@@ -49,7 +53,7 @@ function setModeMud(){ document.querySelector('[data-mode="mud"]')?.click(); }
 function addFile(f){
   let m=M.logs.find(x=>x.file&&x.file.name===f.name&&x.file.size===f.size);
   if(m&&m.status==='ready'){ M.sel=m.id; return; }
-  if(!m){ m={id:'m'+Date.now().toString(36)+Math.random().toString(36).slice(2,6),name:niceName(f.name),kind:/\.pdf$/i.test(f.name)?'pdf':'tiff',file:{name:f.name,size:f.size},pages:[],picks:[],crop:[0,1],unit:'ft',useText:true};
+  if(!m){ const api=apiFromName(f.name); m={id:'m'+Date.now().toString(36)+Math.random().toString(36).slice(2,6),name:niceName(f.name).replace(/^\d{10,14}[\s_-]*/,'')||niceName(f.name),api,kind:/\.pdf$/i.test(f.name)?'pdf':'tiff',file:{name:f.name,size:f.size},pages:[],picks:[],crop:[0,1],unit:'ft',useText:true};
     M.logs.push(m); if(M.panel.length<MAX_PANEL) M.panel.push(m.id); }
   M.sel=m.id; m.status='queued'; m.progress='Waiting';
   queue=queue.then(()=>processFile(m,f)).catch(()=>{});
@@ -64,8 +68,8 @@ async function processFile(m,f){
     m.pages.forEach((p,i)=>{ if(keepTies[i]){ p.ties=keepTies[i].ties; if(keepTies[i].skip!==undefined) p.skip=keepTies[i].skip; } });
     await db.put('logs',m.id,{complete:true,file:m.file,at:Date.now()});
     m.status='ready'; m.progress=''; m.ms=Math.round(performance.now()-t0); m._sol=null;
-    if(!calState(m).ok&&M.sel===m.id&&S.mode==='mud'){ M.tool='calib'; M.cal.scale=null; }
-    autoLink(m); M.fit=true;
+    if(!calState(m).ok&&M.sel===m.id&&S.mode==='mud'&&M.tool!=='calib'){ const sc=$('mudScroll'); M.viewZ=M.z0!=null?zOfY(HEAD+(sc.clientHeight-HEAD)/2):null; M.tool='calib'; M.cal.scale=null; sc.scrollTop=0; }
+    autoLink(m); if(M.panel.length===1&&M.panel[0]===m.id) M.goto='top';
   }catch(err){ m.status='failed'; m.progress=err.message||String(err); console.error(err); }
   render();
 }
@@ -173,7 +177,9 @@ function allTopNames(){ const s=new Set(); for(const w of S.wells) for(const t o
 const trackX=k=>PADL+k*(RULER+M.trackW+GAP)+RULER;
 function frame(){ let lo=Infinity, hi=-Infinity; for(const m of panelLogs()){ const r=mdRange(m); if(!r) continue; const a=zOf(m,r[0]), b=zOf(m,r[1]); if(Number.isFinite(a)){ lo=Math.min(lo,a); hi=Math.max(hi,b); } }
   if(!Number.isFinite(lo)) return [0,1000]; const pad=Math.max(20,(hi-lo)*0.01); return [Math.floor((lo-pad)/50)*50,Math.ceil((hi+pad)/50)*50]; }
-function fit(){ const sc=$('mudScroll'); const [lo,hi]=frame(); M.pxPerFt=Math.max(0.005,Math.min(40,(sc.clientHeight-HEAD-16)/Math.max(1,hi-lo))); M.fit=false; layout(); sc.scrollTop=0; }
+function fit(){ const sc=$('mudScroll'); const [lo,hi]=frame(); M.pxPerFt=Math.max(0.005,Math.min(40,(sc.clientHeight-HEAD-16)/Math.max(1,hi-lo))); layout(); sc.scrollTop=0; }
+// Put depth z at a fraction of the view height.
+function scrollToZ(z,frac){ const sc=$('mudScroll'); sc.scrollTop=Math.max(0,(z-M.z0)*M.pxPerFt+HEAD-(sc.clientHeight-HEAD)*frac); }
 function layout(){ const sc=$('mudScroll'), sp=$('mudSpacer');
   if(M.tool==='calib'){ const m=selLog(); const s=calScale(m); const H=m?m.pages.reduce((a,p)=>a+p.h*s+CAL_GAP,0):0; sp.style.height=(H+HEAD+40)+'px'; sp.style.width=(m?(m.pages[0]?.w||0)*s+RULER+PADL*2+60:0)+'px'; return; }
   const [lo,hi]=frame(); M.z0=lo; M.z1=hi; sp.style.height=(HEAD+(hi-lo)*(M.pxPerFt||1)+24)+'px'; sp.style.width=(trackX(panelLogs().length)-RULER+PADL)+'px'; }
@@ -186,7 +192,7 @@ const css=n=>getComputedStyle(document.documentElement).getPropertyValue(n).trim
 function sizeCanvas(){ const cv=$('mudCanvas'), st=$('mudStage'), dpr=devicePixelRatio||1, w=st.clientWidth, h=st.clientHeight;
   if(cv.width!==Math.round(w*dpr)||cv.height!==Math.round(h*dpr)){ cv.width=Math.round(w*dpr); cv.height=Math.round(h*dpr); cv.style.width=w+'px'; cv.style.height=h+'px'; }
   const ctx=cv.getContext('2d'); ctx.setTransform(dpr,0,0,dpr,0,0); return {ctx,w,h,dpr}; }
-function draw(){ if(S.mode!=='mud'||$('mudView').hidden) return; const {ctx,w,h,dpr}=sizeCanvas();
+function draw(){ if(S.mode!=='mud'||$('mudView').hidden) return; frameNo++; const {ctx,w,h,dpr}=sizeCanvas();
   ctx.fillStyle=css('--paper')||'#fff'; ctx.fillRect(0,0,w,h);
   if(M.tool==='calib') return drawCalib(ctx,w,h,dpr);
   const logs=panelLogs(); if(!logs.length){ ctx.fillStyle=css('--muted'); ctx.font='14px "IBM Plex Sans",sans-serif'; ctx.fillText('Open a PDF or TIFF mudlog to start. Up to 8 logs sit side by side.',24,HEAD+30); return; }
@@ -232,7 +238,7 @@ function drawTrack(ctx,m,x,h,dpr,c){
 function drawSpan(ctx,m,sp,x,W,z0,z1,dpr){ const p=m.pages[sp.i], q=sp.q;
   const segs=q.segs.map((g,k)=>({g,a:Math.max(sp.y0,Number.isFinite(g.y0)?g.y0:-Infinity),b:Math.min(sp.y1,k+1<q.segs.length?q.segs[k+1].y0:Infinity)})).filter(s=>s.b>s.a);
   const c0=m.crop?.[0]||0, c1=m.crop?.[1]??1, cw=(c1-c0)*p.w;
-  for(const s of segs){ const scY=M.pxPerFt*s.g.b, scX=W/cw, level=Math.max(scX,scY)*dpr<0.3?1:0;
+  for(const s of segs){ const scY=M.pxPerFt*s.g.b, scX=W/cw, level=Math.max(scX,scY)*dpr<0.4?1:0;
     const zA=zOf(m,s.g.a+s.g.b*s.a), zB=zOf(m,s.g.a+s.g.b*s.b); if(zB<z0||zA>z1) continue;
     // Only the rows on screen.
     const ya=Math.max(s.a,(mdOfZ(m,z0)-s.g.a)/s.g.b-2), yb=Math.min(s.b,(mdOfZ(m,z1)-s.g.a)/s.g.b+2); if(yb<=ya) continue;
@@ -259,7 +265,7 @@ function calHit(m,cy){ const sc=$('mudScroll'), Y=cy+sc.scrollTop; for(const r o
 function drawCalib(ctx,w,h,dpr){ const m=selLog(); if(!m) return; const sc=$('mudScroll'), sy=sc.scrollTop, sx=sc.scrollLeft, x0=PADL+RULER-sx; const s=sol(m), k=unitK(m);
   ctx.font='11px "IBM Plex Mono",monospace';
   for(const r of calPages(m)){ const top=r.top-sy, H=r.p.h*r.s, Wd=r.p.w*r.s; if(top>h||top+H<0) continue;
-    const level=r.s*dpr<0.3?1:0, Bh=BAND*(level?LO_F:1);
+    const level=r.s*dpr<0.4?1:0, Bh=BAND*(level?LO_F:1);
     for(let idx=Math.max(0,Math.floor((-top)/r.s/Bh));idx*Bh<r.p.h&&top+idx*Bh*r.s<h;idx++){ const bmp=bitmap(bandKey(m,level,r.i,idx))||(level===0?peek(bandKey(m,1,r.i,Math.floor(idx/LO_F))):null);
       const ys=idx*Bh, ye=Math.min(r.p.h,(idx+1)*Bh);
       if(!bmp){ ctx.fillStyle=css('--grid'); ctx.fillRect(x0,top+ys*r.s,Wd,(ye-ys)*r.s); continue; }
@@ -326,13 +332,13 @@ function flash(t){ const n=$('mudMsg'); if(n){ n.textContent=t; clearTimeout(fla
 /* ---------- Sidebar and view bar ---------- */
 const RATIOS=[240,600,1200,2400,4800,9600];
 function syncScale(){ const r=1152/M.pxPerFt, hit=RATIOS.find(x=>Math.abs(x/r-1)<0.03); const sel=$('mudScale'); sel.innerHTML=RATIOS.map(x=>`<option value="${x}"${x===hit?' selected':''}>1:${x}</option>`).join('')+(hit?'':`<option selected value="">1:${Math.round(r)}</option>`); }
-let sideT=0; function sideSoon(){ if(!sideT) sideT=setTimeout(()=>{ sideT=0; renderSide(); schedule(); },150); }
+let sideT=0; function sideSoon(){ if(!sideT) sideT=setTimeout(()=>{ sideT=0; for(const m of M.logs){ const n=document.querySelector(`[data-mstat="${m.id}"]`); if(n&&m.progress) n.textContent=m.progress; } schedule(); },150); }
 function numOrNull(v){ const x=parseFloat(v); return Number.isFinite(x)?x:null; }
 function pagesText(m){ const out=[]; let a=null; m.pages.forEach((p,i)=>{ if(p.skip){ if(a===null) a=i+1; } if((!p.skip||i===m.pages.length-1)&&a!==null){ const b=p.skip?i+1:i; out.push(a===b?`${a}`:`${a}-${b}`); a=null; } }); return out.join(', '); }
 function parsePages(t,n){ const s=new Set(); for(const part of String(t).split(/[,\s]+/)){ const m=part.match(/^(\d+)(?:-(\d+))?$/); if(!m) continue; for(let i=+m[1];i<=+(m[2]||m[1]);i++) if(i>=1&&i<=n) s.add(i-1); } return s; }
 function renderSide(){ const el=$('mudSide'); if(!el) return; const m=selLog();
   const list=M.logs.map((x,i)=>{ const inP=M.panel.includes(x.id), st=x.status==='ready'?(calState(x).ok?'':'needs depth'):x.status==='failed'?'failed':x.status==='missing'?'re-open file':(x.progress||x.status);
-    return `<li class="${x.id===M.sel?'sel':''}" data-msel="${x.id}"><input type="checkbox" data-mpanel="${x.id}" ${inP?'checked':''} ${!inP&&M.panel.length>=MAX_PANEL?'disabled title="8 logs at most"':''} aria-label="Show ${esc(x.name)} in the panel"><span title="${esc(x.file?.name||'')}">${esc(x.name)}</span>${st?`<small class="${x.status==='failed'?'warn':''}">${esc(st)}</small>`:''}<button class="small link" data-mup="${i}" title="Move left" aria-label="Move up">↑</button><button class="small link" data-mdel="${x.id}" title="Remove" aria-label="Remove">×</button></li>`; }).join('');
+    return `<li class="${x.id===M.sel?'sel':''}" data-msel="${x.id}"><input type="checkbox" data-mpanel="${x.id}" ${inP?'checked':''} ${!inP&&M.panel.length>=MAX_PANEL?'disabled title="8 logs at most"':''} aria-label="Show ${esc(x.name)} in the panel"><span title="${esc(x.file?.name||'')}">${esc(x.name)}</span><small data-mstat="${x.id}" class="${x.status==='failed'?'warn':''}">${esc(st)}</small><button class="small link" data-mup="${i}" title="Move left" aria-label="Move up">↑</button><button class="small link" data-mdel="${x.id}" title="Remove" aria-label="Remove">×</button></li>`; }).join('');
   let html=`<div class="row"><button class="primary" id="mudOpen">Open PDF or TIFF…</button><input type="file" id="mudFile" accept=".pdf,.tif,.tiff" multiple hidden></div>
     <p class="hint">Up to ${MAX_PANEL} logs side by side. Files over ${WARN_MB} MB ask first. Images are kept in this browser only. <span id="mudStore"></span></p>
     ${M.warn?`<div class="mwarn">${esc(M.warn.text)} <button class="small" id="mudForce">Open anyway</button> <button class="small link" id="mudWarnX">Skip</button></div>`:''}
@@ -353,12 +359,14 @@ function renderSide(){ const el=$('mudSide'); if(!el) return; const m=selLog();
     <section><h3>Depth</h3>
       <p class="hint">${m.status!=='ready'?esc(m.progress||m.status):m.kind==='pdf'&&fitted?`Depth labels read from the PDF text on ${fitted} of ${m.pages.length} page${m.pages.length>1?'s':''} (${fmtScale(m)}).`:m.kind==='pdf'&&m.pages.some(p=>p.text)?'The PDF has text but no depth column was found: calibrate by hand.':'No text layer: calibrate by hand with two depth lines.'} ${cal.ok?'':'<b>'+esc(cal.text)+'</b>'}</p>
       <div class="row"><button class="small${M.tool==='calib'?' on':''}" id="mudCal">${M.tool==='calib'?'Done calibrating':'Calibrate…'}</button>${fitted?`<label class="mini"><input type="checkbox" id="mudUseText" ${m.useText!==false?'checked':''}> use PDF text</label>`:''}
-        <label class="mini">Labels in <select id="mudUnit"><option value="ft"${m.unit!=='m'?' selected':''}>ft</option><option value="m"${m.unit==='m'?' selected':''}>m → ft</option></select></label></div>
+        ${fitted?`<label class="mini" title="Unit of the depth numbers printed on this log. Hand ties are always typed in feet.">Printed depths <select id="mudUnit"><option value="ft"${m.unit!=='m'?' selected':''}>ft</option><option value="m"${m.unit==='m'?' selected':''}>m (shown in ft)</option></select></label>`:''}</div>
       ${m.pages.length>1?`<label class="mini">Skip pages <input type="text" id="mudSkip" value="${pagesText(m)}" placeholder="e.g. 1-2, 31" style="width:9em"></label>`:''}
       ${tiesHTML(m)}</section>
     <section><h3>Picks</h3><table class="tops">${picksOf(m).map(t=>`<tr><td><i class="sw" style="background:${topColor(t.name)}"></i>${esc(t.name)}</td><td><input type="number" step="any" data-mpick="${esc(t.name)}" value="${Math.round(t.md*10)/10}" aria-label="${esc(t.name)} MD"></td><td><button class="small link" data-mpdel="${esc(t.name)}" aria-label="Delete ${esc(t.name)}">×</button></td></tr>`).join('')||'<tr><td class="hint">No picks yet</td></tr>'}</table>
       <p class="hint">Type a name above the panel, press Pick, click a log. Drag a pick line to move it; Alt-click deletes it.</p></section>`; }
-  el.innerHTML=html;
+  // Re-rendering must not steal focus from the field being edited.
+  const a=document.activeElement, keep=a&&el.contains(a)?(a.id?'#'+a.id:[...a.attributes].filter(x=>x.name.startsWith('data-')).map(x=>`[${x.name}="${CSS.escape(x.value)}"]`).join('')):'';
+  el.innerHTML=html; if(keep){ const b=el.querySelector(keep); if(b){ b.focus(); } }
   navigator.storage?.estimate?.().then(e=>{ const n=$('mudStore'); if(n&&e.usage!=null) n.textContent=`Browser storage in use: ${Math.round(e.usage/1048576)} MB.`; }).catch(()=>{});
   $('mudTopList').innerHTML=allTopNames().map(n=>`<option value="${esc(n)}">`).join('');
 }
@@ -381,7 +389,7 @@ function bindSide(){ const el=$('mudSide');
     const li=t.closest('[data-msel]'); if(li){ M.sel=li.dataset.msel; if(M.tool==='calib'){ M.cal.scale=null; layout(); } renderSide(); schedule(); } });
   el.addEventListener('change',e=>{ const t=e.target, m=selLog();
     if(t.id==='mudFile'){ openFiles(t.files); t.value=''; return; }
-    if(t.dataset.mpanel){ const id=t.dataset.mpanel; if(t.checked){ if(M.panel.length<MAX_PANEL) M.panel=M.logs.filter(x=>M.panel.includes(x.id)||x.id===id).map(x=>x.id); } else M.panel=M.panel.filter(x=>x!==id); M.fit=true; render(); return; }
+    if(t.dataset.mpanel){ const id=t.dataset.mpanel; if(t.checked){ if(M.panel.length<MAX_PANEL) M.panel=M.logs.filter(x=>M.panel.includes(x.id)||x.id===id).map(x=>x.id); } else M.panel=M.panel.filter(x=>x!==id); render(); return; }
     if(!m) return;
     if(t.dataset.mf==='wellId'){ link(m,t.value||null); render(); return; }
     if(t.dataset.mf){ const k=t.dataset.mf; m[k]=t.type==='number'?numOrNull(t.value):t.value||(k==='elevRef'?'kb':null);
@@ -389,19 +397,21 @@ function bindSide(){ const el=$('mudSide');
       render(); return; }
     if(t.dataset.mloc){ m.location={...(m.location||{}),[t.dataset.mloc]:numOrNull(t.value)}; render(); return; }
     if(t.dataset.mcrop){ const c=[...(m.crop||[0,1])]; c[+t.dataset.mcrop]=Math.max(0,Math.min(1,(numOrNull(t.value)??(+t.dataset.mcrop?100:0))/100)); if(c[1]-c[0]>=0.01) m.crop=c; render(); return; }
-    if(t.dataset.mshow){ const s=[...(m.show||[null,null])]; s[+t.dataset.mshow]=numOrNull(t.value); m.show=s.some(v=>v!=null)?s:null; M.fit=true; render(); return; }
+    if(t.dataset.mshow){ const s=[...(m.show||[null,null])]; s[+t.dataset.mshow]=numOrNull(t.value); m.show=s.some(v=>v!=null)?s:null; render(); return; }
     if(t.dataset.mpick){ const v=numOrNull(t.value); if(v!=null) setPick(m,t.dataset.mpick,v); render(); return; }
     if(t.id==='mudUseText'){ m.useText=t.checked; render(); return; }
-    if(t.id==='mudUnit'){ m.unit=t.value; M.fit=true; render(); return; }
+    if(t.id==='mudUnit'){ m.unit=t.value; render(); return; }
     if(t.id==='mudSkip'){ const s=parsePages(t.value,m.pages.length); m.pages.forEach((p,i)=>p.skip=s.has(i)); render(); return; } });
 }
-function setTool(t){ M.tool=t; hidePop(); if(t==='calib'){ M.cal.scale=null; $('mudScroll').scrollTop=0; } render(); }
+function setTool(t){ const was=M.tool, sc=$('mudScroll');
+  if(t==='calib'&&was!=='calib'){ M.viewZ=M.z0!=null?zOfY(HEAD+(sc.clientHeight-HEAD)/2):null; }
+  M.tool=t; hidePop(); if(t==='calib'){ M.cal.scale=null; sc.scrollTop=0; } else if(was==='calib'&&M.viewZ!=null) M.goto={z:M.viewZ}; render(); }
 function renderBar(){ const names=allTopNames(); const hs=$('mudHang'); const cur=M.hang;
   if(!['MD','SS'].includes(cur)&&!names.includes(cur)) M.hang='MD';
   hs.innerHTML=`<option value="MD">MD (0 ft at KB)</option><option value="SS">Subsea (elevation − MD)</option>${names.map(n=>`<option value="${esc(n)}">Flatten on ${esc(n)}</option>`).join('')}`; hs.value=M.hang;
   $('mudPick').setAttribute('aria-pressed',M.tool==='pick'); $('mudTrackW').value=M.trackW; $('mudCalBar').hidden=M.tool!=='calib'; $('mudViewBar').hidden=M.tool==='calib'; }
 function bindBar(){
-  $('mudHang').onchange=e=>{ M.hang=e.target.value; M.fit=true; render(); };
+  $('mudHang').onchange=e=>{ M.hang=e.target.value; M.goto=['MD','SS'].includes(M.hang)?'top':'datum'; render(); };
   $('mudFit').onclick=()=>{ fit(); syncScale(); schedule(); };
   $('mudScale').onchange=e=>{ const r=+e.target.value; if(!r) return; const sc=$('mudScroll'), z=zOfY(sc.clientHeight/2); M.pxPerFt=1152/r; layout(); sc.scrollTop=Math.max(0,(z-M.z0)*M.pxPerFt+HEAD-sc.clientHeight/2); schedule(); };
   $('mudPick').onclick=()=>setTool(M.tool==='pick'?'view':'pick');
@@ -412,12 +422,24 @@ function bindBar(){
   document.addEventListener('keydown',e=>{ if(S.mode!=='mud'||e.key!=='Escape') return; if(!$('mudPop').hidden) return hidePop(); if(M.tool!=='view') setTool('view'); });
 }
 
+// Panel width: drag the gutter, double-click to reset; remembered in this browser.
+function bindGutter(){ const side=$('mudSide'), g=$('mudGutter'); if(!g) return; const setW=w=>{ side.style.width=Math.max(220,Math.min(innerWidth*0.6,w))+'px'; };
+  const saved=lsGet('weller.mudSideW',null); if(saved) setW(saved);
+  g.addEventListener('pointerdown',e=>{ e.preventDefault(); g.setPointerCapture(e.pointerId); g.classList.add('on'); const x0=e.clientX, w0=side.offsetWidth;
+    const move=ev=>setW(w0+ev.clientX-x0), up=()=>{ g.classList.remove('on'); g.removeEventListener('pointermove',move); g.removeEventListener('pointerup',up); lsSet('weller.mudSideW',side.offsetWidth); };
+    g.addEventListener('pointermove',move); g.addEventListener('pointerup',up); });
+  g.addEventListener('dblclick',()=>{ side.style.width=''; try{ localStorage.removeItem('weller.mudSideW'); }catch(e){} }); }
+
 /* ---------- Public ---------- */
 let bound=false;
-function renderMud(){ if(!bound){ bound=true; bindSide(); bindBar(); bindPointer(); }
+function renderMud(){ if(!bound){ bound=true; bindSide(); bindBar(); bindPointer(); bindGutter(); }
   for(const m of M.logs) if(m.wellId&&!wellById(m.wellId)) m.wellId=null;
   renderBar(); renderSide();
-  if(M.fit||M.pxPerFt==null){ if(M.tool!=='calib') fit(); } else layout();
+  // The scale stays where the user set it; only the scroll moves. A new hang shows its datum, otherwise the depth at
+  // the centre of the view stays put while logs come and go.
+  if(M.tool==='calib') layout();
+  else { const sc=$('mudScroll'), zc=M.z0!=null?zOfY(HEAD+(sc.clientHeight-HEAD)/2):null; layout();
+    if(M.goto==='top'){ sc.scrollTop=0; } else if(M.goto==='datum'){ scrollToZ(0,0.33); } else if(M.goto&&Number.isFinite(M.goto.z)) scrollToZ(M.goto.z,0.5); else if(zc!=null) scrollToZ(zc,0.5); M.goto=null; }
   syncScale(); schedule(); }
 function toJSON(){ if(!M.logs.length) return undefined; return { panel:M.panel, sel:M.sel, hang:M.hang, trackW:M.trackW, pxPerFt:M.pxPerFt,
   logs:M.logs.map(m=>({id:m.id,name:m.name,kind:m.kind,file:m.file,api:m.api,company:m.company,field:m.field,county:m.county,state:m.state,kb:m.kb,gl:m.gl,elevRef:m.elevRef,location:m.location,unit:m.unit,useText:m.useText,wellId:m.wellId,crop:m.crop,show:m.show,overlay:m.overlay,ovMin:m.ovMin,ovMax:m.ovMax,picks:m.picks,header:m.header,
