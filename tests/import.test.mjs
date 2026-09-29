@@ -161,3 +161,18 @@ test('well names compare without case or punctuation', () => {
   const { nameKey } = globalThis.WellerLAS;
   assert.equal(nameKey('CARPENTER 126-0408H'), nameKey('Carpenter 126 0408H'));
 });
+
+test('MWD sensor offsets: listed per tool; applied only when the index is bit depth', () => {
+  const { shiftCurve } = globalThis.WellerLAS;
+  const rows = Array.from({ length: 101 }, (_, i) => [1000 + i, i, 5]);
+  const base = { curves: ['DEPT .F', 'GR .GAPI', 'ROP .FT/HR'], rows };
+  const a = well({ ...base, extra: 'GROFF.F 10 : Gamma ray sensor offset\n' });
+  assert.equal(a.sensorOffsets.list[0].tool, 'GR'); assert.equal(a.sensorOffsets.list[0].off, 10);
+  assert.deepEqual(a.sensorOffsets.list[0].curves, ['GR']); assert.equal(a.sensorOffsets.atBit, false);
+  assert.equal(a.curves[1].data[20], 20, 'not shifted without a bit-depth index');
+  const b = well({ ...base, extra: 'GROFF.F 10 : Gamma ray sensor offset\nDREF. BIT DEPTH : Depth reference\n' });
+  assert.equal(b.sensorOffsets.atBit, true);
+  // value logged at bit depth 1030 (row 30) was measured at 1020
+  assert.equal(b.curves[1].data[20], 30); assert.equal(b.curves[2].data[20], 5);
+  assert.deepEqual(Array.from(shiftCurve(Float64Array.of(0, 1, 2, 3), Float64Array.of(0, 10, 20, 30), 1)).slice(0, 3), [10, 20, 30]);
+});

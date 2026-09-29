@@ -44,12 +44,15 @@ input[type=color]{width:28px;height:24px;padding:0;border:1px solid var(--line);
 .topbar{display:flex;align-items:center;gap:14px;padding:6px 16px;background:var(--panel);border-bottom:1px solid var(--line);flex-wrap:wrap}
 .brand{font:600 18px "IBM Plex Sans Condensed",sans-serif;letter-spacing:.02em;display:flex;align-items:center;gap:8px}
 .brand small{font:500 11px "IBM Plex Mono",monospace;color:var(--muted);letter-spacing:.06em}
-.tabs{display:flex;border:1px solid var(--line);border-radius:4px;overflow:hidden}
-.tabs button{border:0;border-radius:0;background:transparent}
-.tabs button[aria-selected=true]{background:var(--ink);color:var(--panel)}
+.tabs{display:flex;gap:2px;padding:2px;border:1px solid var(--muted);border-radius:6px;background:var(--ground)}
+.tabs button{border:0;border-radius:4px;background:transparent;color:var(--muted);font-weight:500;padding:4px 14px}
+.tabs button:hover{color:var(--ink);background:var(--panel)}
+.tabs button[aria-selected=true]{background:var(--panel);color:var(--ink);box-shadow:0 0 0 1px var(--line),inset 0 -2px 0 var(--accent)}
+.brand svg{flex:none}
 .actions{margin-left:auto;display:flex;gap:6px;flex-wrap:wrap}
-.banner{display:flex;gap:10px;align-items:center;padding:8px 16px;background:var(--accent);color:var(--accent-ink);flex-wrap:wrap}
-.banner button{background:var(--accent-ink);color:var(--accent);border-color:transparent}
+.banner{display:flex;gap:8px;align-items:center;padding:3px 16px;background:var(--panel);color:var(--muted);border-bottom:1px solid var(--line);border-left:3px solid var(--accent);font-size:12.5px;flex-wrap:wrap}
+.banner b{font-weight:500;color:var(--ink)}
+.banner button{font-size:12px;padding:2px 8px}
 .shell{flex:1;display:flex;min-height:0}
 .side{width:320px;flex:none;overflow:auto;border-right:1px solid var(--line);background:var(--panel);padding:10px 12px;display:flex;flex-direction:column;gap:14px}
 .side h2{font:600 11px "IBM Plex Sans Condensed",sans-serif;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);margin:0 0 6px;display:flex;justify-content:space-between;align-items:center}
@@ -230,6 +233,11 @@ ul.list .wn{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:
 .gutter:hover,.gutter.on{background:var(--focus);opacity:.4}
 #mwDlg td input{font-size:12.5px;padding:2px 5px}#mwDlg td input[type=text]{width:100%;min-width:6.5em}#mwDlg td input.mw-name{min-width:12em}#mwDlg td input.mw-state{min-width:4em}#mwDlg td input[type=number]{width:5em}
 #impBody{display:flex;flex-direction:column;gap:10px}
+.methods{width:min(860px,100%);font-size:13.5px;line-height:1.5}
+.methods h4{margin:14px 0 4px;font:600 13px "IBM Plex Sans Condensed",sans-serif;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}
+.methods p,.methods ul{margin:4px 0}.methods ul{padding-left:18px}.methods li{margin:2px 0}
+.methods td{vertical-align:top;font-size:12.5px}.methods td.mn{font-family:"IBM Plex Mono",monospace;font-size:11.5px;color:var(--muted)}
+.mthnav{display:flex;flex-wrap:wrap;gap:4px}.mthnav a{font-size:12px;padding:2px 8px;border:1px solid var(--line);border-radius:10px;text-decoration:none;color:var(--ink)}
 .imp{border:1px solid var(--line);border-radius:5px;padding:8px 10px;display:flex;flex-direction:column;gap:6px}
 .imp.failed{border-color:#c1121f}
 .imph{display:flex;gap:8px;align-items:baseline;flex-wrap:wrap;word-break:break-all}
@@ -262,7 +270,7 @@ pre.snip mark{background:#EDC84A;color:#000}
 
 <div id="app">
   <header class="topbar">
-    <div class="brand">Weller Logs</div>
+    <div class="brand"><svg width="26" height="26" viewBox="0 0 26 26" aria-hidden="true"><rect x="1" y="1" width="24" height="24" rx="5" fill="none" stroke="var(--line)" stroke-width="1.5"/><path d="M13 3c-4 2 3 3-1 5s5 2 1 4-3 2 1 4-5 2-1 4 2 2 0 3" fill="none" stroke="var(--gr)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M7 3v20" stroke="var(--muted)" stroke-width="1" opacity=".5"/></svg>Weller Logs</div>
     <div class="byline"><span>By</span><a class="author" href="https://ryweller.com/services" target="_blank" rel="noopener">Ryan Weller</a><a class="linkedin" href="https://www.linkedin.com/in/ryweller/" target="_blank" rel="noopener" aria-label="Ryan Weller on LinkedIn" title="Ryan Weller on LinkedIn">in</a></div>
     <div class="tabs" role="tablist">
       <button data-mode="single" role="tab" aria-selected="true">Logs</button>
@@ -289,6 +297,7 @@ pre.snip mark{background:#EDC84A;color:#000}
       <li>Example logs: WOGCC public records via <a href="https://github.com/jessepisel/5minutesofpython" target="_blank" rel="noopener">5minutesofpython</a>; Rw from <a href="https://doi.org/10.5066/P14CRSQQ" target="_blank" rel="noopener">USGS produced-water data</a></li>
       <li>Methods: <a href="https://github.com/rockpyer/weller-logs/blob/main/docs/PETROPHYSICS.md" target="_blank" rel="noopener">PETROPHYSICS.md</a> · <a href="https://github.com/rockpyer/weller-logs" target="_blank" rel="noopener">source on GitHub</a></li>
     </ul>
+    <p><button class="small" id="btnMethods">Methods, curve mapping and assumptions</button></p>
     <p>Want a custom AI workflow, tool or subsurface analysis for your team? I build these.</p>
     <div class="cta"><a class="primary" href="https://ryweller.com/services" target="_blank" rel="noopener">Work with me</a><a href="https://www.linkedin.com/in/ryweller/" target="_blank" rel="noopener">Message on LinkedIn</a></div>
   </div>
@@ -466,6 +475,15 @@ pre.snip mark{background:#EDC84A;color:#000}
     <details id="impTpl" hidden><summary>A minimal LAS 2.0 file that loads</summary><pre class="snip" id="impTplText"></pre>
       <p class="hint">Sections start with ~. Header lines read <code>MNEM.UNIT  VALUE : DESCRIPTION</code>. Depth is the first curve, one data row per depth, values separated by spaces. Spec: <a href="https://www.cwls.org/products/#products-las" target="_blank" rel="noopener">CWLS LAS 2.0</a>. Converter: <a href="https://lasio.readthedocs.io/" target="_blank" rel="noopener">lasio</a>.</p></details>
     <div class="foot"><span style="flex:1"></span><button class="primary" id="impClose">Close</button></div>
+  </div>
+</div>
+
+<div id="mthDlg" class="modal" hidden>
+  <div class="dlg methods" role="dialog" aria-labelledby="mthTitle">
+    <h3 id="mthTitle">Methods, curve mapping and assumptions</h3>
+    <nav class="mthnav" id="mthNav"></nav>
+    <div id="mthBody"></div>
+    <div class="foot"><span class="hint">Esc closes</span><span style="flex:1"></span><button class="primary" id="mthClose">Close</button></div>
   </div>
 </div>
 

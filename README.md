@@ -54,6 +54,13 @@ Methods, equations, defaults and limits: [docs/PETROPHYSICS.md](docs/PETROPHYSIC
   (3 ft amplitude, transit time, bond index, CCL), Ultrasonic cement (acoustic impedance), Casing (thickness, ID,
   ovality) and Temp · tension tracks. These appear only in wells that have the curves; where the range depends on the
   job (casing size, tension, shock) the scale comes from the well's data.
+- **MWD / LWD.** Sensor-to-bit offsets in the header are listed per tool in the load summary; when the header says the
+  index is bit depth, matching curves move to sensor depth, otherwise one click applies the shift (saved with the
+  project). Azimuthal GR (up, down, left, right, asymmetry) and survey inclination and azimuth have their own tracks.
+  Cable tension plots with GR and caliper to show tight spots.
+- **Curve help.** Hover a track header for each curve's color, what it measures, the file it came from and what else
+  in the well could stand in. About → *Methods, curve mapping and assumptions* lists every rule and the mnemonics each
+  track accepts.
 - **Header clean-up.** Latitude and longitude in degrees-minutes-seconds, drill time (min/ft) converted to ROP in
   ft/hr, and a TVD curve used for TVD when the file has no survey.
 - **Load summary.** After opening files, one card per well says what came in and what to do: pick between duplicate
