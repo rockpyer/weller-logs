@@ -274,6 +274,29 @@ pre.snip mark{background:#EDC84A;color:#000}
   .side{width:auto!important;border-right:0;border-bottom:1px solid var(--line);max-height:45vh}
   .gutter{display:none}
 }
+.tabs button .beta{font:500 9.5px "IBM Plex Mono",monospace;letter-spacing:.04em;text-transform:uppercase;color:var(--accent);margin-left:3px}
+.mudbeta{border-left-color:var(--accent)}
+.mudbody{flex:1;display:flex;min-height:0}
+.mudside{width:300px;flex:none;overflow:auto;border-right:1px solid var(--line);background:var(--panel);padding:10px 12px;display:flex;flex-direction:column;gap:12px;font-size:13px}
+.mudside h3{font-size:13px;margin:0 0 6px;display:flex;align-items:center;gap:6px}
+.mudside ul.list li small{color:var(--muted);font-size:11px;white-space:nowrap}
+.mudside ul.list li small.warn{color:var(--gas)}
+.mudside button.link{border:0;background:none;padding:0 3px;color:var(--muted)}
+.mudside button.on{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+.mform{display:grid;grid-template-columns:1fr 1fr;gap:6px 8px}
+.mform label{display:flex;flex-direction:column;font-size:11px;color:var(--muted);gap:2px;min-width:0}
+.mform input,.mform select{width:100%;min-width:0;color:var(--ink)}
+.mform .pair{display:flex;gap:4px}
+.mwarn{border:1px solid var(--accent);border-radius:4px;padding:6px 8px;font-size:12px}
+.mudstage{flex:1;position:relative;min-width:0;min-height:0;overflow:hidden}
+.mudstage canvas{position:absolute;left:0;top:0}
+.mudscroll{position:absolute;inset:0;overflow:auto}
+#mudSpacer{min-width:1px}
+.mudpop{position:absolute;display:flex;gap:6px;align-items:center;flex-wrap:wrap;max-width:360px;z-index:5}
+.mudpop input{width:7em}
+i.sw{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:5px;vertical-align:baseline}
+#mudPick[aria-pressed=true]{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+@media (max-width:760px){ .mudbody{flex-direction:column} .mudside{width:auto;max-height:40vh;border-right:0;border-bottom:1px solid var(--line)} }
 @media (prefers-reduced-motion:no-preference){ .banner{animation:drop .25s ease-out} @keyframes drop{from{transform:translateY(-6px);opacity:0}} }
 </style>
 
@@ -285,10 +308,11 @@ pre.snip mark{background:#EDC84A;color:#000}
       <button data-mode="single" role="tab" aria-selected="true">Logs</button>
       <button data-mode="corr" role="tab" aria-selected="false">Correlation</button>
       <button data-mode="stats" role="tab" aria-selected="false">Zone stats</button>
+      <button data-mode="mud" role="tab" aria-selected="false" title="PDF and TIFF mudlogs side by side (beta)">Mudlogs <small class="beta">beta</small></button>
     </div>
     <div class="actions">
-      <input type="file" id="fileIn" accept=".las,.LAS,.txt,.csv,.lasproj,.json" multiple hidden>
-      <button id="btnOpen" class="primary" title="LAS, project, tops CSV or point-data CSV (Cmd+O). You can also drop files anywhere.">Open…</button>
+      <input type="file" id="fileIn" accept=".las,.LAS,.txt,.csv,.lasproj,.json,.pdf,.tif,.tiff" multiple hidden>
+      <button id="btnOpen" class="primary" title="LAS, project, tops CSV, point-data CSV, or a PDF/TIFF mudlog (Cmd+O). You can also drop files anywhere.">Open…</button>
       <button id="btnSave" title="Save project (Cmd+S)">Save</button>
       <button id="btnPng" title="Export the current view as PNG (Cmd+E)">Export PNG</button>
       <button id="btnLas" title="Export the selected well as LAS 2.0: logged curves as shown (shifts, despiking, normalization applied), computed curves, tops and survey">Export LAS</button>
@@ -376,6 +400,28 @@ pre.snip mark{background:#EDC84A;color:#000}
       <div class="logscroll" id="logScroll">
         <div id="logPanel"><svg id="overlay"></svg><div id="cursor"></div></div>
       </div>
+      </div>
+      <div id="mudView" class="view" hidden>
+        <div class="banner mudbeta"><b>Beta</b><span>Mudlogs hang in measured depth (MD), in feet. Subsea is elevation − MD, so it assumes a vertical hole; no survey is applied. Files stay in this browser.</span></div>
+        <div class="viewbar" id="mudViewBar">
+          <label>Hang on <select id="mudHang" aria-label="Hang on"></select></label>
+          <input type="text" id="mudTop" placeholder="Top name" list="mudTopList" aria-label="Top name" style="width:10em"><datalist id="mudTopList"></datalist>
+          <button class="small" id="mudPick" aria-pressed="false" title="Then click a log to place the top (Esc to stop)">Pick</button>
+          <span id="mudMsg" class="readout"></span>
+          <span class="sp"></span>
+          <label title="Width of each log on screen">Width <input type="range" id="mudTrackW" min="140" max="900" step="10"></label>
+          <label title="Vertical scale: 1:240 is 5 in per 100 ft, 1:600 is 2 in per 100 ft. Ctrl or Cmd + scroll zooms.">Scale <select id="mudScale" aria-label="Vertical scale"></select></label>
+          <button class="small" id="mudFit" title="Fit the logs to the window">Fit</button>
+        </div>
+        <div class="viewbar" id="mudCalBar" hidden><span>Calibrate: click a ruled depth line, type its MD. Ctrl or Cmd + scroll zooms.</span><span class="sp"></span><button class="small primary" id="mudCalDone">Done</button></div>
+        <div class="mudbody">
+          <aside class="mudside" id="mudSide"></aside>
+          <div class="mudstage" id="mudStage">
+            <canvas id="mudCanvas" aria-label="Mudlog correlation panel"></canvas>
+            <div class="mudscroll" id="mudScroll"><div id="mudSpacer"></div></div>
+            <div class="pop mudpop" id="mudPop" hidden></div>
+          </div>
+        </div>
       </div>
       <div id="statsView" class="view" hidden>
         <div class="viewbar">
@@ -534,4 +580,6 @@ pre.snip mark{background:#EDC84A;color:#000}
 <script src="js/stats.js"></script>
 <script src="js/interp.js"></script>
 <script src="js/core.js"></script>
+<script src="js/mudcal.js"></script>
+<script src="js/mudlog.js"></script>
 

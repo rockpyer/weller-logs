@@ -264,6 +264,8 @@ function depthTicks(w,F,y,H){
   return { grid:thin(walk(primary,true),3), md:showMD?thin(walk(i=>d[i],false),14):[], ss:hasSS?thin(walk(i=>ss[i],false),14):[], showMD, showSS:hasSS, hasSS:!!ss };
 }
 function render(){ syncDatum();
+  const mudMode=S.mode==='mud'; $('mudView').hidden=!mudMode; document.querySelector('.side').hidden=mudMode; $('sideGutter').hidden=mudMode;
+  if(mudMode){ $('statsView').hidden=true; $('logView').hidden=true; syncPanel(); window.WellerMud?.render(); autosave(); return; }
   const statsMode=S.mode==='stats'; $('statsView').hidden=!statsMode; $('logView').hidden=statsMode;
   syncPanel();
   if(statsMode){ renderSidebar(); renderStats(); autosave(); return; }
@@ -752,7 +754,7 @@ async function exportPNG(){ const panel=$('logPanel'); const pr=panel.getBoundin
       const svg=tr.querySelector('svg'); const sr=rel(svg); const img=await svgToImage(svg); ctx.drawImage(img,sr.x,sr.y,sr.w,sr.h); } }
   const ov=$('overlay'); if(ov.childNodes.length){ const img=await svgToImage(ov); ctx.drawImage(img,0,0); }
   return cv; }
-$('btnPng').onclick=async()=>{ if(S.mode==='stats'){ $('stXp').toBlob(b=>downloadBlob(`crossplot_${S.stats.x}_${S.stats.y}.png`.replace(/[^\w.-]+/g,'_'),b),'image/png'); return; } $('stNote').textContent='Rendering PNG…'; $('cursor').style.display='none';
+$('btnPng').onclick=async()=>{ if(S.mode==='mud') return window.WellerMud?.exportPNG(); if(S.mode==='stats'){ $('stXp').toBlob(b=>downloadBlob(`crossplot_${S.stats.x}_${S.stats.y}.png`.replace(/[^\w.-]+/g,'_'),b),'image/png'); return; } $('stNote').textContent='Rendering PNG…'; $('cursor').style.display='none';
   try{ const cv=await exportPNG(); cv.toBlob(b=>{ downloadBlob(($('vbWell').textContent||'panel').replace(/[^\w-]+/g,'_')+'.png',b); },'image/png'); }
   catch(err){ $('stNote').textContent='PNG export failed: '+err.message; } };
 
@@ -762,10 +764,10 @@ $('logPanel').addEventListener('click',e=>{ const h=e.target.closest('[data-selw
 document.querySelectorAll('[data-mode]').forEach(b=>b.onclick=()=>setMode(b.dataset.mode));
 const viewKey=m=>m==='corr'?'corr':'single';
 // Logs and Correlation keep their own zoom and scroll: leaving a flattened section never strands the Logs tab.
-function setMode(m){ const was=S.mode; if(was!=='stats') S.view.scroll=$('logScroll').scrollTop;
+function setMode(m){ const was=S.mode; if(was!=='stats'&&was!=='mud') S.view.scroll=$('logScroll').scrollTop;
   S.mode=m; document.querySelectorAll('[data-mode]').forEach(b=>b.setAttribute('aria-selected',b.dataset.mode===m));
   if(m==='corr'&&S.panel.length===0&&S.selected) S.panel=[S.selected];
-  if(m==='stats'){ render(); return; }
+  if(m==='stats'||m==='mud'){ render(); return; }
   S.view=S.views[viewKey(m)]||(S.views[viewKey(m)]={pxPerFt:0.35});
   if(!S.view.fitted) return fitView();
   render(); $('logScroll').scrollTop=S.view.scroll||0; }
@@ -775,7 +777,7 @@ $('btnFit').onclick=fitView;
 $('showEmpty').onchange=e=>{ S.showEmpty=e.target.checked; render(); };
 /* Fit: the whole log fits the screen height. A section flattened on a top fits the interval around that top and
    scrolls there; the rest of the logs stay a scroll away. */
-function fitView(){ if(S.mode==='stats') return render(); const wells=viewWells();
+function fitView(){ if(S.mode==='stats'||S.mode==='mud') return render(); const wells=viewWells();
   render(); let [lo,hi]=frameExtent(wells);
   if(S.mode==='corr'&&!['MD','TVDSS'].includes(S.datum)&&wells.length){ const k=wells[0].depthUnit==='m'?0.3048:1; lo=Math.max(lo,-400*k); hi=Math.min(hi,1200*k); }
   const sc=$('logScroll'), svg=$('logPanel').querySelector('.tracks svg'), hdr=svg?svg.getBoundingClientRect().top-$('logPanel').getBoundingClientRect().top:120;
@@ -807,14 +809,16 @@ const lasCache={ db:null,
   async get(name){ try{ const db=await this.open(); return await new Promise((res,rej)=>{ const r=db.transaction('las').objectStore('las').get(name); r.onsuccess=()=>res(r.result?.text||null); r.onerror=()=>rej(r.error); }); }catch(e){ return null; } } };
 
 /* ---------- Files: one Open for LAS, projects, tops CSV and point-data CSV; drag and drop anywhere ---------- */
-const OPEN_TYPES=[{description:'Well data',accept:{'text/plain':['.las','.LAS','.txt','.csv'],'application/json':['.lasproj','.json']}}];
+const OPEN_TYPES=[{description:'Well data',accept:{'text/plain':['.las','.LAS','.txt','.csv'],'application/json':['.lasproj','.json'],'application/pdf':['.pdf'],'image/tiff':['.tif','.tiff']}}];
 $('btnOpen').onclick=async()=>{ if(window.showOpenFilePicker){ try{ const hs=await showOpenFilePicker({multiple:true,types:OPEN_TYPES}); const files=[]; for(const h of hs) files.push({...await readPicked(await h.getFile()),handle:h}); openFiles(files); }catch(e){} } else $('fileIn').click(); };
 $('fileIn').onchange=async e=>{ const files=[]; for(const f of e.target.files) files.push(await readPicked(f)); openFiles(files); e.target.value=''; };
-async function readPicked(f){ return {name:f.name,text:await f.text(),bytes:new Uint8Array(await f.slice(0,16).arrayBuffer())}; }
+// PDF and TIFF mudlogs are opened as files, never read as text (a scan can be tens of MB).
+async function readPicked(f){ if(/\.(pdf|tiff?)$/i.test(f.name)) return {name:f.name,file:f,mud:true}; return {name:f.name,text:await f.text(),bytes:new Uint8Array(await f.slice(0,16).arrayBuffer())}; }
 // Binary files and log formats (DLIS, PDF, TIFF…) go to the LAS reader, which says what they are instead of failing as CSV.
 function kindOf(f){ const t=f.text.trimStart(); if(/\.(lasproj|json)$/i.test(f.name)||t[0]==='{') return 'project';
   if(t[0]==='~'||/\.(las|dlis|lis|tif|tiff|pdf|xlsx?|zip)$/i.test(f.name)||/^#[^\n]*\n\s*~/.test(t)||WellerLAS.sniffBinary(f.text,f.name,f.bytes)) return 'las'; return isTopsCSV(f.text)?'tops':'points'; }
-async function openFiles(files){ const by={project:[],las:[],tops:[],points:[]}; for(const f of files) by[kindOf(f)].push(f); const report=[];
+async function openFiles(files){ const mud=files.filter(f=>f.mud); files=files.filter(f=>!f.mud); if(mud.length) window.WellerMud?.openFiles(mud.map(f=>f.file)); if(!files.length) return;
+  const by={project:[],las:[],tops:[],points:[]}; for(const f of files) by[kindOf(f)].push(f); const report=[];
   const other=(f,fn)=>{ try{ report.push({file:f.name,status:'loaded',note:fn(),problems:[]}); }catch(err){ report.push({file:f.name,status:'failed',problems:[{level:'error',cat:'Parsing',title:err.message}]}); } };
   for(const f of by.project){ try{ await loadProject(JSON.parse(f.text)); if(f.handle) S.fileHandle=f.handle; report.push({file:f.name,status:'loaded',note:'Project loaded',problems:[]}); }
     catch(err){ report.push({file:f.name,status:'failed',problems:[{level:'error',cat:err instanceof SyntaxError?'Parsing':'File type',title:err instanceof SyntaxError?'Not valid JSON: '+err.message:err.message,fix:'Open a .lasproj saved by Weller Logs.'}]}); } }
@@ -1050,6 +1054,7 @@ addEventListener('drop',async e=>{ e.preventDefault(); dragDepth=0; document.bod
 
 /* ---------- Project save / load / autosave ---------- */
 function projectJSON(){ return { version:3, app:'weller-logs', savedAt:new Date().toISOString(), mode:S.mode, selected:S.selected, panel:S.panel, datum:S.datum, views:S.views, tracks:S.tracks, hiddenPoints:S.hiddenPoints, stats:S.stats, basemap:S.basemap, interp:S.interp, corr:S.corr, topColors:S.topColors,
+  mudlogs:window.WellerMud?.toJSON(),
   wells:S.wells.map(w=>({id:w.id,name:w.name,api:w.api,field:w.field,company:w.company,county:w.county,state:w.state,preset:w.preset,demo:w.demo,fileName:w.fileName,pick:w.pick,shifts:w.shifts,edits:w.edits,files:partsOf(w).length>1?partsOf(w).map(p=>({fileName:p.fileName,demo:p.demo})):undefined,location:w.location,elevation:w.elevation,depthUnit:w.depthUnit,tops:w.tops,points:pointsJSON(w),curveList:w.curves.filter(c=>!c.sparse).map(c=>c.mnemonic)})) }; }
 async function loadProject(p){ if(!p||p.app!=='weller-logs') throw new Error('not a Weller Logs project'); const missing=[];
   // A file may be a well on its own or one part of a merged well; find it wherever it is now.
@@ -1066,7 +1071,7 @@ async function loadProject(p){ if(!p||p.app!=='weller-logs') throw new Error('no
   S.tracks=migrateTracks(p.tracks); S.views=p.views||newViews(); S.view=S.views[viewKey(S.mode)]||S.views.single; S.datum=p.datum||'MD'; S.topColors=p.topColors||S.topColors; S.hiddenPoints=p.hiddenPoints||[]; S.stats={...statsDefaults(),...(p.stats||{})}; S.interp={...interpDefaults(),...(p.interp||{})}; S.corr={...S.corr,...(p.corr||{})}; if(!p.tracks.some(t=>t.id==='t8')) S.tracks=[...p.tracks,...defaultTracks().filter(t=>['t8','t9','t10','t11','t12'].includes(t.id))]; setBasemap(p.basemap||'map'); if((p.version||1)<2) pointSeriesNames().forEach(placePointSeries); S.panel=(p.panel||[]).filter(id=>wellById(id));
   // Older projects kept section order separately: move those wells into that order within the list.
   if((p.version||1)<3){ const pos=S.wells.map((w,i)=>S.panel.includes(w.id)?i:-1).filter(i=>i>=0); S.panel.forEach((id,k)=>{ S.wells[pos[k]]=wellById(id); }); } S.selected=wellById(p.selected)?p.selected:(S.wells[0]?.id||null);
-  computeAllInterp(); setMode(p.mode||'single'); $('stNote').textContent=missing.length?`Re-open these LAS files to restore them: ${missing.join(', ')}`:'Project loaded'; }
+  window.WellerMud?.fromJSON(p.mudlogs); computeAllInterp(); setMode(p.mode||'single'); $('stNote').textContent=missing.length?`Re-open these LAS files to restore them: ${missing.join(', ')}`:'Project loaded'; }
 function autosave(){ try{ localStorage.setItem('weller.session',JSON.stringify(projectJSON())); }catch(e){} recordHistory(); }
 /* Undo and redo (Cmd/Ctrl+Z, Shift+Cmd/Ctrl+Z or Ctrl+Y). Each render compares an edit snapshot with the last one.
    View, mode and selection are left out, so zooming or switching tabs is not an undo step. */
@@ -1132,7 +1137,7 @@ if('serviceWorker' in navigator&&/^https?:/.test(location.protocol)&&!/claude\.a
 function placePop(pop,anchor){ pop.hidden=false; const r=anchor.getBoundingClientRect(); pop.style.top=(r.bottom+8)+'px'; pop.style.left=Math.max(16,Math.min(r.right-pop.offsetWidth,innerWidth-pop.offsetWidth-16))+'px'; }
 $('btnAbout').onclick=e=>{ e.stopPropagation(); const p=$('aboutPop'); p.hidden?placePop(p,e.currentTarget):(p.hidden=true); };
 document.addEventListener('click',e=>{ if(e.target.closest('[data-close]')){ e.target.closest('.pop').hidden=true; return; }
-  if(e.target.closest('#btnNotes,#btnAbout')) return;
+  if(e.target.closest('#btnNotes,#btnAbout,#mudScroll,#mudPop')) return;
   document.querySelectorAll('.pop:not([hidden])').forEach(p=>{ if(!p.contains(e.target)) p.hidden=true; }); });
 document.addEventListener('keydown',e=>{ if(e.key!=='Escape') return; document.querySelectorAll('.pop:not([hidden])').forEach(p=>p.hidden=true);
   const open=[...document.querySelectorAll('.modal:not([hidden])')].filter(m=>m.id!=='resume'); const top=open[open.length-1]; if(top){ e.preventDefault(); top.hidden=true; } });
