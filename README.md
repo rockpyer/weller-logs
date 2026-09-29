@@ -36,6 +36,8 @@ Methods, equations, defaults and limits: [docs/PETROPHYSICS.md](docs/PETROPHYSIC
   vertical thickness in deviated wells. Everything exports as CSV.
 - **Map.** USGS National Map topo or satellite imagery. NAD27 coordinates are shifted to WGS84.
 - **Robust LAS reading.** LAS 1.2, 2.0 and 3.0 (Log, Tops and Inclinometry data sets; comma or tab delimiters, quoted text), wrapped data, several null values, headers with label and value swapped,
+  lasio-style tolerance (run-together values like `-999.25-999.25`, comma decimal marks, text nulls such as `NA` or `INF`,
+  extra sentinels such as `9999.25` and `2147483647`, header lines missing the period, byte-order marks and old Mac line ends),
   elevations in `~Parameter`, bottom-up logs, surveys in `~Other`, and implausible KB elevations flagged rather
   than used. Covered by unit tests on the bundled real files.
 - **Several files, one well.** LAS files whose API names the same borehole (first 12 digits; a 10-digit API is the
@@ -58,6 +60,17 @@ Methods, equations, defaults and limits: [docs/PETROPHYSICS.md](docs/PETROPHYSIC
   index is bit depth, matching curves move to sensor depth, otherwise one click applies the shift (saved with the
   project). Azimuthal GR (up, down, left, right, asymmetry) and survey inclination and azimuth have their own tracks.
   Cable tension plots with GR and caliper to show tight spots.
+- **Off-scale values wrap.** A value past a track's scale continues from the other edge as a dotted backup trace, as on a
+  printed log, instead of piling up at the edge. Each track's ⚙ turns it off.
+- **Lithology patterns.** The computed lithology and cuttings % tracks draw FGDC-style ornaments over each color (dots for
+  sand, dashes for shale, brick for limestone, slanted brick for dolomite), in the tracks, legends and PNG export.
+- **Curve QC** (Wells → Curve QC). A coverage table shows which wells have which logs. Per well, each curve is checked for
+  coverage, gaps, flat runs, spikes, physical range and units ([welly](https://github.com/agilescientific/welly)'s tests),
+  with a score. Despike replaces spikes with a rolling median (resistivity in log space). Normalize GR rescales a well's
+  P5–P95 onto a reference well's, over the whole log or one zone. Edits are saved with the project and undo with Cmd+Z.
+- **LAS export.** Export LAS writes the selected well as LAS 2.0: logged curves as shown (shifts, despiking and
+  normalization applied), computed curves, tops as `TOP_` parameters, the directional survey and the interpretation
+  parameters in `~Other`. It reads back into Weller Logs and lasio.
 - **Curve help.** Hover a track header for each curve's color, what it measures, the file it came from and what else
   in the well could stand in. About → *Methods, curve mapping and assumptions* lists every rule and the mnemonics each
   track accepts.
@@ -87,7 +100,7 @@ Methods, equations, defaults and limits: [docs/PETROPHYSICS.md](docs/PETROPHYSIC
   (`well, md`, then one column per measurement, units in the header such as `k (mD)`). PDF and TIFF files open in
   the Mudlogs tab.
 - **Save** (Cmd+S) writes the `.lasproj`. Brave and Chrome save back to the same file; Firefox downloads a copy.
-- **Export PNG** (Cmd+E) renders the log view, or the crossplot on the stats tab.
+- **Export PNG** (Cmd+E) renders the log view, or the crossplot on the stats tab. **Export LAS** writes the selected well.
 - **Undo / redo**: Cmd+Z and Shift+Cmd+Z (Ctrl on Windows and Linux) step through edits to tops, tracks, parameters and the section.
 - **Esc** closes any dialog or popover without applying it. New curves in a track get their own range and a color that
   reads in both themes.

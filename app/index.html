@@ -260,6 +260,15 @@ pre.snip mark{background:#EDC84A;color:#000}
 #mwDlg td.num{text-align:right;font-family:"IBM Plex Mono",monospace;color:var(--muted)}
 .dlg .sp{flex:1}
 #wdCurves{font-size:12px;line-height:1.6}#wdCurves small{color:var(--muted)}
+.qch{margin:0;font:600 13px "IBM Plex Sans Condensed",sans-serif;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}
+#qcDlg section{display:flex;flex-direction:column;gap:6px}
+.qccov td.cv{text-align:center;font-family:"IBM Plex Mono",monospace;font-size:11px;min-width:3.4em}
+.qccov td.wl{cursor:pointer}.qccov tr.on td.wl{box-shadow:inset 3px 0 0 var(--focus);font-weight:600}
+#qcTable td.q{font-size:11.5px;white-space:normal;min-width:6em}
+.q.ok{color:var(--muted)}.q.warn{color:#9a7300}.q.bad{color:#c1121f}
+:root[data-theme="dark"] .q.warn{color:#e0b43c}:root[data-theme="dark"] .q.bad{color:#f06767}
+.qscore{display:inline-block;min-width:2.6em;text-align:center;padding:0 5px;border-radius:9px;font:600 11px "IBM Plex Mono",monospace;color:#fff}
+.track svg .wrap path{pointer-events:none}
 @media (max-width:760px){
   .shell{flex-direction:column}
   .side{width:auto!important;border-right:0;border-bottom:1px solid var(--line);max-height:45vh}
@@ -306,6 +315,7 @@ i.sw{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:5p
       <button id="btnOpen" class="primary" title="LAS, project, tops CSV, point-data CSV, or a PDF/TIFF mudlog (Cmd+O). You can also drop files anywhere.">Open…</button>
       <button id="btnSave" title="Save project (Cmd+S)">Save</button>
       <button id="btnPng" title="Export the current view as PNG (Cmd+E)">Export PNG</button>
+      <button id="btnLas" title="Export the selected well as LAS 2.0: logged curves as shown (shifts, despiking, normalization applied), computed curves, tops and survey">Export LAS</button>
       <div class="seg" role="group" aria-label="Units" title="Display units for depths, thicknesses and distances"><button class="small" data-units="imperial" aria-pressed="true">ft</button><button class="small" data-units="metric" aria-pressed="false">m</button></div>
       <button id="btnTheme" class="link" title="Dark or light theme" aria-label="Toggle dark theme">◐</button>
       <button id="btnAbout" class="link" aria-haspopup="dialog">About</button>
@@ -340,7 +350,7 @@ i.sw{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:5p
         <p class="hint" id="mapHint"></p>
       </details>
       <details open><summary><h2>Wells <span class="pill" id="wellCount"></span></h2></summary>
-        <div class="tools"><button class="small" id="btnManageWells" title="Rename, fill header fields, remove or clear wells">Manage wells</button></div>
+        <div class="tools"><button class="small" id="btnQC" title="Data coverage across wells; gaps, flat runs, spikes, ranges and units per curve; despike; normalize GR">Curve QC</button><button class="small" id="btnManageWells" title="Rename, fill header fields, remove or clear wells">Manage wells</button></div>
         <ul class="list" id="wellList"></ul>
         <p class="hint">Click a well to select it. The dot adds it to the correlation section; drag ⋮⋮ to reorder. Hover a name for its header.</p>
         <div class="row"><select id="exampleSel" aria-label="Load example data"><option value="">Load example data…</option><option value="niobrara">Denver Basin Niobrara</option><option value="labasin">LA Basin (synthetic)</option></select></div>
@@ -467,6 +477,8 @@ i.sw{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:5p
     <div class="row">
       <label>Name <input type="text" id="tdName"></label>
       <label>Width <input type="number" id="tdWidth" min="60" max="600" step="10"></label>
+      <label id="tdWrapL" title="Values past the scale continue from the other edge as a dotted backup trace, instead of piling up at the edge"><input type="checkbox" id="tdWrap"> Wrap off-scale values</label>
+      <label id="tdPatL" title="FGDC-style ornaments over each lithology color: dots for sand, dashes for shale, brick for limestone"><input type="checkbox" id="tdPat"> Lithology patterns</label>
     </div>
     <div id="tdLith" hidden>
       <p class="hint">Vshale comes from GR, or from SP in wells without GR (set in the Interpretation panel). Where the well has a PE log, PE separates carbonate, marl and clean sand. Rules run top to bottom; the first that fits wins.</p>
@@ -495,7 +507,7 @@ i.sw{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:5p
     <div id="wdChoices" class="wdchoices"></div>
     <div class="hint" id="wdHidden"></div>
     <div class="hint" id="wdSources"></div>
-    <div class="foot"><button id="wdRemove">Remove well</button><button id="wdSplit" title="One well per source file" hidden>Split into one well per file</button><span style="flex:1"></span><button id="wdCancel">Cancel</button><button class="primary" id="wdSave">Apply</button></div>
+    <div class="foot"><button id="wdRemove">Remove well</button><button id="wdQC">Curve QC</button><button id="wdLas">Export LAS</button><button id="wdSplit" title="One well per source file" hidden>Split into one well per file</button><span style="flex:1"></span><button id="wdCancel">Cancel</button><button class="primary" id="wdSave">Apply</button></div>
   </div>
 </div>
 
@@ -524,6 +536,21 @@ i.sw{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:5p
   </div>
 </div>
 
+<div id="qcDlg" class="modal" hidden>
+  <div class="dlg" role="dialog" aria-labelledby="qcTitle">
+    <h3 id="qcTitle">Curve QC</h3>
+    <section><h4 class="qch">Data coverage, all wells</h4>
+      <div class="tblwrap"><table class="data qccov" id="qcCov"></table></div>
+      <p class="hint">Share of each well's logged interval that has the curve (the one each track uses). Click a well to check its curves.</p></section>
+    <section><div class="row"><h4 class="qch">Curves in</h4><select id="qcWell" aria-label="Well"></select><span class="sp"></span>
+      <label class="mini" title="Samples in the rolling window">Despike window <input type="number" id="qcWin" min="5" max="101" step="2" value="11"></label>
+      <label class="mini" title="A sample more than this many robust standard deviations (1.4826 × MAD) from the rolling median is a spike">threshold <input type="number" id="qcZ" min="2" max="20" step="0.5" value="6"> σ</label></div>
+      <div class="tblwrap"><table class="data" id="qcTable"></table></div></section>
+    <section id="qcNorm"></section>
+    <div class="foot"><span class="hint">Despiking and normalization change what the tracks, interpretation, stats and LAS export use. They are saved with the project; the original values stay in memory, and Cmd/Ctrl+Z undoes.</span><span style="flex:1"></span><button class="primary" id="qcClose">Close</button></div>
+  </div>
+</div>
+
 <div id="mthDlg" class="modal" hidden>
   <div class="dlg methods" role="dialog" aria-labelledby="mthTitle">
     <h3 id="mthTitle">Methods, curve mapping and assumptions</h3>
@@ -546,6 +573,7 @@ i.sw{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:5p
 <script>window.L||document.write('<script src="vendor/leaflet.js"><\/script>')</script>
 <script src="synth.js"></script>
 <script src="js/las.js"></script>
+<script src="js/qc.js"></script>
 <script src="js/petro.js"></script>
 <script src="js/points.js"></script>
 <script src="js/map.js"></script>

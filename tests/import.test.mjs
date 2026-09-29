@@ -81,8 +81,11 @@ test('LAS 3.0: log data, quoted text, tops and inclinometry are read', () => {
 test('missing sections, empty data and text in data are errors with the line', () => {
   assert.match(errs(diagnoseLAS('~V\nVERS. 2.0 :\n~W\nWELL. X :\n~A\n1 2\n', 'x.las'))[0].title, /~Curve/);
   assert.match(errs(diagnoseLAS('~V\nVERS. 2.0 :\n~C\nDEPT .F :\n', 'x.las'))[0].title, /~A/);
+  // Comma decimal marks load (one comma per value, one value per curve); an ambiguous comma row is still an error.
   const t = diagnoseLAS(las({ rows: [['1000,5', '50,2'], ['1001,0', '60,1']] }), 'x.las');
-  const e = errs(t)[0]; assert.match(e.title, /2 of 2 data lines/); assert.equal(e.snippet[0].line, 12); assert.match(e.fix, /decimal/);
+  assert.equal(errs(t).length, 0); assert.ok(t.problems.some(p => /Comma decimal/.test(p.title))); assert.deepEqual(Array.from(t.parsed.curves[1].data), [50.2, 60.1]);
+  const t2 = diagnoseLAS(las({ curves: ['DEPT .F', 'GR .GAPI', 'RHOB .G/C3'], rows: [['1000,5', '50,2', '2,45'], ['1001,0', '60,1', '2,50']] }), 'x.las');
+  assert.equal(errs(t2).length, 0); assert.deepEqual(Array.from(t2.parsed.curves[2].data), [2.45, 2.5]);
   const u = errs(diagnoseLAS(las({ rows: [[1000, 'abc'], [1001, 'def']] }), 'x.las'))[0]; assert.match(u.title, /all numbers/); assert.equal(u.snippet[0].mark, 'abc');
 });
 
@@ -93,7 +96,7 @@ test('column count mismatch shows the line and suggests WRAP', () => {
 
 test('all-null data is an error, a partly bad file loads with warnings', () => {
   assert.match(errs(diagnoseLAS(las({ rows: [[1000, -999.25], [1001, -999.25]] }), 'x.las'))[0].title, /null/);
-  const r = diagnoseLAS(las({ rows: [[1000, 50], [1001, 'n/a'], [1002, 70], [1003, 80]] }), 'x.las');
+  const r = diagnoseLAS(las({ rows: [[1000, 50], [1001, 'abc'], [1002, 70], [1003, 80]] }), 'x.las');
   assert.equal(errs(r).length, 0); assert.ok(r.problems.some(p => p.level === 'warn' && /skipped/.test(p.title)));
   assert.equal(r.parsed.rows, 3);
 });
@@ -175,4 +178,14 @@ test('MWD sensor offsets: listed per tool; applied only when the index is bit de
   // value logged at bit depth 1030 (row 30) was measured at 1020
   assert.equal(b.curves[1].data[20], 30); assert.equal(b.curves[2].data[20], 5);
   assert.deepEqual(Array.from(shiftCurve(Float64Array.of(0, 1, 2, 3), Float64Array.of(0, 10, 20, 30), 1)).slice(0, 3), [10, 20, 30]);
+});
+
+test('lasio-style tolerance: run-together values, text nulls, extra sentinels, no-period headers, BOM and CR line ends', () => {
+  const t = '\uFEFF~V\rVERS. 2.0 :\rWRAP. NO :\r~W\rNULL. -999.25 :\rWELL SMITH 1 : WELL NAME\r~C\rDEPT.FT :\rGR.GAPI :\rRHOB.G/C3 :\r~A\r1000.0 85.2-999.25\r1000.5 NA 2.45\r1001.0 -INF 2.5E-01\r1001.5 9999.25 2147483647\r';
+  const r = diagnoseLAS(t, 'x.las'); assert.equal(errs(r).length, 0);
+  const [d, gr, rh] = r.parsed.curves.map(c => Array.from(c.data));
+  assert.deepEqual(d, [1000, 1000.5, 1001, 1001.5]); assert.equal(gr[0], 85.2); assert.ok(gr.slice(1).every(Number.isNaN));
+  assert.ok(Number.isNaN(rh[0])); assert.equal(rh[1], 2.45); assert.equal(rh[2], 0.25); assert.ok(Number.isNaN(rh[3]));
+  assert.equal(r.parsed.header.well.WELL.value, 'SMITH 1');
+  for (const re of [/run-together/, /text values/, /without a period/]) assert.ok(r.problems.some(p => p.level === 'info' && re.test(p.title)), String(re));
 });
