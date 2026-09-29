@@ -354,6 +354,28 @@
     return out;
   }
 
+  /* ---------- MWD / LWD sensor offsets ----------
+     Each sensor in a drilling string sits some distance behind the bit. Deliverables are normally shifted to sensor depth,
+     but some are indexed at bit depth and carry the offsets in the header ("GR offset 45 ft", "bit to sensor"). */
+  const OFF_TEXT = /OFFSET|OFFS\b|OFST|DIST(ANCE)?\s*(TO|FROM)\s*BIT|BIT\s*TO\s*(SENSOR|MEAS)|SENSOR\s*(TO\s*BIT|OFFSET|DIST)|MEAS(URE)?\s*POINT|\bBTS\b|MEMORY\s*OFFSET/i;
+  const OFF_TOOLS = [['GR', /GR|GAMMA|GAM\b/i, /^(GR|GAM|SGR|CGR|GMG|GGR)/i], ['Resistivity', /RES|EWR|PHASE|ATTEN|\bRT\b|PROPAG/i, /^(R\d|RT|RES|RP|RA|P\d\d|A\d\d|RAC|RPC)/i],
+    ['Density', /DEN|RHOB|AZD/i, /^(RHOB|DEN|DRHO|DCOR|PEF|DPOR|DPR)/i], ['Neutron', /NEU|NPHI|CTN|POROSITY/i, /^(NPHI|NPR|NEU|TNPH|NPOR)/i],
+    ['Sonic', /SONIC|ACOUST|\bDT\b/i, /^(DT|AC)/i], ['Survey', /DIR|INC|SURV|D&I|\bMWD\b/i, /^(INC|AZI|DEVI)/i], ['Pressure', /PWD|PRESS|ECD/i, /^(ECD|APWD|PWD|ESD)/i]];
+  function sensorOffsets(p, depthUnit) {
+    const out = [], H = p.header, lim = depthUnit === 'm' ? 60 : 200;
+    for (const x of [...Object.values(H.well), ...Object.values(H.params)]) {
+      const text = `${x.mnem} ${x.desc}`; if (!OFF_TEXT.test(text) && !/(_OFF|OFF|OFST)$/i.test(x.mnem)) continue;
+      const v = leadingNumber(x.value); if (!Number.isFinite(v) || v <= 0 || v > lim) continue;
+      const t = OFF_TOOLS.find(([, re]) => re.test(text));
+      out.push({ tool: t ? t[0] : 'Sensor', off: v, source: `${x.mnem}${x.unit ? '.' + x.unit : ''} ${x.value} : ${x.desc}`.trim(), curves: t ? p.curves.slice(1).filter(c => t[2].test(c.mnemonic)).map(c => c.mnemonic) : [] });
+    }
+    // Index recorded at the bit rather than at each sensor?
+    const ref = [H.params.DREF?.value, H.params.DREF?.desc, H.well.DREF?.value, p.curves[0]?.description, H.params.INDX?.value, H.version.INDX?.value].join(' ');
+    return { list: out, atBit: /\bBIT\b/i.test(ref) && !/SENSOR|CORRECT/i.test(ref) };
+  }
+  // Move one curve from bit depth to sensor depth: the value logged at bit depth D was measured at D - off.
+  function shiftCurve(dep, data, off) { const d = Array.from(dep, v => v - off), st = medianStep(dep) || 1; return resample(d, data, dep, st * 3); }
+
   /* ---------- Well normalization ---------- */
   function normalizeWell(p, fileName) {
     const W = p.header.well, P = p.header.params;
@@ -365,7 +387,9 @@
     const depthUnit = /^(M|METER|METERS|METRES?)$/.test(du) ? 'm' : 'ft';
     for (const c of p.curves) {
       const m = c.mnemonic.toUpperCase().replace(/:\d+$/, ''), u = (c.unit || '').toUpperCase();
-      if (/^(NPHI|TNPH|NPOR|PHIN|CNC|HNPO|NPHS|NPHL|TNPS)/.test(m)) { const med = median(c.data); if (/PU|%/.test(u) || med > 1.5) { c.data = c.data.map(v => v / 100); c.unit = 'V/V'; c.note = 'converted from pu'; } }
+      // Neutron and logged density porosity in porosity units become v/v. NPRL/NPRS/NPRD and DPRL/DPRS/DPRD are the
+      // limestone, sandstone and dolomite versions many LWD and wireline vendors deliver side by side.
+      if (/^(NPHI|TNPH|NPOR|PHIN|CNC|HNPO|NPHS|NPHL|TNPS|NPR[LSD]|DPHI|DPOR|DPR[LSD]|DPHZ)/.test(m)) { const med = median(c.data); if (/PU|%/.test(u) || med > 1.5) { c.data = c.data.map(v => v / 100); c.unit = 'V/V'; c.note = 'converted from pu'; } }
       if (/^(DT|DTC|DTCO|AC)$/.test(m) && /US\/M|USEC\/M/.test(u)) { c.data = c.data.map(v => v / 3.28084); c.unit = 'US/F'; c.note = 'converted from us/m'; }
       // Mud loggers often record drill time (minutes per foot) under ROP; tracks expect ft/hr.
       if (/^ROP/.test(m) && /^MIN/.test(u.replace(/[_\s]/g, ''))) { c.data = c.data.map(v => v > 0 ? 60 / v : NaN); c.unit = depthUnit === 'm' ? 'm/hr' : 'ft/hr'; c.note = 'converted from drill time (min/' + depthUnit + ')'; }
@@ -395,7 +419,8 @@
     const crsM = all.match(/NAD\s*(27|83)/i); const zoneM = all.match(/ZONE\s*(\d)/i);
     const crs = g('GDAT') || (crsM ? `NAD${crsM[1]}${zoneM ? ' · State Plane Zone ' + zoneM[1] : ''}` : 'unknown');
     const matr = String(g('MATR') || g('NMAT') || g('DPOR') || '').toUpperCase();
-    const neutronMatrix = /SAND|SS|QUARTZ/.test(matr) ? 'sandstone' : /DOL/.test(matr) ? 'dolomite' : /LIME|LS|CALC/.test(matr) ? 'limestone' : null;
+    const mn = new Set(p.curves.map(c => c.mnemonic.toUpperCase())), nprM = ['NPRL', 'NPRS', 'NPRD'].find(m => mn.has(m));   // same order as the NPHI aliases
+    const neutronMatrix = !matr && nprM ? { L: 'limestone', S: 'sandstone', D: 'dolomite' }[nprM[3]] : /SAND|SS|QUARTZ/.test(matr) ? 'sandstone' : /DOL/.test(matr) ? 'dolomite' : /LIME|LS|CALC/.test(matr) ? 'limestone' : null;
     let survey = parseSurvey(p.header.other);
     // No survey but a TVD curve (common in MWD deliverables): use it for TVD. Inclination follows from dTVD/dMD.
     const tvdC = !survey && p.curves.find(c => /^(TVD|TVDM|TVD_MD)$/i.test(c.mnemonic));
@@ -405,6 +430,8 @@
         const inc = md.map((m, i) => { const j = Math.min(i + 1, md.length - 1), k = j === i ? i - 1 : i; const dm = md[j] - md[k]; return dm > 0 ? Math.acos(Math.max(-1, Math.min(1, (tvd[j] - tvd[k]) / dm))) * 180 / Math.PI : 0; });
         survey = { md: Float64Array.from(md), tvd: Float64Array.from(tvd), inc: Float64Array.from(inc), azi: new Float64Array(md.length), fromCurve: tvdC.mnemonic };
         notes.push(`TVD from the ${tvdC.mnemonic} curve`); } }
+    const offsets = sensorOffsets(p, depthUnit);
+    if (offsets.list.length && offsets.atBit) for (const o of offsets.list) for (const m of o.curves) { const c = p.curves.find(x => x.mnemonic === m); if (c) { c.data = shiftCurve(p.curves[0].data, c.data, o.off); c.note = `shifted ${o.off} ${depthUnit} from bit to sensor depth`; o.applied = true; } }
     const clean = s => String(s || '').replace(/^(WELL|COMPANY|FIELD|API NUMBER):\s*/i, '').trim();
     const api = clean(g('API') || g('APIN') || g('UWI'));
     return {
@@ -414,7 +441,7 @@
       field: clean(g('FLD')), company: clean(g('COMP')), county: clean(g('CNTY') || g('COUN')), state: clean(g('STAT') || g('PROV')),
       meta: { location: clean(g('LOC')), spud: clean(g('SPUD') || g('SPD') || g('SPDT')), logDate: clean(g('DATE')), service: clean(g('SRVC')), country: clean(g('CTRY')) },
       notes, depthUnit, curves: p.curves, tops, wrap: p.wrap, nullv: p.nullv, rows: p.rows, reversed: p.reversed,
-      neutronMatrix, survey, casedHole,
+      neutronMatrix, survey, casedHole, sensorOffsets: offsets,
       params: { bht: num('BHT', 'MXT', 'BHTEMP'), td: num('TDL', 'TDD', 'TD'), bitSize: num('BS', 'BIT'), rmf: num('RMF'), rm: num('RM', 'RMS') },
     };
   }
@@ -422,5 +449,5 @@
   // The elevation that depths hang from: KB when plausible, else GL (flagged), else none.
   function datumElevation(w) { const e = w.elevation || {}; return Number.isFinite(e.kb) ? e.kb : Number.isFinite(e.gl) ? e.gl : undefined; }
 
-  root.WellerLAS = { parseLAS, diagnoseLAS, sniffBinary, apiKey, nameKey, parseCoord, fmtApi, mergeWells, resample, LAS_TEMPLATE, normalizeWell, parseSurvey, minCurvatureTVD, tvdAt, datumElevation, median, leadingNumber, parseHeaderLine };
+  root.WellerLAS = { parseLAS, diagnoseLAS, sniffBinary, apiKey, nameKey, parseCoord, fmtApi, mergeWells, resample, shiftCurve, sensorOffsets, LAS_TEMPLATE, normalizeWell, parseSurvey, minCurvatureTVD, tvdAt, datumElevation, median, leadingNumber, parseHeaderLine };
 })(typeof globalThis !== 'undefined' ? globalThis : this);
