@@ -64,6 +64,7 @@ async function processFile(m,f){
     await db.drop(m.id); evict(m.id);
     const keepTies=m.pages.map(p=>({ties:p.ties||[],skip:p.skip}));
     if(m.kind==='pdf') await processPdf(m,f); else await processTiff(m,f);
+    if(!M.logs.includes(m)){ await db.drop(m.id); evict(m.id); return; }   // removed while it was being read
     // Re-opening a file keeps the depth ties and skips made before.
     m.pages.forEach((p,i)=>{ if(keepTies[i]){ p.ties=keepTies[i].ties; if(keepTies[i].skip!==undefined) p.skip=keepTies[i].skip; } });
     await db.put('logs',m.id,{complete:true,file:m.file,at:Date.now()});
@@ -342,7 +343,7 @@ function renderSide(){ const el=$('mudSide'); if(!el) return; const m=selLog();
   let html=`<div class="row"><button class="primary" id="mudOpen">Open PDF or TIFF…</button><input type="file" id="mudFile" accept=".pdf,.tif,.tiff" multiple hidden></div>
     <p class="hint">Up to ${MAX_PANEL} logs side by side. Files over ${WARN_MB} MB ask first. Images are kept in this browser only. <span id="mudStore"></span></p>
     ${M.warn?`<div class="mwarn">${esc(M.warn.text)} <button class="small" id="mudForce">Open anyway</button> <button class="small link" id="mudWarnX">Skip</button></div>`:''}
-    <section><h3>Mudlogs <span class="pill">${M.logs.length}</span> <button class="small" id="mudSortWE" title="Order the panel by longitude from the header">Sort west → east</button></h3><ul class="list">${list||'<li class="hint">None yet</li>'}</ul></section>`;
+    <section><h3>Mudlogs <span class="pill">${M.logs.length}</span> <button class="small" id="mudSortWE" title="Order the panel by longitude from the header">Sort west → east</button></h3><ul class="list">${list||'<li class="hint">None yet</li>'}</ul>${M.logs.length>1?'<button class="small link" id="mudClearAll" title="Remove every mudlog, its picks and ties, and its stored images from this browser">Remove all mudlogs</button>':''}</section>`;
   if(m){ const w=linked(m), curves=w?w.curves.filter(c=>!c.sparse&&c!==w.curves[0]).map(c=>c.mnemonic):[]; const s=sol(m), fitted=m.pages.filter(p=>p.fit).length, cal=calState(m);
     const f=(k,l,t='text',extra='')=>`<label>${l}<input type="${t}" data-mf="${k}" value="${esc(m[k]??'')}" ${extra}></label>`;
     html+=`<section><h3>${esc(m.name)}</h3><div class="mform">
@@ -382,6 +383,8 @@ function bindSide(){ const el=$('mudSide');
     if(t.id==='mudCal'){ setTool(M.tool==='calib'?'view':'calib'); return; }
     if(t.id==='mudTieClear'){ const m=selLog(); m.pages.forEach(p=>p.ties=[]); render(); return; }
     if(t.dataset.mup!==undefined){ const i=+t.dataset.mup; if(i>0){ [M.logs[i-1],M.logs[i]]=[M.logs[i],M.logs[i-1]]; M.panel=M.logs.filter(m=>M.panel.includes(m.id)).map(m=>m.id); render(); } return; }
+    if(t.id==='mudClearAll'){ if(!confirm(`Remove all ${M.logs.length} mudlogs, their picks and ties, and their stored images? Tops linked to LAS wells stay.`)) return;
+      for(const m of M.logs){ evict(m.id); db.drop(m.id).catch(()=>{}); } M.logs=[]; M.panel=[]; M.sel=null; M.warn=''; if(M.tool==='calib') M.tool='view'; render(); flash('All mudlogs removed'); return; }
     if(t.dataset.mdel){ const m=byId(t.dataset.mdel); if(!confirm(`Remove ${m.name} and its stored images?`)) return; M.logs=M.logs.filter(x=>x!==m); M.panel=M.panel.filter(id=>id!==m.id); if(M.sel===m.id) M.sel=M.logs[0]?.id||null; evict(m.id); db.drop(m.id).catch(()=>{}); if(M.tool==='calib') M.tool='view'; render(); return; }
     if(t.dataset.mtdel){ const [i,j]=t.dataset.mtdel.split(':').map(Number); selLog().pages[i].ties.splice(j,1); render(); return; }
     if(t.dataset.mpdel){ delPick(selLog(),t.dataset.mpdel); render(); return; }
