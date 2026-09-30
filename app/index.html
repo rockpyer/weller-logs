@@ -218,6 +218,7 @@ button.link{border:0;background:none;padding:2px 4px;color:var(--muted)}button.l
 .about .cta a{padding:6px 12px;border-radius:4px;text-decoration:none;border:1px solid var(--line);color:var(--ink)}
 .about .cta a.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
 .notesbtn{margin-top:6px}
+#askDlg .dlg{width:min(480px,100%)}#askBody{margin:0;line-height:1.45}
 .toast{position:fixed;left:50%;top:42%;transform:translate(-50%,-50%);z-index:2000;pointer-events:none;background:var(--panel);color:var(--ink);border:1px solid var(--line);border-radius:10px;box-shadow:0 8px 30px rgba(0,0,0,.18);padding:14px 22px;font-size:16px;font-weight:600;max-width:min(90vw,520px);text-align:center;transition:opacity .4s}
 .toast.out{opacity:0}
 .tip{position:fixed;z-index:55;pointer-events:none;background:var(--panel);color:var(--ink);border:1px solid var(--line);border-radius:4px;box-shadow:0 4px 14px rgba(0,0,0,.18);padding:6px 8px;font-size:12px;max-width:280px}
@@ -325,7 +326,7 @@ i.sw{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:5p
       <button data-mode="mud" role="tab" aria-selected="false" title="PDF and TIFF mudlogs side by side (beta)">Mudlogs <small class="beta">beta</small></button>
     </div>
     <div class="actions">
-      <input type="file" id="fileIn" accept=".las,.LAS,.txt,.csv,.lasproj,.json,.pdf,.tif,.tiff" multiple hidden>
+      <input type="file" id="fileIn" multiple hidden>
       <button id="btnNew" title="Start an empty project">New</button>
       <button id="btnOpen" class="primary" title="LAS, project, tops CSV, point-data CSV, or a PDF/TIFF mudlog (Cmd+O). You can also drop files anywhere.">Open…</button>
       <button id="btnSave" title="Save project (Cmd+S)">Save</button>
@@ -506,6 +507,15 @@ i.sw{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:5p
     </table></div>
     <div class="row" id="tdAddRow"><button class="small" id="tdAddCurve">+ curve</button><span class="hint" id="tdHint"></span></div>
     <div class="foot"><button id="tdDelete">Delete track</button><button id="tdSaveDefaults" title="Use the current track set as the default for new projects">Save all tracks as my defaults</button><button id="tdResetDefaults">Reset to built-in</button><span style="flex:1"></span><button id="tdCancel">Cancel</button><button class="primary" id="tdSave">Apply</button></div>
+  </div>
+</div>
+
+<div id="askDlg" class="modal" hidden>
+  <div class="dlg" role="alertdialog" aria-labelledby="askTitle" aria-describedby="askBody">
+    <h3 id="askTitle"></h3>
+    <p id="askBody"></p>
+    <label class="hint" id="askOptWrap" hidden><input type="checkbox" id="askOpt"> <span id="askOptText"></span></label>
+    <div class="foot"><button id="askCancel">Cancel</button><button class="primary" id="askOk">OK</button></div>
   </div>
 </div>
 

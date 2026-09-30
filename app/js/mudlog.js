@@ -389,9 +389,9 @@ function bindSide(){ const el=$('mudSide');
     if(t.id==='mudCal'){ setTool(M.tool==='calib'?'view':'calib'); return; }
     if(t.id==='mudTieClear'){ const m=selLog(); m.pages.forEach(p=>p.ties=[]); render(); return; }
     if(t.dataset.mup!==undefined){ const i=+t.dataset.mup; if(i>0){ [M.logs[i-1],M.logs[i]]=[M.logs[i],M.logs[i-1]]; M.panel=M.logs.filter(m=>M.panel.includes(m.id)).map(m=>m.id); render(); } return; }
-    if(t.id==='mudClearAll'){ if(!confirm(`Remove all ${M.logs.length} mudlogs, their picks and ties, and their stored images? Tops linked to LAS wells stay.`)) return;
-      clearAll(); render(); flash('All mudlogs removed'); return; }
-    if(t.dataset.mdel){ const m=byId(t.dataset.mdel); if(!confirm(`Remove ${m.name} and its stored images?`)) return; M.logs=M.logs.filter(x=>x!==m); M.panel=M.panel.filter(id=>id!==m.id); if(M.sel===m.id) M.sel=M.logs[0]?.id||null; evict(m.id); db.drop(m.id).catch(()=>{}); if(M.tool==='calib') M.tool='view'; render(); return; }
+    if(t.id==='mudClearAll'){ window.weAsk({title:`Remove all ${M.logs.length} mudlogs?`,body:'Their picks, ties and stored images go too. Tops linked to LAS wells stay.',ok:'Remove all'}).then(r=>{ if(!r) return;
+      clearAll(); render(); flash('All mudlogs removed'); }); return; }
+    if(t.dataset.mdel){ const m=byId(t.dataset.mdel); window.weAsk({title:`Remove ${m.name}?`,body:'Its picks, ties and stored images go too.',ok:'Remove'}).then(r=>{ if(!r) return; M.logs=M.logs.filter(x=>x!==m); M.panel=M.panel.filter(id=>id!==m.id); if(M.sel===m.id) M.sel=M.logs[0]?.id||null; evict(m.id); db.drop(m.id).catch(()=>{}); if(M.tool==='calib') M.tool='view'; render(); }); return; }
     if(t.dataset.mtdel){ const [i,j]=t.dataset.mtdel.split(':').map(Number); selLog().pages[i].ties.splice(j,1); render(); return; }
     if(t.dataset.mpdel){ delPick(selLog(),t.dataset.mpdel); render(); return; }
     if(t.dataset.mpanel) return;

@@ -105,7 +105,10 @@ Methods, equations, defaults and limits: [docs/PETROPHYSICS.md](docs/PETROPHYSIC
 - **Open…** (Cmd+O), or drop files anywhere: LAS, `.lasproj`, tops CSV (`well, top, md`) or point-data CSV
   (`well, md`, then one column per measurement, units in the header such as `k (mD)`). PDF and TIFF files open in
   the Mudlogs tab.
-- **New** starts an empty project (it asks first). Units and theme stay as they are.
+- **New** closes all wells, mudlogs and their stored files (it asks first). Tick "Also reset settings" to return
+  tracks, interpretation parameters, units, depth labels, header height and map to defaults; theme stays.
+- **Older projects** saved before the LAS text was stored inside: open the .lasproj together with its LAS files
+  (select them all in one Open) and the wells come back with their tops and edits. Save again to pack them in.
 - **Save** (Cmd+S) writes the `.lasproj`. Brave and Chrome save back to the same file; Firefox downloads a copy.
   The project holds the LAS files (gzip), mudlog images, tops, shifts and edits, point data, tracks (order, curves,
   colors, scales), interpretation parameters, hang, zoom, section order, units, depth labels and header height, so
