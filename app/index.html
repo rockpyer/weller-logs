@@ -127,6 +127,7 @@ ul.list .meta{margin-left:auto;font:11px "IBM Plex Mono",monospace;color:var(--m
 .viewbar .well{font:600 15px "IBM Plex Sans Condensed",sans-serif}
 .viewbar label{display:flex;align-items:center;gap:5px;color:var(--muted)}
 .viewbar .sp{flex:1}
+.viewbar .scalegrp{display:flex;align-items:center;gap:6px;flex-wrap:nowrap}
 .logscroll{flex:1;overflow:auto;position:relative;background:var(--ground)}
 #logPanel{display:flex;gap:18px;padding:10px 12px 40px;align-items:flex-start;position:relative;min-width:max-content}
 .column{display:flex;flex-direction:column;background:var(--paper);box-shadow:var(--shadow);border:1px solid var(--line)}
@@ -135,7 +136,18 @@ ul.list .meta{margin-left:auto;font:11px "IBM Plex Mono",monospace;color:var(--m
 .tracks{display:flex}
 .track{display:flex;flex-direction:column;border-right:1px solid var(--line)}
 .track:last-child{border-right:0}
-.thead{position:sticky;top:33px;z-index:2;background:var(--paper);border-bottom:1px solid var(--line);padding:4px 4px 3px;min-height:30px}
+.thead{position:sticky;top:33px;z-index:2;background:var(--paper);border-bottom:1px solid var(--line);padding:4px 4px 3px;min-height:24px;overflow:hidden}
+.thead.clip::after{content:"";position:absolute;left:0;right:0;bottom:0;height:14px;background:linear-gradient(transparent,var(--paper));pointer-events:none}
+.thead .hmore{position:absolute;right:3px;bottom:2px;z-index:1;font:600 10px "IBM Plex Sans",sans-serif;padding:0 5px;border:1px solid var(--line);border-radius:8px;background:var(--paper);color:var(--muted);line-height:14px;cursor:pointer}
+.thead .hmore:hover{color:var(--ink);border-color:var(--muted)}
+.thead .hgrip{position:absolute;left:0;right:0;bottom:0;height:5px;cursor:row-resize;z-index:0}
+.thead .hgrip:hover{background:var(--line)}
+.thead .tn[draggable]{cursor:grab}
+.track.dragsrc{opacity:.5}.track.dropm .thead{box-shadow:inset 0 0 0 2px var(--accent)}.track.dropl{box-shadow:inset 3px 0 0 var(--accent)}.track.dropr{box-shadow:inset -3px 0 0 var(--accent)}
+.trackrow.dragsrc{opacity:.45}.trackrow.dropb{box-shadow:inset 0 2px 0 var(--accent)}.trackrow.dropa{box-shadow:inset 0 -2px 0 var(--accent)}.trackrow.dropm{box-shadow:inset 0 0 0 2px var(--accent)}
+details.emptytr{margin-top:6px;border-top:1px dashed var(--line);padding-top:4px}
+details.emptytr summary{font-size:12px;color:var(--muted);cursor:pointer;padding:2px 6px}
+details.emptytr .trackrow{opacity:.7}
 .thead .tn{font:600 11px "IBM Plex Sans Condensed",sans-serif;text-transform:uppercase;letter-spacing:.06em;display:flex;justify-content:space-between;align-items:center;color:var(--muted)}
 .thead .tn button{padding:0 4px;border:0;background:none;color:var(--muted);font-size:13px;line-height:1}
 .scale{font:10px "IBM Plex Mono",monospace;font-variant-numeric:tabular-nums;display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:4px;margin-top:2px}
@@ -356,7 +368,7 @@ i.sw{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:5p
         <div class="row"><select id="exampleSel" aria-label="Load example data"><option value="">Load example data…</option><option value="niobrara">Denver Basin Niobrara</option><option value="labasin">LA Basin (synthetic)</option></select></div>
       </details>
       <details open><summary><h2>Tracks</h2></summary>
-        <div class="tools"><label class="mini"><input type="checkbox" id="showEmpty"> show empty</label><button class="small" id="btnAddTrack">+ track</button></div>
+        <div class="tools"><label class="mini"><input type="checkbox" id="showEmpty"> show empty</label><button class="small" id="btnShowAll" hidden title="Show every track that has data in the correlation section">show all</button><button class="small" id="btnAddTrack">+ track</button></div>
         <div id="trackList"></div>
       </details>
       <details open><summary><h2>Point data <span class="pill" id="pointCount"></span></h2></summary>
@@ -391,11 +403,10 @@ i.sw{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:5p
         <label id="spacingWrap" hidden>Spacing
           <select id="spacing"><option value="equal">Equal</option><option value="distance">By distance</option></select>
         </label>
-        <button class="small" id="btnFit" title="Fit the logs to the window">Fit</button>
-        <span class="sp"></span>
+        <span class="scalegrp"><button class="small" id="btnFit" title="Fit the logs to the window: sets the scale">Fit</button>
         <label title="Vertical scale. 1:240 means one inch on screen is 240 inches (20 ft) of hole: 5 in per 100 ft, the common detail print. 1:600 is 2 in per 100 ft, the common correlation print. Screen sizes assume 96 px per inch. Ctrl or Cmd + scroll zooms freely.">Scale <select id="scaleSel" aria-label="Vertical scale"></select></label>
         <button class="small" id="zoomOut" title="Smaller scale">−</button>
-        <button class="small" id="zoomIn" title="Larger scale">+</button>
+        <button class="small" id="zoomIn" title="Larger scale">+</button></span>
       </div>
       <div class="logscroll" id="logScroll">
         <div id="logPanel"><svg id="overlay"></svg><div id="cursor"></div></div>

@@ -28,14 +28,16 @@ const A={
   GRLT:['GRLT','GR_LT','GRLEFT','GR_LEFT'], GRRT:['GRRT','GRRIGHT','GR_RIGHT'], ASY:['GRASY','ASY','GR_ASY','GRAS','GRUDA','ASYM'],
   INC:['INC','INCL','DEVI','DEV','INCLINATION','SINC','INCL_MWD'], AZI:['AZI','AZIM','HAZI','AZ','AZIMUTH','SAZ','AZIM_MWD'],
   MTMP:['MUDT','TMUD','MTIN','MTOUT','MT_IN','MT_OUT','MUD_TEMP','MTEMPIN','MTEMPOUT','FLOWTEMP'], WOB:['WOB','WOBA'], RPM:['RPM'], TG:['TG','TGU','TGAS','GAS','TOTGAS','GASU','TOTAL GAS','TOTALGAS','TOTAL_GAS'], C1:['C1','CH4','METH','METHANE'], C2:['C2','C2H6','ETH'], C3:['C3','C3H8','PROP'],
-  C4:['C4','NC4','IC4','C4N','C4I'], C5:['C5','NC5','IC5','C5N','C5I'], H2S:['H2S'], CO2:['CO2'],
+  C4:['C4','NC4','IC4','C4N','C4I'], C5:['C5','NC5','IC5','C5N','C5I'], H2S:['H2S','H2S_PPM'], CO2:['CO2','CO2_PPM'],
+  // Mud-log shows (Petrolog and similar): stain, fluorescence, cut and pops as 0-100 ratings or percents; gas from crushed cuttings.
+  OIL:['OIL','OILSTN','OIL_STAIN','STAIN','OILSTAIN'], FLR:['FLR','FLOR','FLU','FLUOR_PCT','FLUPCT'], CUT:['CUT','CUTFL','CUT_FL','CUTFLU'], POPS:['POPS','POP'], CG:['CGSU','CUTGAS','CTG','CGAS'],
 };
 // Cuttings percentages as logged on mud logs (Petrolog and similar). Order = stacking order, left to right.
 const LITH=[
   {label:'Clay',aliases:['CLY','CLAY'],color:'#8C7B62'},{label:'Claystone',aliases:['CST','CLST'],color:'#A89A84'},{label:'Kaolinite',aliases:['KAO'],color:'#D9CFC0'},
-  {label:'Siltstone',aliases:['SLT','SLTST','SILT'],color:'#B9B39A'},{label:'Fine sand',aliases:['FSD','FSND'],color:'#F2E3A8'},{label:'Med sand',aliases:['MSD','MSND'],color:'#E8D27E'},
-  {label:'Coarse sand',aliases:['CSD','CSND'],color:'#D9BD5A'},{label:'Sandstone',aliases:['SSD','SST','SS'],color:'#E4C96A'},{label:'Limestone',aliases:['LS','LIME','LST'],color:'#9DBBD6'},
-  {label:'Anhydrite',aliases:['ANHYDRITE','ANHY','ANH'],color:'#C9A7D6'},{label:'Cement',aliases:['CMT'],color:'#9A9A9A'},
+  {label:'Siltstone',aliases:['SLT','SLTST','SILT'],color:'#B9B39A'},{label:'Sandy siltstone',aliases:['SDS','SDSLT','SNDSLT'],color:'#D4C88E'},{label:'Fine sand',aliases:['FSD','FSND'],color:'#F2E3A8'},{label:'Med sand',aliases:['MSD','MSND'],color:'#E8D27E'},
+  {label:'Coarse sand',aliases:['CSD','CSND'],color:'#D9BD5A'},{label:'Pebble / gravel',aliases:['PSD','PBL','GRVL','GRAVEL','CGL','CONG'],color:'#C4A25A'},{label:'Sandstone',aliases:['SSD','SST','SS'],color:'#E4C96A'},{label:'Limestone',aliases:['LS','LIME','LST'],color:'#9DBBD6'},
+  {label:'Chert',aliases:['CHT','CHERT'],pct:true,color:'#C8B8A6'},{label:'Porcelanite',aliases:['POR','PORC','PORCELANITE'],pct:true,color:'#E3DAC9'},{label:'Anhydrite',aliases:['ANHYDRITE','ANHY','ANH'],color:'#C9A7D6'},{label:'Cement',aliases:['CMT'],color:'#9A9A9A'},
   {label:'Shale',aliases:['SH','SHALE','SHL'],color:'#5E6B5A'},{label:'Silty shale',aliases:['SILTYSHALE','SLTYSH','SLTSH'],color:'#7D8A74'},{label:'Shaly sandstone',aliases:['SHALYSANDSTONE','SHYSS','SHSS'],color:'#CDB86A'},
   {label:'Marlstone',aliases:['MARLSTONE','MARL','MRL'],color:'#A2DBDB'},{label:'Chalk',aliases:['CHALK','CHK'],color:'#9FC3E0'},{label:'Dolomite',aliases:['DOLOMITE','DOL','DOLO'],color:'#C38FB4'},
   {label:'Bentonite',aliases:['BENTONITE','BENT','BENTON'],color:'#B7A1C9'},{label:'Coal',aliases:['COAL'],color:'#2B2B2B'},{label:'Salt',aliases:['SALT','HALITE'],color:'#D9A5A5'}];
@@ -46,7 +48,7 @@ function defaultTracks(){ return [
     {label:'SP',aliases:A.SP,min:-100,max:100,unit:'mV',color:'var(--sp)'},
     {label:'CAL',aliases:A.CAL,min:6,max:16,unit:'in',color:'var(--cal)',dash:'3 3'},
     {label:'BS',aliases:A.BS,min:6,max:16,unit:'in',color:'var(--muted)',dash:'1 3'},
-    {label:'TENS',aliases:A.TENS,auto:true,min:0,max:5000,unit:'lb',color:'#9B59B6',dash:'2 3'}]},
+    {label:'TENS',aliases:A.TENS,notPct:true,auto:true,min:0,max:5000,unit:'lb',color:'#9B59B6',dash:'2 3'}]},
   {id:'t20',name:'Azimuthal GR',width:150,curves:[
     {label:'GR up',aliases:A.GRUP,min:0,max:200,unit:'API',color:'#E4572E'},
     {label:'GR down',aliases:A.GRDN,min:0,max:200,unit:'API',color:'#3A86FF'},
@@ -91,7 +93,17 @@ function defaultTracks(){ return [
     {label:'C2',aliases:A.C2,min:1,max:100000,log:true,unit:'ppm',color:'var(--c2)',dash:'4 2'},
     {label:'C3',aliases:A.C3,min:1,max:100000,log:true,unit:'ppm',color:'#9B59B6',dash:'2 2'},
     {label:'C4',aliases:A.C4,min:1,max:100000,log:true,unit:'ppm',color:'#3A86FF',dash:'6 2'},
-    {label:'C5',aliases:A.C5,min:1,max:100000,log:true,unit:'ppm',color:'#6A8D2F',dash:'1 2'}]},
+    {label:'C5',aliases:A.C5,min:1,max:100000,log:true,unit:'ppm',color:'#6A8D2F',dash:'1 2'},
+    {label:'Cuttings gas',aliases:A.CG,min:1,max:10000,log:true,unit:'units',color:'var(--muted)',dash:'1 3'}]},
+  // Mud-log shows together, the way they are read: stain, fluorescence, cut and pops at the same depth.
+  {id:'t22',name:'Shows',width:120,curves:[
+    {label:'Oil',aliases:A.OIL,min:0,max:100,unit:'',color:'#2E7D32',fill:'left',fillColor:'#2E7D32',fillOpacity:.35},
+    {label:'Fluor',aliases:A.FLR,min:0,max:100,unit:'%',color:'#D4A017',fill:'left',fillColor:'#EDC84A',fillOpacity:.35},
+    {label:'Cut',aliases:A.CUT,min:0,max:100,unit:'',color:'#E07A1F',dash:'4 2'},
+    {label:'Pops',aliases:A.POPS,min:0,max:100,unit:'',color:'#9B59B6',dash:'1 2'}]},
+  {id:'t23',name:'H2S · CO2',width:110,curves:[
+    {label:'H2S',aliases:A.H2S,auto:true,own:true,min:0,max:100,unit:'ppm',color:'#C1121F'},
+    {label:'CO2',aliases:A.CO2,auto:true,own:true,min:0,max:5000,unit:'ppm',color:'#2A9D8F',dash:'4 2'}]},
   {id:'t18',name:'Vibration',width:120,curves:[
     {label:'Lateral shock',aliases:A.SHKL,auto:true,min:0,max:50,unit:'g',color:'#E4572E'},
     {label:'Axial shock',aliases:A.SHKA,auto:true,min:0,max:50,unit:'g',color:'#3A86FF',dash:'4 2'},
@@ -152,6 +164,8 @@ const CURVE_INFO={
   TEMP:'Borehole temperature.', MUDT:'Mud temperature, often from the rig (in or out). Unit and source vary; check the header.',
   SHK_LAT_MAX:'Lateral shock (g) from the MWD tool.', SHK_AXL_MAX:'Axial shock (g).', STKSLP:'Stick-slip: torsional vibration.', SHKRSK:'Shock risk level.',
   VSH_GR:'Computed by Weller Logs: shale volume from GR.', PHI_SW:'Computed by Weller Logs: porosity used for Sw.', BVW:'Computed by Weller Logs: bulk volume water.', PHIE:'Computed by Weller Logs: effective porosity.',
+  OIL:'Oil stain or show rating from the mud logger (0-100 scale in Petrolog files).', FLR:'Fluorescence of cuttings under UV (percent of sample).', CUT:'Cut rating: solvent-released hydrocarbon (visible or fluorescent).', POPS:'Pops rating: gas bubbles bursting from cuttings.',
+  CGSU:'Cuttings gas: gas released from crushed cuttings.', H2S:'Hydrogen sulfide at the shakers. A safety reading as well as a formation indicator.', CO2:'Carbon dioxide in the mud gas.',
   SW:'Computed by Weller Logs: water saturation.', TOC_DLR:'Computed by Weller Logs: TOC from delta log R.' };
 const curveInfo=cfg=>CURVE_INFO[famKey(cfg)]||CURVE_INFO[String(cfg.label||'').toUpperCase()]||'';
 // Header hover: each curve's color, what it is, where it came from, and what else in the well could stand in.
@@ -162,13 +176,17 @@ function trackTipHTML(w,t,resolved){ const rows=resolved.filter(r=>r.curve).map(
   const missing=resolved.filter(r=>!r.curve).map(r=>r.cfg.label);
   return `<div class="tiph">${esc(t.name)}</div>`+(rows.join('')||'<div class="tipv">No curves for this track in this well</div>')+(missing.length?`<div class="tipd">Not in this well: ${esc(missing.join(', '))}</div>`:''); }
 // Saved track sets and projects keep their styling but pick up new built-in tracks, curves and vendor aliases.
-const ADDED_TRACKS=['t13','t14','t15','t16','t17','t18','t19','t20','t21'], ADDED_CURVES=['t1','t3','t5','t7','t12'];
-function migrateTracks(tr){ const D=defaultTracks();
+const ADDED_TRACKS=['t13','t14','t15','t16','t17','t18','t19','t20','t21','t22','t23'], ADDED_CURVES=['t1','t3','t5','t7','t12'];
+function migrateTracks(tr){ const D=defaultTracks(); tr=[...tr];
   for(const d of D){ const t=tr.find(x=>x.id===d.id);
     if(!t){ if(ADDED_TRACKS.includes(d.id)){ const at=D.indexOf(d), next=D.slice(at+1).map(x=>tr.findIndex(y=>y.id===x.id)).find(i=>i>=0); tr.splice(next??tr.length,0,d); } continue; }
     for(const dc of d.curves||[]){ const c=(t.curves||[]).find(x=>x.label===dc.label);
-      if(c){ if(Array.isArray(c.aliases)&&Array.isArray(dc.aliases)){ const have=new Set(c.aliases.map(a=>a.toUpperCase())); for(const a of dc.aliases) if(!have.has(a.toUpperCase())) c.aliases.push(a); } if(dc.auto&&c.auto===undefined) c.auto=true; }
-      else if(ADDED_CURVES.includes(d.id)&&t.curves) t.curves.push(structuredClone(dc)); } }
+      if(c){ if(Array.isArray(c.aliases)&&Array.isArray(dc.aliases)){ const have=new Set(c.aliases.map(a=>a.toUpperCase())); for(const a of dc.aliases) if(!have.has(a.toUpperCase())) c.aliases.push(a); } if(dc.auto&&c.auto===undefined) c.auto=true;
+        for(const k of ['pct','notPct','own']) if(dc[k]&&c[k]===undefined) c[k]=true; }
+      else if(ADDED_CURVES.includes(d.id)&&t.curves){ const prev=d.curves[d.curves.indexOf(dc)-1], at=prev?t.curves.findIndex(x=>x.label===prev.label):-1; t.curves.splice(at<0?t.curves.length:at+1,0,structuredClone(dc)); } } }
+  // A one-curve track added from "Not in any track" (PSD, OIL, H2S…) whose curve a built-in track now shows is dropped.
+  const covered=new Set(D.flatMap(d=>tr.some(t=>t.id===d.id)?(d.curves||[]).flatMap(c=>(c.aliases||[]).map(a=>a.toUpperCase())):[]));
+  tr=tr.filter(t=>D.some(d=>d.id===t.id)||!(t.curves?.length===1&&!t.type&&t.name===t.curves[0].label&&covered.has(String(t.curves[0].aliases?.[0]||'').toUpperCase())));
   for(const t of tr){ for(const c of t.curves||[]){ if(c.aliases?.[0]==='NET_PAY'&&/^#c1121f$/i.test(c.color)) c.color='#2E7D32'; if(c.aliases?.[0]==='VSH_GR'&&!c.aliases.includes('VSH_SP')) c.aliases.splice(1,0,'VSH_SP'); }
     if(t.type==='lith') for(const c of t.curves) if(!c.aliases.includes('VSH_SP')) c.aliases.push('VSH_SP');
     if(t.type==='flags'&&!t.curves.some(c=>c.aliases?.includes('FLAG_WO'))){ const i=t.curves.findIndex(c=>c.aliases?.[0]==='FLAG_BH'); t.curves.splice(i<0?t.curves.length:i,0,{label:'Washout',aliases:['FLAG_WO'],color:'#8C7B62'}); } } return tr; }
@@ -176,7 +194,9 @@ const norm=s=>s.toUpperCase().replace(/[:_-]\d+$/,'');
 // Every curve in the well that a track curve's aliases match, best first: open hole before cased hole, then alias order.
 const famKey=cfg=>String(cfg.aliases?.[0]||cfg.label||'').toUpperCase();
 // Among open-hole curves, one covering half again as much depth wins over the alias order (MWD GR to TD vs a short GR).
-function curveCandidates(well,cfg){ const out=[]; cfg.aliases.forEach((a,k)=>{ const au=a.toUpperCase(); for(const c of well.curves) if(norm(c.mnemonic)===au&&!out.some(o=>o.c===c)) out.push({c,k,n:c.sparse?0:c.data.length-(c.nulls||0)}); });
+const isPct=u=>/^(%|PCT|PERCENT|PERC|PC|PCNT)$/i.test(String(u||'').trim());
+function unitOk(cfg,c){ return !(cfg.pct&&!isPct(c.unit))&&!(cfg.notPct&&isPct(c.unit)); }
+function curveCandidates(well,cfg){ const out=[]; cfg.aliases.forEach((a,k)=>{ const au=a.toUpperCase(); for(const c of well.curves) if(norm(c.mnemonic)===au&&unitOk(cfg,c)&&!out.some(o=>o.c===c)) out.push({c,k,n:c.sparse?0:c.data.length-(c.nulls||0)}); });
   // A curve chosen by name in the track editor (exact) keeps its place ahead of better-covered alternatives.
   return out.sort((x,y)=>cfg.exact?(x.k-y.k):(!!x.c.cased-!!y.c.cased)||(x.n>1.5*y.n?-1:y.n>1.5*x.n?1:x.k-y.k)).map(o=>o.c); }
 // A well can pin which curve a family uses (well settings), or show all of them ('*').
@@ -188,6 +208,7 @@ const lsGet=(k,d)=>{ try{ const v=localStorage.getItem(k); return v==null?d:JSON
 const lsSet=(k,v)=>{ try{ localStorage.setItem(k,JSON.stringify(v)); return true; }catch(e){ return false; } };
 const S={ mode:'single', wells:[], selected:null, panel:[], showEmpty:false, tracks:loadTrackDefaults(), views:newViews(), datum:'MD', picking:false, hiddenPoints:[], stats:null, basemap:'map', interp:interpDefaults(), corr:{gap:64,spacing:'equal',scale:0.75},
   units:lsGet('weller.units','imperial'), depthLabels:lsGet('weller.depthLabels',{md:true,ss:true}), topColors:lsGet('weller.topColors',{}) };
+S.headH=lsGet('weller.headH',null);
 S.view=S.views.single;   // the active tab's zoom and scroll; Logs and Correlation each keep their own
 const $=id=>document.getElementById(id);
 /* ---------- Display units. Data stay in each well's own unit; only labels and inputs convert. ---------- */
@@ -292,7 +313,7 @@ function render(){ syncDatum();
     for(const t of visibleTracks(w)) tr.appendChild(logTrack(w,t,F,y,H,ticks));
     col.appendChild(tr); panel.insertBefore(col,ov); cols.push({w,el:col,F});
   });
-  const heads=[...panel.querySelectorAll('.thead')]; heads.forEach(h=>h.style.height=''); const mh=Math.max(0,...heads.map(h=>h.offsetHeight)); heads.forEach(h=>h.style.height=mh+'px');
+  fitHeads(panel);
   S._ctx={cols,y};
   if(S.mode==='corr') drawCorrelations(cols,y,gaps,zc); else S._corrWarn='';
   renderSidebar();
@@ -350,7 +371,7 @@ function quickLith(vsh,pe,P=LITH_DEF){ if(!Number.isFinite(vsh)) return null;
    brick for limestone, slanted brick for dolomite. Drawn over each lithology's color, as SVG patterns in tracks and
    as CSS backgrounds in legends. */
 const LITH_PAT={Sandstone:'sand',Siltstone:'silt',Shale:'shale',Marl:'marl','Limestone / chalk':'lime',Clay:'clay',Claystone:'clay',Kaolinite:'clay','Fine sand':'sandF','Med sand':'sand','Coarse sand':'sandC',
-  Limestone:'lime',Anhydrite:'anhy',Cement:'cement','Silty shale':'siltysh','Shaly sandstone':'shsand',Marlstone:'marl',Chalk:'chalk',Dolomite:'dolo',Bentonite:'bent',Salt:'salt'};
+  Limestone:'lime',Anhydrite:'anhy',Cement:'cement','Silty shale':'siltysh','Shaly sandstone':'shsand',Marlstone:'marl',Chalk:'chalk',Dolomite:'dolo',Bentonite:'bent',Salt:'salt','Sandy siltstone':'silt','Pebble / gravel':'sandC',Chert:'anhy',Porcelanite:'chalk'};
 function patTile(key,ink){ const L=(x1,y1,x2,y2)=>`<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${ink}" stroke-width="0.8"/>`, D=(x,y,r=0.8)=>`<circle cx="${x}" cy="${y}" r="${r}" fill="${ink}"/>`;
   const brick=L(0,0.5,16,0.5)+L(0,4.5,16,4.5)+L(0.5,0.5,0.5,4.5)+L(8.5,4.5,8.5,8.5);
   const T={sand:[10,8,D(2.5,2)+D(7.5,6)], sandF:[8,6,D(2,1.5,0.55)+D(6,4.5,0.55)], sandC:[12,10,D(3,2.5,1.2)+D(9,7.5,1.2)],
@@ -380,23 +401,67 @@ function showTip(e,html){ const tip=$('tip'); tip.innerHTML=html; tip.hidden=fal
   const x=e.clientX+14, y=e.clientY+14; tip.style.left=Math.max(8,Math.min(x,innerWidth-tip.offsetWidth-8))+'px'; tip.style.top=Math.max(8,Math.min(y,innerHeight-tip.offsetHeight-8))+'px'; }
 function hideTip(){ $('tip').hidden=true; }
 const legendTip=(title,rows)=>`<div class="tiph">${esc(title)}</div>`+rows.map(([n,c,r])=>`<div class="lr"><i style="background:${c}"></i>${esc(n)} <small>${esc(r||'')}</small></div>`).join('');
+/* Track headers share one height. By default it fits at most HEAD_ROWS curve rows; ▾ opens the rest, and the bottom
+   edge drags to any height (S.headH: null = auto, 'full', or px). */
+const HEAD_ROWS=5, HEAD_MIN=24;
+function fitHeads(panel){
+  const heads=[...panel.querySelectorAll('.thead')]; heads.forEach(h=>{ h.style.height=''; h.classList.remove('clip'); h.querySelectorAll('.hmore,.hgrip').forEach(x=>x.remove()); });
+  const nats=heads.map(h=>h.offsetHeight), nat=Math.max(0,...nats);
+  const capOf=(h,i)=>{ const rows=h.querySelectorAll(':scope > .scale'); if(rows.length<=HEAD_ROWS) return nats[i]; const r=rows[HEAD_ROWS-1]; return Math.min(nats[i],r.offsetTop+r.offsetHeight+5); };
+  const auto=Math.max(0,...heads.map(capOf)), want=S.headH==='full'?nat:Number.isFinite(S.headH)?S.headH:auto, H=Math.round(Math.max(Math.min(HEAD_MIN,nat),Math.min(nat,want)));
+  S._head={nat,auto,H};
+  heads.forEach((h,i)=>{ h.style.height=H+'px';
+    if(nats[i]>H+1){ h.classList.add('clip'); const hidden=[...h.querySelectorAll(':scope > .scale')].filter(r=>r.offsetTop+r.offsetHeight>H).length;
+      h.insertAdjacentHTML('beforeend',`<button type="button" class="hmore" data-headmore="1" title="Show the whole header. Drag the header's bottom edge to set any height.">▾${hidden?' '+hidden+' more':''}</button>`); }
+    else if(nats[i]>auto+1&&S.headH) h.insertAdjacentHTML('beforeend',`<button type="button" class="hmore" data-headless="1" title="Back to the compact header">▴</button>`);
+    h.insertAdjacentHTML('beforeend','<div class="hgrip" title="Drag to resize the header. Double-click for the compact size."></div>'); });
+}
+{ const panel=$('logPanel');
+  panel.addEventListener('click',e=>{ const b=e.target.closest('.hmore'); if(!b) return; S.headH=b.dataset.headmore?'full':null; lsSet('weller.headH',S.headH); render(); });
+  panel.addEventListener('dblclick',e=>{ if(!e.target.closest('.hgrip')) return; S.headH=null; lsSet('weller.headH',null); render(); });
+  panel.addEventListener('pointerdown',e=>{ const g=e.target.closest('.hgrip'); if(!g||!S._head) return; e.preventDefault(); g.setPointerCapture(e.pointerId);
+    const y0=e.clientY, h0=S._head.H, heads=[...panel.querySelectorAll('.thead')]; let H=null;
+    const mv=ev=>{ H=Math.round(Math.max(HEAD_MIN,Math.min(S._head.nat,h0+ev.clientY-y0))); heads.forEach(h=>h.style.height=H+'px'); };
+    const up=()=>{ g.removeEventListener('pointermove',mv); if(H!==null&&H!==h0){ S.headH=H>=S._head.nat-1?'full':H; lsSet('weller.headH',S.headH); } render(); };
+    g.addEventListener('pointermove',mv); g.addEventListener('pointerup',up,{once:true}); g.addEventListener('pointercancel',up,{once:true}); }); }
+/* Tracks: drag one onto another (plot header or sidebar row) to plot them together; drop on an edge to move it. */
+function moveTrack(srcId,dstId,after){ const s=S.tracks.find(t=>t.id===srcId), d=S.tracks.find(t=>t.id===dstId); if(!s||!d||s===d) return;
+  S.tracks=S.tracks.filter(t=>t!==s); const j=S.tracks.indexOf(d); S.tracks.splice(after?j+1:j,0,s); render(); }
+function mergeTracks(srcId,dstId){ const s=S.tracks.find(t=>t.id===srcId), d=S.tracks.find(t=>t.id===dstId); if(!s||!d||s===d) return;
+  const note=m=>{ $('stNote').textContent=m; };
+  if(s.type||(d.type&&d.type!=='lithpct')) return note(`${s.type?s.name:d.name} is a ${({lith:'computed lithology',flags:'flag',lithpct:'cuttings'})[s.type||d.type]} track and can't take other curves. Drop on its edge to move it instead.`);
+  const have=new Set(d.curves.map(famKey)), add=s.curves.filter(c=>!have.has(famKey(c))).map(c=>structuredClone(c));
+  if(d.type==='lithpct') for(const c of add){ c.min=0; c.max=100; c.unit='%'; if(/^var\(/.test(c.color||'')) c.color=nextColor(d.curves.map(x=>x.color)); }
+  d.curves.push(...add); d.width=Math.max(d.width||190,s.width||0); if(s.panel) d.panel=true; S.tracks=S.tracks.filter(t=>t!==s); render();
+  note(`${s.name} now plots in ${d.name} (${d.curves.length} curves). Cmd/Ctrl+Z undoes; ⚙ edits scales.`); }
+let trackDrag=null;
+const clearDrop=()=>document.querySelectorAll('.dropb,.dropa,.dropm,.dropl,.dropr,.dragsrc').forEach(x=>x.classList.remove('dropb','dropa','dropm','dropl','dropr','dragsrc'));
+function dropTrack(dst,zone){ const src=trackDrag; trackDrag=null; clearDrop(); if(!src||!dst||src===dst) return; if(zone==='m') mergeTracks(src,dst); else moveTrack(src,dst,zone==='a'); }
+{ const panel=$('logPanel'), tgt=e=>{ const th=e.target.closest('.thead'), id=th?.querySelector('[data-tdrag]')?.dataset.tdrag; if(!id) return null; const r=th.getBoundingClientRect(), x=(e.clientX-r.left)/r.width; return {el:th.parentElement,id,zone:x<.25?'b':x>.75?'a':'m'}; };
+  panel.addEventListener('dragstart',e=>{ const h=e.target.closest?.('[data-tdrag]'); if(!h) return; trackDrag=h.dataset.tdrag; e.dataTransfer.effectAllowed='move'; e.dataTransfer.setData('text/x-weller-track',trackDrag); h.closest('.track').classList.add('dragsrc'); hideTip(); });
+  panel.addEventListener('dragover',e=>{ if(!trackDrag) return; const T=tgt(e); document.querySelectorAll('.dropm,.dropl,.dropr').forEach(x=>x.classList.remove('dropm','dropl','dropr')); if(!T||T.id===trackDrag) return;
+    e.preventDefault(); e.stopPropagation(); e.dataTransfer.dropEffect='move'; T.el.classList.add(T.zone==='m'?'dropm':T.zone==='b'?'dropl':'dropr'); });
+  panel.addEventListener('drop',e=>{ if(!trackDrag) return; e.preventDefault(); e.stopPropagation(); const T=tgt(e); dropTrack(T?.id,T?.zone); });
+  panel.addEventListener('dragend',()=>{ trackDrag=null; clearDrop(); }); }
 function logTrack(w,t,F,y,H,ticks){
   const width=trackW(t), dep=depthOf(w), zA=F.arr; const div=document.createElement('div'); div.className='track'; div.style.width=width+'px';
   const head=document.createElement('div'); head.className='thead';
-  head.innerHTML=`<div class="tn"><span>${esc(t.name)}</span><button title="Edit track" data-edit="${t.id}">⚙</button></div>`;
+  head.innerHTML=`<div class="tn" draggable="true" data-tdrag="${t.id}" title="Drag onto another track to plot them together, or to its edge to move it"><span>${esc(t.name)}</span><button title="Edit track" data-edit="${t.id}">⚙</button></div>`;
   const MULTI=CURVE_COLORS;
   const resolved=t.curves.flatMap(c=>{ if(!t.type&&w.pick?.[famKey(c)]==='*'){ const all=curveCandidates(w,c); if(all.length>1) return all.map((curve,k)=>({cfg:{...autoCfg(effCfg(w,c),curve),label:curve.mnemonic,color:k?MULTI[(k-1)%MULTI.length]:c.color,dash:c.dash,fill:k?'none':c.fill},curve})); }
     const curve=resolveCurve(w,c); return [{cfg:curve?autoCfg(effCfg(w,c),curve):c,curve}]; });
   // Auto-scaled curves sharing a unit in one track share one scale (min and average thickness must be comparable).
-  const grp={}; for(const r of resolved) if(r.cfg.auto&&r.curve){ const k=String(r.cfg.unit||''), [a,b]=r.curve._as||[r.cfg.min,r.cfg.max]; const g=grp[k]||(grp[k]=[Infinity,-Infinity]); g[0]=Math.min(g[0],a,b); g[1]=Math.max(g[1],a,b); }
-  for(const r of resolved) if(r.cfg.auto&&r.curve){ const [a,b]=grp[String(r.cfg.unit||'')]; r.cfg={...r.cfg,...(r.cfg.min>r.cfg.max?{min:b,max:a}:{min:a,max:b})}; }
+  // A curve with no data, or one marked own (H2S vs CO2, both ppm but orders apart), keeps its own scale.
+  const gk=r=>r.cfg.own?'own:'+r.cfg.label:String(r.cfg.unit||''), live=r=>r.curve.sparse||r.curve.nulls<r.curve.data.length;
+  const grp={}; for(const r of resolved) if(r.cfg.auto&&r.curve&&live(r)){ const k=gk(r), [a,b]=r.curve._as||[r.cfg.min,r.cfg.max]; const g=grp[k]||(grp[k]=[Infinity,-Infinity]); g[0]=Math.min(g[0],a,b); g[1]=Math.max(g[1],a,b); }
+  for(const r of resolved) if(r.cfg.auto&&r.curve&&live(r)){ const [a,b]=grp[gk(r)]; r.cfg={...r.cfg,...(r.cfg.min>r.cfg.max?{min:b,max:a}:{min:a,max:b})}; }
   const gr=resolveCurve(w,{aliases:A.GR}), pe=resolveCurve(w,{aliases:A.PE}); let lithCls=null;
   if(t.type==='lithpct'){ const have=resolved.filter(r=>r.curve&&!r.curve.sparse); head.innerHTML+=`<div class="scale" style="color:var(--muted)"><span>0</span><span class="c">${have.length?have.length+' components':'no cuttings curves'}</span><span class="r">100%</span></div><div class="legend">${have.map(r=>`<i style="background:${patCSS(r.cfg.label,r.cfg.color,!t.nopat)}" title="${r.cfg.label} (${r.curve.mnemonic})"></i>`).join('')}</div>`; }
   const LP=lithParams(t), hasPE=!!(pe&&!pe.sparse);
   const vs=resolveCurve(w,{aliases:['VSH_GR','VSH_SP']}), vSrc=gr&&!gr.sparse?'GR':vs?'SP':null;
   if(t.type==='lith') head.innerHTML+=`<div class="scale" style="color:var(--muted)" title="Computed from ${esc(gr?.mnemonic||vSrc||'GR')} cutoffs, not a mud-log or core description${gr?.cased?'. This gamma ray was logged through casing and reads low; pick an open-hole GR in well settings':''}"><span></span><span class="c">${vSrc?'computed* '+esc(vSrc==='GR'?gr.mnemonic:'SP')+(hasPE?' + PE':''):'needs GR or SP'}${gr?.cased?' · cased':''}</span><span></span></div><div class="legend">${Object.keys(lithRules(LP,hasPE)).map(k=>`<i style="background:${patCSS(k,LP.colors[k],!t.nopat)}"></i>`).join('')}</div>`;
   else if(t.type==='flags') head.innerHTML+=`<div class="legend">${resolved.filter(r=>r.curve).map(r=>`<i style="background:${r.cfg.color}"></i>`).join('')}</div>`;
-  else for(const {cfg,curve} of resolved){ const s=document.createElement('div'); s.className='scale'; s.style.color=cfg.color; s.style.opacity=curve?1:.35; s.title=curve?.description||'';
+  else for(const {cfg,curve} of resolved){ if(t.type==='lithpct'&&!curve) continue; const s=document.createElement('div'); s.className='scale'; s.style.color=cfg.color; s.style.opacity=curve?1:.35; s.title=curve?.description||'';
     s.innerHTML=`<span>${cfg.min}</span><span class="c">${curve?curve.mnemonic:cfg.label+' (none)'}${cfg.unit?' '+cfg.unit:''}${cfg.tag?' · '+cfg.tag:''}</span><span class="r">${cfg.max}</span><span class="bar${curve?.sparse?' pts':cfg.dash?' dash':''}"></span>`; head.appendChild(s); }
   div.appendChild(head);
   const svg=d3.create('svg').attr('width',width).attr('height',H).classed('pick',S.picking);
@@ -518,7 +583,11 @@ function renderSidebar(){
   renderMap();
   $('wellCount').textContent=S.wells.length;
   setHTML($('wellList'),S.wells.map(w=>{ const inSec=S.panel.includes(w.id); return `<li data-well="${w.id}" data-wellmeta="${w.id}" draggable="true" class="${w.id===S.selected?'sel':''}"><span class="grip" aria-hidden="true">⋮⋮</span><button type="button" class="dot${inSec?' in':''}" data-sect="${w.id}" aria-pressed="${inSec}" title="${inSec?'In the correlation section: click to remove':'Add to the correlation section'}"></button><span class="wn">${esc(w.name)}</span><button class="small" data-wellset="${w.id}" title="Well settings">⚙</button></li>`; }).join(''));
-  setHTML($('trackList'),S.tracks.map((t,i)=>`<div class="trackrow"><span class="sw">${t.curves.slice(0,4).map(c=>`<i style="background:${c.color||'var(--muted)'}"></i>`).join('')}</span><span class="nm">${t.name}</span><label title="Show in correlation panel" style="display:${S.mode==='corr'?'inline':'none'};font-size:11px;color:var(--muted)"><input type="checkbox" data-panel="${i}"${t.panel?' checked':''}> panel</label><button class="small" data-up="${i}" title="Move left">◂</button><button class="small" data-dn="${i}" title="Move right">▸</button><button class="small" data-edit="${t.id}">⚙</button></div>`).join(''));
+  // Tracks with a curve in any open well first; tracks nothing loaded can fill sit in a closed group at the bottom.
+  const has=t=>(t.curves||[]).some(c=>c.aliases&&S.wells.some(w=>resolveCurve(w,c))), rows=S.tracks.map((t,i)=>({t,i,on:has(t)})); S._trackHas=rows.map(r=>r.on);
+  const row=({t,i})=>`<div class="trackrow" draggable="true" data-trow="${t.id}" title="Drag onto another track to plot them together, or above or below it to move it"><span class="sw">${t.curves.slice(0,4).map(c=>`<i style="background:${c.color||'var(--muted)'}"></i>`).join('')}</span><span class="nm">${esc(t.name)}</span><label title="Show in correlation panel" style="display:${S.mode==='corr'?'inline':'none'};font-size:11px;color:var(--muted)"><input type="checkbox" data-panel="${i}"${t.panel?' checked':''}> panel</label><button class="small" data-up="${i}" title="Move left">◂</button><button class="small" data-dn="${i}" title="Move right">▸</button><button class="small" data-edit="${t.id}">⚙</button></div>`, on=rows.filter(r=>r.on), off=rows.filter(r=>!r.on);
+  setHTML($('trackList'),on.map(row).join('')+(off.length?`<details class="emptytr"${S._emptyOpen?' open':''}><summary>${off.length} track${off.length>1?'s':''} with no data in the open wells</summary>${off.map(row).join('')}</details>`:''));
+  $('btnShowAll').hidden=!(S.mode==='corr'&&on.some(r=>!r.t.panel));
   renderPointList(); renderInterpPanel();
   const w=wellById(S.selected), zc=S._zc||zoneColorMap();
   setHTML($('topsWellSel'),S.wells.map(x=>`<option value="${x.id}"${x.id===S.selected?' selected':''}>${esc(x.name)}</option>`).join('')); $('topsWellSel').value=S.selected||'';
@@ -541,6 +610,14 @@ function renderSidebar(){
     if(li&&li.dataset.well!==dragId){ const after=li.classList.contains('dropa'); const w=wellById(dragId); S.wells=S.wells.filter(x=>x!==w); const j=S.wells.findIndex(x=>x.id===li.dataset.well); S.wells.splice(after?j+1:j,0,w); }
     dragId=null; list._html=null; render(); });
   list.addEventListener('dragend',()=>{ dragId=null; list.querySelectorAll('.dragsrc,.dropb,.dropa').forEach(x=>x.classList.remove('dragsrc','dropb','dropa')); }); }
+{ const list=$('trackList'), tgt=e=>{ const r0=e.target.closest('[data-trow]'); if(!r0) return null; const r=r0.getBoundingClientRect(), y=(e.clientY-r.top)/r.height; return {el:r0,id:r0.dataset.trow,zone:y<.3?'b':y>.7?'a':'m'}; };
+  list.addEventListener('dragstart',e=>{ const r=e.target.closest('[data-trow]'); if(!r) return; trackDrag=r.dataset.trow; e.dataTransfer.effectAllowed='move'; e.dataTransfer.setData('text/x-weller-track',trackDrag); r.classList.add('dragsrc'); });
+  list.addEventListener('dragover',e=>{ if(!trackDrag) return; const T=tgt(e); list.querySelectorAll('.dropb,.dropa,.dropm').forEach(x=>x.classList.remove('dropb','dropa','dropm')); if(!T||T.id===trackDrag) return;
+    e.preventDefault(); e.stopPropagation(); T.el.classList.add(T.zone==='m'?'dropm':T.zone==='b'?'dropb':'dropa'); });
+  list.addEventListener('drop',e=>{ if(!trackDrag) return; e.preventDefault(); e.stopPropagation(); const T=tgt(e); list._html=null; dropTrack(T?.id,T?.zone); });
+  list.addEventListener('dragend',()=>{ trackDrag=null; clearDrop(); });
+  list.addEventListener('toggle',e=>{ if(e.target.matches?.('details.emptytr')) S._emptyOpen=e.target.open; },true); }
+$('btnShowAll').onclick=()=>{ let n=0; S.tracks.forEach((t,i)=>{ if(S._trackHas?.[i]&&!t.panel){ t.panel=true; n++; } }); render(); $('stNote').textContent=`${n} more track${n===1?'':'s'} in the section`; };
 // West to east (left to right, as on the map); wells without a location keep their order at the end.
 function sortWestEast(wells){ const lon=w=>wgs84Of(w)?.[1]; return [...wells].sort((a,b)=>{ const x=lon(a), y=lon(b); return Number.isFinite(x)&&Number.isFinite(y)?x-y:Number.isFinite(x)?-1:Number.isFinite(y)?1:0; }); }
 $('topsWellSel').onchange=e=>{ S.selected=e.target.value; render(); };
@@ -613,8 +690,9 @@ document.addEventListener('change',e=>{ if(e.target.dataset.panel!==undefined){ 
 document.addEventListener('click',e=>{
   const b=e.target.closest('button'); if(!b) return;
   if(b.dataset.edit) openTrackDlg(b.dataset.edit);
-  if(b.dataset.up!==undefined){ const i=+b.dataset.up; if(i>0){ [S.tracks[i-1],S.tracks[i]]=[S.tracks[i],S.tracks[i-1]]; render(); } }
-  if(b.dataset.dn!==undefined){ const i=+b.dataset.dn; if(i<S.tracks.length-1){ [S.tracks[i+1],S.tracks[i]]=[S.tracks[i],S.tracks[i+1]]; render(); } }
+  // ◂ ▸ swap with the next track in the same sidebar group, so a move is never hidden behind an empty track.
+  if(b.dataset.up!==undefined||b.dataset.dn!==undefined){ const i=+(b.dataset.up??b.dataset.dn), dir=b.dataset.up!==undefined?-1:1, g=S._trackHas||[]; let j=i+dir; while(j>=0&&j<S.tracks.length&&g[j]!==g[i]) j+=dir;
+    if(j>=0&&j<S.tracks.length){ [S.tracks[i],S.tracks[j]]=[S.tracks[j],S.tracks[i]]; render(); } }
   if(b.dataset.deltop){ const w=wellById(S.selected); if(w){ w.tops=w.tops.filter(t=>t.name!==b.dataset.deltop); if(S.interp?.enabled) computeInterp(w); render(); } }
   if(b.dataset.sect){ toggleSection(b.dataset.sect); return; }
   if(b.dataset.dl){ const k=b.dataset.dl, o=k==='md'?'ss':'md'; S.depthLabels={...S.depthLabels,[k]:!S.depthLabels[k]}; if(!S.depthLabels[k]&&!S.depthLabels[o]) S.depthLabels[o]=true; lsSet('weller.depthLabels',S.depthLabels); render(); }
@@ -661,7 +739,7 @@ document.addEventListener('change',e=>{ const k=e.target.dataset?.pick, w=wellBy
   w._grP=null; computeInterp(w); render(); refreshPickers(); $('stNote').textContent=`${w.name}: ${k} ${e.target.value==='*'?'shows all curves':e.target.value?'uses '+e.target.value:'back to auto'}`; });
 // A new track for one curve: auto range, a color that reads on both themes.
 function addCurveTrack(w,m){ const c=w.curves.find(x=>x.mnemonic===m); if(!c) return; const r=autoScale(c,false)||[0,100];
-  S.tracks.push({id:'t'+Date.now().toString(36),name:m,width:120,curves:[{label:m,aliases:[norm(m)],min:r[0],max:r[1],unit:c.unit||'',color:nextColor([])}]}); render(); refreshPickers(); $('stNote').textContent=`Track added for ${m}. Its ⚙ adds more curves or changes the scale.`; }
+  S.tracks.push({id:'t'+Date.now().toString(36),name:m,width:120,panel:true,curves:[{label:m,aliases:[norm(m)],min:r[0],max:r[1],unit:c.unit||'',color:nextColor([])}]}); render(); refreshPickers(); $('stNote').textContent=`Track added for ${m}. Its ⚙ adds more curves or changes the scale.`; }
 document.addEventListener('click',e=>{ const b=e.target.closest('[data-addtrack]'); if(!b) return; const w=wellById(b.dataset.wid); if(w) addCurveTrack(w,b.dataset.addtrack); });
 $('wdSplit').onclick=()=>{ const out=splitWell(wellEditing); $('wellDlg').hidden=true; render(); $('stNote').textContent=`Split into ${out.length} wells: ${out.map(w=>w.name).join(', ')}`; };
 $('wdRemove').onclick=()=>{ removeWells([wellEditing]); $('wellDlg').hidden=true; };
@@ -1079,7 +1157,7 @@ async function loadProject(p){ if(!p||p.app!=='weller-logs') throw new Error('no
     if(ref.files){ const fs=ref.files.map(f=>f.fileName); live=byFiles(fs); if(!live){ const parts=fs.map(getPart); if(parts.some(x=>!x)){ missing.push(...fs.filter((f,i)=>!parts[i])); return null; } live=rebuildWell(null,parts); } }
     else live=byFiles([ref.fileName])||getPart(ref.fileName);
     if(live){ if(ref.demo) live.demo=ref.demo; Object.assign(live,{tops:ref.tops,elevation:ref.elevation,location:ref.location,name:ref.name,api:ref.api,field:ref.field,id:ref.id,pick:ref.pick,shifts:ref.shifts,edits:ref.edits,_grP:null}); for(const k of ['company','county','state']) if(ref[k]!==undefined) live[k]=ref[k]; applyShifts(live); restorePoints(live,ref.points); return live; } missing.push(ref.fileName||ref.name); return null; }).filter(Boolean);
-  S.tracks=migrateTracks(p.tracks); S.views=p.views||newViews(); S.view=S.views[viewKey(S.mode)]||S.views.single; S.datum=p.datum||'MD'; S.topColors=p.topColors||S.topColors; S.hiddenPoints=p.hiddenPoints||[]; S.stats={...statsDefaults(),...(p.stats||{})}; S.interp={...interpDefaults(),...(p.interp||{})}; S.corr={...S.corr,...(p.corr||{})}; if(!p.tracks.some(t=>t.id==='t8')) S.tracks=[...p.tracks,...defaultTracks().filter(t=>['t8','t9','t10','t11','t12'].includes(t.id))]; setBasemap(p.basemap||'map'); if((p.version||1)<2) pointSeriesNames().forEach(placePointSeries); S.panel=(p.panel||[]).filter(id=>wellById(id));
+  S.tracks=migrateTracks(p.tracks); S.views=p.views||newViews(); S.view=S.views[viewKey(S.mode)]||S.views.single; S.datum=p.datum||'MD'; S.topColors=p.topColors||S.topColors; S.hiddenPoints=p.hiddenPoints||[]; S.stats={...statsDefaults(),...(p.stats||{})}; S.interp={...interpDefaults(),...(p.interp||{})}; S.corr={...S.corr,...(p.corr||{})}; if(!p.tracks.some(t=>t.id==='t8')) S.tracks=[...S.tracks,...defaultTracks().filter(t=>['t8','t9','t10','t11','t12'].includes(t.id))]; setBasemap(p.basemap||'map'); if((p.version||1)<2) pointSeriesNames().forEach(placePointSeries); S.panel=(p.panel||[]).filter(id=>wellById(id));
   // Older projects kept section order separately: move those wells into that order within the list.
   if((p.version||1)<3){ const pos=S.wells.map((w,i)=>S.panel.includes(w.id)?i:-1).filter(i=>i>=0); S.panel.forEach((id,k)=>{ S.wells[pos[k]]=wellById(id); }); } S.selected=wellById(p.selected)?p.selected:(S.wells[0]?.id||null);
   window.WellerMud?.fromJSON(p.mudlogs); computeAllInterp(); setMode(p.mode||'single'); $('stNote').textContent=missing.length?`Re-open these LAS files to restore them: ${missing.join(', ')}`:'Project loaded'; }
