@@ -933,9 +933,11 @@ function curveChoices(w){ const seen=new Set(), out=[];
 function curveWhere(w,c){ const d=depthOf(w); let a=-1,b=-1; for(let i=0;i<d.length;i++) if(Number.isFinite(c.data[i])){ if(a<0) a=i; b=i; }
   const src=(c.sources||[w.fileName]).filter(Boolean).join(' + ');
   return `${c.mnemonic}${c.unit?' ('+c.unit+')':''} ${a<0?'no data':fmtD(d[a],w)+'–'+fmtD(d[b],w)+' '+dispU()}${c.cased?', cased hole':''}${src?', '+src:''}`; }
+// Files the user chose to read with zeros as data although ~Well says NULL. 0 (saved with the project).
+const nullOpts=name=>(S.keepZeros||[]).includes(name)?{nullv:-999.25}:{};
 function addLASFiles(files){ const report=[], touched=[], fresh=new Set(), auto=lsGet('weller.autoMerge',true);
   for(const f of files){ const r={file:f.name,problems:[]}; report.push(r);
-    try{ const dx=WellerLAS.diagnoseLAS(f.text,f.name,f.bytes); r.problems=dx.problems; if(dx.problems.some(p=>p.level==='error')){ r.status='failed'; continue; }
+    try{ const dx=WellerLAS.diagnoseLAS(f.text,f.name,f.bytes,nullOpts(f.name)); r.problems=dx.problems; if(dx.problems.some(p=>p.level==='error')){ r.status='failed'; continue; }
       const part=normalizeWell(dx.parsed,f.name); if(f.demo) part.demo=f.demo; if(!f.demo) lasCache.put(f.name,f.text);
       const key=WellerLAS.apiKey(part.api), same=S.wells.find(w=>sourcesOf(w).includes(f.name)); let w;
       if(same){ w=rebuildWell(same,partsOf(same).map(p=>p.fileName===f.name?part:p),'parts'); replaceWell(same,w); r.status='reloaded';
@@ -975,11 +977,12 @@ function showImportSummary(report,auto=true){ lastReport=report; if(!report.leng
   if(auto) openImportReport(); }
 function snipHTML(sn){ return `<pre class="snip">${sn.map(x=>{ const t=esc(String(x.text??'').replace(/\t/g,' ').slice(0,160)); const body=x.mark?t.replace(esc(x.mark),`<mark>${esc(x.mark)}</mark>`):t; return `<span class="ln">${x.line??''}</span>${body}`; }).join('\n')}</pre>`; }
 const LV={error:'Error',warn:'Warning',info:'Note'};
+const actHTML=p=>p.action&&p.file?` <button class="small" data-lasact="${esc(p.action.kind)}" data-file="${esc(p.file)}">${esc(p.action.label)}</button>`:'';
 function offHTML(w){ const L=offsetsOf(w); if(!L.length) return ''; const u=w.depthUnit;
   return `<div class="step"><b>Sensor offsets in the header</b> <span class="hint">${L.some(o=>o.atBit)?'depths were recorded at the bit, so these curves were moved to sensor depth':'MWD/LWD deliverables are normally already at sensor depth; shift only if the header or the print says the index is bit depth'}</span>`+
     L.map(o=>{ const on=o.curves.length&&o.curves.every(m=>w.shifts?.[m]===o.off);
       return `<div class="pickrow"><span class="pk">${esc(o.tool)}</span><span>${o.off} ${u} behind the bit <small class="hint">${esc(o.source)} · ${esc(o.file||'')}</small></span>${o.applied?'<span class="hint">applied</span>':o.curves.length?`<button class="small" data-shift="${o.off}" data-curves="${esc(o.curves.join(','))}" data-wid="${w.id}">${on?'Undo shift':'Shift '+esc(o.curves.join(', '))+' up '+o.off+' '+u}</button>`:'<span class="hint">no matching curve</span>'}</div>`; }).join('')+'</div>'; }
-const probHTML=p=>`<div class="prob ${p.level}"><div><span class="lv">${LV[p.level]}</span> <b>${esc(p.title)}</b>${p.line?` <span class="hint">line ${p.line}</span>`:''}</div>${p.detail?`<div class="hint">${esc(p.detail)}</div>`:''}${p.snippet?.length?snipHTML(p.snippet):''}${p.fix?`<div class="fix"><b>Fix:</b> ${esc(p.fix)}${p.template?' See the minimal LAS below.':''}</div>`:''}</div>`;
+const probHTML=p=>`<div class="prob ${p.level}"><div><span class="lv">${LV[p.level]}</span> <b>${esc(p.title)}</b>${p.line?` <span class="hint">line ${p.line}</span>`:''}</div>${p.detail?`<div class="hint">${esc(p.detail)}</div>`:''}${p.snippet?.length?snipHTML(p.snippet):''}${p.fix?`<div class="fix"><b>Fix:</b> ${esc(p.fix)}${p.template?' See the minimal LAS below.':''}${actHTML(p)}</div>`:p.action?`<div class="fix">${actHTML(p)}</div>`:''}</div>`;
 function openImportReport(){ const R=lastReport, failed=R.filter(r=>r.status==='failed'), other=R.filter(r=>!r.wid&&r.status!=='failed');
   const wells=[...new Set(R.map(r=>r.wid).filter(Boolean))].map(wellById).filter(Boolean);
   const nW=wells.length; $('impTitle').textContent=`Loaded ${R.length-failed.length} of ${R.length} file${R.length>1?'s':''}`+(nW?` into ${nW} well${nW>1?'s':''}`:'');
@@ -994,7 +997,7 @@ function openImportReport(){ const R=lastReport, failed=R.filter(r=>r.status==='
       hid&&`<div class="step"><b>Add to a track</b> <span class="hint">loaded but not shown anywhere yet</span><div class="chips">${hid}</div></div>`,
       offHTML(w),
       missing.length&&`<div class="step"><b>Missing:</b> ${missing.join(', ')} <button class="small" data-wellset="${w.id}">Well settings</button></div>`,
-      warns.length&&`<div class="step">${warns.map(p=>`<div class="prob warn"><span class="lv">Check</span> ${esc(p.title)} <span class="hint">${esc(p.file)}</span></div>`).join('')}</div>`].filter(Boolean).join('');
+      warns.length&&`<div class="step">${warns.map(p=>`<div class="prob warn"><span class="lv">Check</span> ${esc(p.title)} <span class="hint">${esc(p.file)}</span>${p.fix&&p.action?`${p.detail?`<div class="hint">${esc(p.detail)}</div>`:''}<div class="fix">${esc(p.fix)}${actHTML(p)}</div>`:''}</div>`).join('')}</div>`].filter(Boolean).join('');
     return `<section class="imp"><div class="imph"><span class="chip ${merged?'merged':'loaded'}">${merged?'Merged':'Loaded'}</span><b>${esc(w.name)}</b><span class="hint">${nLogs} curves from ${files.length} file${files.length>1?'s':''}${how.length?' · '+esc([...new Set(how)].join('; ')):''}</span></div>
       ${todo||'<div class="hint">Nothing to do: every curve is in a track.</div>'}
       ${notes.length?`<details><summary>Details: files and ${notes.length} note${notes.length>1?'s':''}</summary><div class="hint">${files.map(esc).join(', ')}</div>${notes.map(p=>probHTML({...p,title:p.title+' ('+p.file+')'})).join('')}</details>`:''}</section>`; }).join('');
@@ -1009,6 +1012,7 @@ function methodsHTML(){ const tr=S.tracks.filter(t=>t.curves?.length&&t.type!=='
     <li>Header quirks handled: LAS 1.2 label and value swapped, elevations in ~Parameter, coordinates in degrees-minutes-seconds, KB more than 60 ft from GL ignored (depths hang on GL until corrected).</li>
     <li>Unit fixes: neutron and density porosity in pu become v/v; sonic in µs/m becomes µs/ft; drill time (min/ft) becomes ROP in ft/hr.</li>
     <li>Tolerated the way lasio does: values run together ("-999.25-999.25") are split; comma decimal marks are read as periods when splitting on spaces gives one value per curve; text such as NA, INF or NULL, and the sentinels 9999.25, 999.25 and ±2147483647, are null; header lines without the period after the mnemonic are read. The load summary notes each.</li>
+    <li>NULL in ~Well is honored, as lasio does. When it is 0 (some mud-log exports), every true zero (0% lithology, 0 ppm gas) reads as missing; the load summary counts them and offers "Keep zeros as data", which reads only -999.25 and the standard sentinels as null. The choice is saved with the project.</li>
     <li>A file that will not load is named with the reason, the line and a fix. Binary logs (DLIS, LIS, PDF, TIFF) are not read.</li></ul>`]);
   S_.push(['qc','Curve QC, despiking and normalization',`<ul><li>Checks per curve: coverage of the well's logged interval; gaps (null runs longer than 3 samples inside the curve's range); flat runs (one value over 20+ samples and 10+ ft, a stuck tool or filled interval); spikes; share outside a physical range (GR 0–1500 API, RHOB 1–3.5 g/cc, NPHI −0.15–1, DT 30–300 µs/ft…); unit against the family's usual unit. The score is the share of checks passed.</li>
     <li>A spike is a sample more than z robust standard deviations (1.4826 × MAD) from the median of the window around it (default 11 samples, z = 6). Resistivity and gas are judged on log10 values. Despike replaces spikes with that median. Thin real beds (bentonites, coals) can look like spikes: check before despiking GR or density.</li>
@@ -1045,6 +1049,12 @@ $('mthClose').onclick=()=>{ $('mthDlg').hidden=true; };
 $('mthNav').addEventListener('click',e=>{ const a=e.target.closest('a'); if(!a) return; e.preventDefault(); document.querySelector(a.getAttribute('href'))?.scrollIntoView({block:'start',behavior:'smooth'}); });
 $('impTplText').textContent=WellerLAS.LAS_TEMPLATE;
 $('impClose').onclick=()=>{ $('impDlg').hidden=true; };
+// Re-read one LAS file with or without zeros as data; the well keeps its place, tops and settings.
+$('impDlg').addEventListener('click',async e=>{ const b=e.target.closest('[data-lasact]'); if(!b) return; const name=b.dataset.file, keep=b.dataset.lasact==='keepZeros';
+  const text=await lasCache.get(name); if(!text){ $('stNote').textContent=`Re-open ${name} to re-read it`; return; }
+  S.keepZeros=(S.keepZeros||[]).filter(n=>n!==name); if(keep) S.keepZeros.push(name);
+  const rep=addLASFiles([{name,text}]); render(); autosave(); showImportSummary(lastReport.map(r=>r.file===name?rep[0]:r));
+  $('stNote').textContent=`${name}: ${keep?'zeros kept as data':'zeros read as null (NULL. 0 in the header)'}`; });
 document.addEventListener('click',e=>{ if(e.target.id==='btnImpDetails') openImportReport(); if(e.target.closest('#impDlg [data-wellset]')) $('impDlg').hidden=true; });
 let dragDepth=0;
 addEventListener('dragenter',e=>{ if(e.dataTransfer?.types?.includes('Files')){ dragDepth++; document.body.classList.add('dropping'); } });
@@ -1053,14 +1063,15 @@ addEventListener('dragover',e=>e.preventDefault());
 addEventListener('drop',async e=>{ e.preventDefault(); dragDepth=0; document.body.classList.remove('dropping'); const files=[]; for(const f of e.dataTransfer.files) files.push(await readPicked(f)); if(files.length) openFiles(files); });
 
 /* ---------- Project save / load / autosave ---------- */
-function projectJSON(){ return { version:3, app:'weller-logs', savedAt:new Date().toISOString(), mode:S.mode, selected:S.selected, panel:S.panel, datum:S.datum, views:S.views, tracks:S.tracks, hiddenPoints:S.hiddenPoints, stats:S.stats, basemap:S.basemap, interp:S.interp, corr:S.corr, topColors:S.topColors,
+function projectJSON(){ return { version:3, app:'weller-logs', savedAt:new Date().toISOString(), mode:S.mode, selected:S.selected, panel:S.panel, datum:S.datum, views:S.views, tracks:S.tracks, hiddenPoints:S.hiddenPoints, stats:S.stats, basemap:S.basemap, interp:S.interp, corr:S.corr, topColors:S.topColors,keepZeros:S.keepZeros?.length?S.keepZeros:undefined,
   mudlogs:window.WellerMud?.toJSON(),
   wells:S.wells.map(w=>({id:w.id,name:w.name,api:w.api,field:w.field,company:w.company,county:w.county,state:w.state,preset:w.preset,demo:w.demo,fileName:w.fileName,pick:w.pick,shifts:w.shifts,edits:w.edits,files:partsOf(w).length>1?partsOf(w).map(p=>({fileName:p.fileName,demo:p.demo})):undefined,location:w.location,elevation:w.elevation,depthUnit:w.depthUnit,tops:w.tops,points:pointsJSON(w),curveList:w.curves.filter(c=>!c.sparse).map(c=>c.mnemonic)})) }; }
 async function loadProject(p){ if(!p||p.app!=='weller-logs') throw new Error('not a Weller Logs project'); const missing=[];
   // A file may be a well on its own or one part of a merged well; find it wherever it is now.
   const findPart=fn=>{ for(const w of S.wells){ const ps=partsOf(w); if(ps.length===1&&w.fileName===fn) return w; const q=ps.find(q=>q.fileName===fn); if(q) return q; } return null; };
+  S.keepZeros=p.keepZeros||[];
   const fromCache={}; for(const r of p.wells){ if(r.preset) continue; for(const f of r.files||[{fileName:r.fileName,demo:r.demo}]){ if(!f.fileName||findPart(f.fileName)||fromCache[f.fileName]) continue;
-    const text=f.demo?await fetchText('data/'+f.demo):await lasCache.get(f.fileName); if(text){ try{ const w=normalizeWell(parseLAS(text),f.fileName); if(f.demo) w.demo=f.demo; fromCache[f.fileName]=w; }catch(e){} } } }
+    const text=f.demo?await fetchText('data/'+f.demo):await lasCache.get(f.fileName); if(text){ try{ const w=normalizeWell(parseLAS(text,nullOpts(f.fileName)),f.fileName); if(f.demo) w.demo=f.demo; fromCache[f.fileName]=w; }catch(e){} } } }
   const getPart=fn=>findPart(fn)||fromCache[fn];
   const byFiles=fs=>S.wells.find(w=>sourcesOf(w).join('\n')===fs.join('\n'));
   S.wells=p.wells.map(ref=>{ if(ref.preset){ const cfg=WellerSynth.PRESET_WELLS.find(c=>c.id===ref.preset); const w=presetWell(cfg); w.tops=ref.tops; w.elevation=ref.elevation; if(ref.edits){ w.edits=ref.edits; applyShifts(w); } restorePoints(w,ref.points); return w; }
