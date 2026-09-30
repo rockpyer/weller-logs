@@ -28,9 +28,14 @@ Methods, equations, defaults and limits: [docs/PETROPHYSICS.md](docs/PETROPHYSIC
   list order, which you drag to change and which starts west to east. Hang on MD, sea level (TVDSS) or flatten on any top.
   The depth track always labels real MD and subsea TVD (KB minus TVD, negative below sea level), whatever the hang.
   Deviated and horizontal wells use TVD from the directional survey in the LAS file. Zones are filled in the same
-  colors as the stats tab. Gaps can be equal or scaled to wellhead distance, which is labeled. Drag any top line to
-  move it, or type its MD in the Tops panel, where each top's color is set and can be saved as your default. The app
-  warns when tops cross between wells or are missing from one.
+  colors as the stats tab. Gaps can be equal or scaled to wellhead distance, which is labeled. The app warns when
+  tops cross between wells or are missing from one.
+- **Picking tops.** **Pick tops** above the logs (or T) opens a pick bar: choose a top (or type a new one, or press 1–9),
+  then click it in each well of the section; pick mode stays on until Done or Esc. The bar shows which wells still
+  need the top and each well's MD, where you can type an exact depth. Drag any top line to move it, and ↑/↓ nudge the
+  last pick by half a foot (Shift: 5 ft). In the Logs tab, [ and ] step to the previous or next well, keeping the top.
+  Picks redraw only the top lines and the correlation, not the logs. The Tops panel sets each top's color, which can
+  be saved as your default.
 - **Zone stats.** Box plots by zone and well, and crossplots: neutron-density with lithology lines, Pickett with Sw
   lines, PE-density with matrix points, or any two curves, colored by zone, GR band or well. The summary table gives
   gross, net, net-to-gross, net pay, average porosity and Sw, porosity-feet and hydrocarbon-feet per zone, with true
