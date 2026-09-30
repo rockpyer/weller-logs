@@ -895,11 +895,12 @@ $('btnPick').onclick=()=>{ if(!$('topName').value.trim()){ $('topName').focus();
 const lasCache={ db:null, mem:new Map(),
   open(){ return this.db||(this.db=new Promise((res,rej)=>{ try{ const r=indexedDB.open('weller',1); r.onupgradeneeded=()=>r.result.createObjectStore('las'); r.onsuccess=()=>res(r.result); r.onerror=()=>rej(r.error); }catch(e){ rej(e); } })); },
   async put(name,text){ this.mem.set(name,text); try{ const db=await this.open(); db.transaction('las','readwrite').objectStore('las').put({text,at:Date.now()},name); }catch(e){} },
+  async clear(){ this.mem.clear(); try{ const db=await this.open(); db.transaction('las','readwrite').objectStore('las').clear(); }catch(e){} },
   async get(name){ if(this.mem.has(name)) return this.mem.get(name); try{ const db=await this.open(); return await new Promise((res,rej)=>{ const r=db.transaction('las').objectStore('las').get(name); r.onsuccess=()=>res(r.result?.text||null); r.onerror=()=>rej(r.error); }); }catch(e){ return null; } } };
 
 /* ---------- Files: one Open for LAS, projects, tops CSV and point-data CSV; drag and drop anywhere ---------- */
-const OPEN_TYPES=[{description:'Well data',accept:{'text/plain':['.las','.LAS','.txt','.csv'],'application/json':['.lasproj','.json'],'application/pdf':['.pdf'],'image/tiff':['.tif','.tiff']}}];
-$('btnOpen').onclick=async()=>{ if(window.showOpenFilePicker){ try{ const hs=await showOpenFilePicker({multiple:true,types:OPEN_TYPES}); const files=[]; for(const h of hs) files.push({...await readPicked(await h.getFile()),handle:h}); openFiles(files); }catch(e){} } else $('fileIn').click(); };
+// No type filter: macOS maps .lasproj to no known type and greys it out under a JSON filter. kindOf() sorts files by content.
+$('btnOpen').onclick=async()=>{ if(window.showOpenFilePicker){ try{ const hs=await showOpenFilePicker({multiple:true}); const files=[]; for(const h of hs) files.push({...await readPicked(await h.getFile()),handle:h}); openFiles(files); }catch(e){} } else $('fileIn').click(); };
 $('fileIn').onchange=async e=>{ const files=[]; for(const f of e.target.files) files.push(await readPicked(f)); openFiles(files); e.target.value=''; };
 // PDF and TIFF mudlogs are opened as files, never read as text (a scan can be tens of MB).
 async function readPicked(f){ if(/\.(pdf|tiff?)$/i.test(f.name)) return {name:f.name,file:f,mud:true}; return {name:f.name,text:await f.text(),bytes:new Uint8Array(await f.slice(0,16).arrayBuffer())}; }
@@ -909,7 +910,10 @@ function kindOf(f){ const t=f.text.trimStart(); if(/\.(lasproj|json)$/i.test(f.n
 async function openFiles(files){ const mud=files.filter(f=>f.mud); files=files.filter(f=>!f.mud); if(mud.length) window.WellerMud?.openFiles(mud.map(f=>f.file)); if(!files.length) return;
   const by={project:[],las:[],tops:[],points:[]}; for(const f of files) by[kindOf(f)].push(f); const report=[];
   const other=(f,fn)=>{ try{ report.push({file:f.name,status:'loaded',note:fn(),problems:[]}); }catch(err){ report.push({file:f.name,status:'failed',problems:[{level:'error',cat:'Parsing',title:err.message}]}); } };
-  for(const f of by.project){ try{ await loadProject(JSON.parse(f.text)); if(f.handle) S.fileHandle=f.handle; report.push({file:f.name,status:'loaded',note:'Project loaded',problems:[]}); }
+  // LAS picked with an older project (one without the LAS inside) restores its wells instead of loading as new ones.
+  if(by.project.length&&by.las.length){ const want=new Set(); for(const f of by.project){ try{ for(const r of JSON.parse(f.text).wells||[]) for(const x of r.files||[r]) if(x.fileName) want.add(x.fileName); }catch(e){} }
+    for(const f of by.las) if(want.has(f.name)) await lasCache.put(f.name,f.text); by.las=by.las.filter(f=>!want.has(f.name)); }
+  for(const f of by.project){ try{ const miss=await loadProject(JSON.parse(f.text)); if(f.handle) S.fileHandle=f.handle; report.push({file:f.name,status:'loaded',note:'Project loaded',problems:miss?.length?[{level:'warn',cat:'Files',title:`${miss.length} LAS file${miss.length>1?'s are':' is'} not in this project file or this browser: ${miss.join(', ')}`,fix:'Open the project again and select those LAS files with it (Cmd/Ctrl-click). Save afterwards and the project carries them.'}]:[]}); }
     catch(err){ report.push({file:f.name,status:'failed',problems:[{level:'error',cat:err instanceof SyntaxError?'Parsing':'File type',title:err instanceof SyntaxError?'Not valid JSON: '+err.message:err.message,fix:'Open a .lasproj saved by Weller Logs.'}]}); } }
   if(by.las.length) report.push(...addLASFiles(by.las));
   for(const f of by.tops) other(f,()=>importTopsCSV(f.text));
@@ -1091,7 +1095,7 @@ function openImportReport(){ const R=lastReport, failed=R.filter(r=>r.status==='
     return `<section class="imp"><div class="imph"><span class="chip ${merged?'merged':'loaded'}">${merged?'Merged':'Loaded'}</span><b>${esc(w.name)}</b><span class="hint">${nLogs} curves from ${files.length} file${files.length>1?'s':''}${how.length?' · '+esc([...new Set(how)].join('; ')):''}</span></div>
       ${todo||'<div class="hint">Nothing to do: every curve is in a track.</div>'}
       ${notes.length?`<details><summary>Details: files and ${notes.length} note${notes.length>1?'s':''}</summary><div class="hint">${files.map(esc).join(', ')}</div>${notes.map(p=>probHTML({...p,title:p.title+' ('+p.file+')'})).join('')}</details>`:''}</section>`; }).join('');
-  const otherHTML=other.map(r=>`<section class="imp"><div class="imph"><span class="chip loaded">Loaded</span><b>${esc(r.file)}</b><span class="hint">${esc(r.note||'')}</span></div></section>`).join('');
+  const otherHTML=other.map(r=>`<section class="imp"><div class="imph"><span class="chip loaded">Loaded</span><b>${esc(r.file)}</b><span class="hint">${esc(r.note||'')}</span></div>${(r.problems||[]).map(probHTML).join('')}</section>`).join('');
   const failDetails=failed.some(r=>r.problems.length>1)?`<details><summary>Everything the reader found in the files that did not load</summary>${failed.map(r=>r.problems.map(p=>probHTML({...p,title:p.title+' ('+r.file+')'})).join('')).join('')}</details>`:'';
   $('impBody').innerHTML=failHTML+failDetails+wellHTML+otherHTML;
   const tpl=failed.length>0; $('impTpl').hidden=!tpl; if(tpl) $('impTpl').open=failed.some(r=>r.problems.some(p=>p.template));
@@ -1177,7 +1181,7 @@ async function loadProject(p){ if(!p||p.app!=='weller-logs') throw new Error('no
   S.tracks=migrateTracks(p.tracks); S.views=p.views||newViews(); S.view=S.views[viewKey(S.mode)]||S.views.single; S.datum=p.datum||'MD'; S.topColors=p.topColors||S.topColors; S.hiddenPoints=p.hiddenPoints||[]; S.stats={...statsDefaults(),...(p.stats||{})}; S.interp={...interpDefaults(),...(p.interp||{})}; S.corr={...S.corr,...(p.corr||{})}; if(!p.tracks.some(t=>t.id==='t8')) S.tracks=[...S.tracks,...defaultTracks().filter(t=>['t8','t9','t10','t11','t12'].includes(t.id))]; setBasemap(p.basemap||'map'); if((p.version||1)<2) pointSeriesNames().forEach(placePointSeries); S.panel=(p.panel||[]).filter(id=>wellById(id));
   // Older projects kept section order separately: move those wells into that order within the list.
   if((p.version||1)<3){ const pos=S.wells.map((w,i)=>S.panel.includes(w.id)?i:-1).filter(i=>i>=0); S.panel.forEach((id,k)=>{ S.wells[pos[k]]=wellById(id); }); } S.selected=wellById(p.selected)?p.selected:(S.wells[0]?.id||null);
-  window.WellerMud?.fromJSON(p.mudlogs); computeAllInterp(); setMode(p.mode||'single'); $('stNote').textContent=missing.length?`Re-open these LAS files to restore them: ${missing.join(', ')}`:'Project loaded'; }
+  window.WellerMud?.fromJSON(p.mudlogs); computeAllInterp(); setMode(p.mode||'single'); $('stNote').textContent=missing.length?`Re-open these LAS files to restore them: ${missing.join(', ')}`:'Project loaded'; return missing; }
 function autosave(){ try{ localStorage.setItem('weller.session',JSON.stringify(projectJSON())); }catch(e){} recordHistory(); }
 /* Undo and redo (Cmd/Ctrl+Z, Shift+Cmd/Ctrl+Z or Ctrl+Y). Each render compares an edit snapshot with the last one.
    View, mode and selection are left out, so zooming or switching tabs is not an undo step. */
@@ -1238,15 +1242,29 @@ async function loadExample(name){
   toast('Example data project loaded: Denver Basin Niobrara');
   exampleNote('Denver Basin Niobrara: 7 Laramie County, WY verticals (WOGCC) and 1 Weld County, CO horizontal. Tops are rule-based picks.'+(notes.length?' · '+notes.join(' · '):''));
   return true; }
+// In-page confirm: window.confirm() is blocked in embedded previews and returns false without showing anything.
+function ask({title,body,ok='OK',option}){ return new Promise(res=>{ $('askTitle').textContent=title; $('askBody').textContent=body||''; $('askOk').textContent=ok;
+  $('askOptWrap').hidden=!option; $('askOpt').checked=false; $('askOptText').textContent=option||'';
+  const done=v=>{ $('askDlg').hidden=true; res(v); }; $('askOk').onclick=()=>done({opt:$('askOpt').checked}); $('askCancel').onclick=()=>done(null);
+  $('askDlg').hidden=false; $('askOk').focus(); }); }
+window.weAsk=ask;
 function toast(msg){ const t=$('toast'); t.textContent=msg; t.hidden=false; t.classList.remove('out'); clearTimeout(toast.t); toast.t=setTimeout(()=>{ t.classList.add('out'); toast.t=setTimeout(()=>{ t.hidden=true; },400); },2600); }
 function exampleNote(msg){ $('stNote').innerHTML=esc(msg)+(undoProject?' <button class="small" id="btnUndoEx">Undo</button>':''); }
 document.addEventListener('click',async e=>{ if(e.target.id==='btnUndoEx'&&undoProject){ const p=undoProject; undoProject=null; await loadProject(p); } });
 // New project: nothing open, default tracks and parameters. Display preferences (units, theme) stay.
-async function newProject(){ const mud=window.WellerMud?._M.logs.length||0;
-  if((S.wells.length||mud)&&!confirm(`Start a new, empty project?\n\nThe open wells${mud?' and mudlogs (with their stored images)':''} are closed. Save first to keep this project.`)) return;
-  window.WellerMud?.clear(); S.wells=[]; S.panel=[]; S.selected=null; S.tracks=loadTrackDefaults(); S.views=newViews(); S.view=S.views.single; S.datum='MD';
-  S.hiddenPoints=[]; S.keepZeros=[]; S.stats=statsDefaults(); S.interp=interpDefaults(); S.fileHandle=null; undoProject=null; lastReport=[];
-  setMode('single'); HIST.undo=[]; HIST.redo=[]; HIST.last=editSnapshot(); $('stNote').textContent='New project: open LAS files, a project, or PDF/TIFF mudlogs'; toast('New project'); }
+async function newProject(){ const mud=window.WellerMud?._M.logs.length||0, n=S.wells.length;
+  const r=await ask({title:'Start a new project?',ok:'New project',
+    body:(n||mud?`Closes ${n} well${n===1?'':'s'}${mud?` and ${mud} mudlog${mud===1?'':'s'} with their stored images`:''}, with their tops, points and picks. Save first to keep them. `:'')+'Undo does not bring them back.',
+    option:'Also reset settings: tracks, interpretation parameters, units, depth labels, header height and map'});
+  if(!r) return;
+  window.WellerMud?.clear(); lasCache.clear(); S.wells=[]; S.panel=[]; S.selected=null; S.views=newViews(); S.view=S.views.single; S.datum='MD'; S.topColors={}; lsSet('weller.topColors',{});
+  S.hiddenPoints=[]; S.keepZeros=[]; S.stats=statsDefaults(); S.interp=interpDefaults(); S.corr={gap:64,spacing:'equal',scale:0.75}; S.fileHandle=null; undoProject=null; lastReport=[];
+  if(r.opt){ for(const k of ['weller.trackDefaults2','weller.units','weller.depthLabels','weller.headH','weller.autoMerge']) try{ localStorage.removeItem(k); }catch(e){}
+    S.units='imperial'; S.depthLabels={md:true,ss:true}; S.headH=null; S.showEmpty=false; $('showEmpty').checked=false; setBasemap('map');
+    document.querySelectorAll('[data-units]').forEach(b=>b.setAttribute('aria-pressed',b.dataset.units===S.units)); }
+  S.tracks=loadTrackDefaults(); try{ localStorage.removeItem('weller.session'); }catch(e){}
+  setMode('single'); window.WellerMud?.render?.(); HIST.undo=[]; HIST.redo=[]; HIST.last=editSnapshot();
+  $('stNote').textContent='New project: open LAS files, a project, or PDF/TIFF mudlogs'; toast(r.opt?'New project, settings reset':'New project'); }
 $('btnNew').onclick=newProject;
 $('exampleSel').onchange=async e=>{ const v=e.target.value; e.target.value=''; if(v) await loadExample(v); };
 
