@@ -129,3 +129,55 @@ test('every bundled Niobrara file parses with increasing depth and a name', () =
     assert.ok(w.name && !/^WELL$/i.test(w.name), f);
   }
 });
+
+// Petrolog-style mud log: NULL. 0 while the data never hold -999.25, so real zeros read as gaps.
+const NULL0 = `~VERSION INFORMATION
+VERS.   2.0 : CWLS LOG ASCII STANDARD - VERSION 2.0
+WRAP.    NO : ONE LINE PER DEPTH STEP
+~WELL INFORMATION
+STRT.FT 1000.0 : START DEPTH
+STOP.FT 1002.0 : STOP DEPTH
+STEP.FT    1.0 : STEP
+NULL.        0 : NULL VALUE
+WELL.  WEZU 18B : WELL
+~CURVE INFORMATION
+DEPT.FT  : Depth
+C2  .PPM : Ethane
+SS  .%   : Sandstone
+FLU .    : Fluorescence
+~A
+1000.0  0   40  0
+1001.0 12    0  0
+1002.0  0  100  2
+`;
+
+test('NULL. 0 is honored by default and flagged with the zero count', () => {
+  const { diagnoseLAS } = globalThis.WellerLAS;
+  const dx = diagnoseLAS(NULL0, 'wezu.las');
+  assert.equal(dx.parsed.nullv, 0);
+  assert.ok(Number.isNaN(dx.parsed.curves[1].data[0]));
+  const w = dx.problems.find(p => /^NULL is 0/.test(p.title));
+  assert.ok(w, 'warning present');
+  assert.equal(w.level, 'warn');
+  assert.match(w.title, /5 zero readings/);
+  assert.match(w.detail, /^Most affected: C2 \(2\), FLU \(2\), SS \(1\)\./);
+  assert.equal(w.fix, 'NULL is 0, so every zero reading is treated as missing. If zeros are real readings, set NULL to -999.25.');
+  assert.equal(w.action.kind, 'keepZeros');
+});
+
+test('Keep zeros as data: nullv -999.25 keeps zeros, standard sentinels stay null', () => {
+  const { diagnoseLAS } = globalThis.WellerLAS;
+  const dx = diagnoseLAS(NULL0.replace('1002.0  0  100  2', '1002.0  -999.25  100  2'), 'wezu.las', undefined, { nullv: -999.25 });
+  const [, c2, ss, flu] = dx.parsed.curves;
+  assert.deepEqual([...c2.data.slice(0, 2)], [0, 12]);
+  assert.ok(Number.isNaN(c2.data[2]));
+  assert.deepEqual([...ss.data], [40, 0, 100]);
+  assert.deepEqual([...flu.data], [0, 0, 2]);
+  assert.ok(!dx.problems.some(p => /^NULL is 0/.test(p.title)));
+  assert.equal(dx.problems.find(p => p.action)?.action.kind, 'zerosNull');
+});
+
+test('NULL -999.25 files get no zero warning', () => {
+  const { diagnoseLAS } = globalThis.WellerLAS;
+  assert.ok(!diagnoseLAS(NULL0.replace('NULL.        0', 'NULL.  -999.25'), 'x.las').problems.some(p => /NULL is 0/.test(p.title)));
+});

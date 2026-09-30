@@ -57,7 +57,8 @@
     return (l.match(/"[^"]*"|[^\s,]+/g) || []).map(t => t.replace(/^"|"$/g, ''));
   }
   // Parse problems are collected, not thrown: diagnoseLAS turns them into messages with the offending line.
-  function parseLAS(text) {
+  // opts.nullv overrides NULL from ~Well (the "Keep zeros as data" choice for files that declare NULL. 0).
+  function parseLAS(text, opts = {}) {
     const lines = String(text).replace(/^\uFEFF/, '').split(/\r\n|\r|\n/);   // byte-order mark; old Mac line ends
     const H = { version: {}, well: {}, params: {}, curves: [], other: [], tops: [] };
     const rows = [], rowLine = []; let sec = '', wrap = false, buf = [], version = '', dlm = 'SPACE', las3 = false, survCols = [], survHead = false;
@@ -111,13 +112,13 @@
       }
       else if (sec === 'C') H.curves.push({ mnemonic: h.mnem, unit: h.unit, description: h.desc });
     }
-    const nullv = leadingNumber(H.well.NULL?.value) ?? -999.25;
+    const headerNull = leadingNumber(H.well.NULL?.value), nullv = opts.nullv ?? headerNull ?? -999.25;
     const isNull = v => v === undefined || Number.isNaN(v) || Math.abs(v - nullv) < 1e-6 || NULLS.some(n => Math.abs(v - n) < 1e-6);
     // Unique mnemonics: a repeated GR becomes GR:2, the convention the alias lookup already strips.
     const seen = {};
     for (const c of H.curves) { const k = c.mnemonic.toUpperCase(); seen[k] = (seen[k] || 0) + 1; if (seen[k] > 1) c.mnemonic += ':' + seen[k]; }
     let n = rows.length;
-    const curves = H.curves.map((c, j) => { const a = new Float64Array(n); let nulls = 0; for (let i = 0; i < n; i++) { let v = rows[i][j]; if (isNull(v)) { v = NaN; nulls++; } a[i] = v; } return { ...c, data: a, nulls }; });
+    const curves = H.curves.map((c, j) => { const a = new Float64Array(n); let nulls = 0, byNull = 0; for (let i = 0; i < n; i++) { let v = rows[i][j]; if (isNull(v)) { if (v === nullv && !NULLS.includes(v)) byNull++; v = NaN; nulls++; } a[i] = v; } return { ...c, data: a, nulls, byNull }; });
     // Depth must increase for every downstream search; many logs are recorded bottom-up.
     let reversed = false;
     if (curves.length && n > 1 && curves[0].data[0] > curves[0].data[n - 1]) { for (const c of curves) c.data.reverse(); rowLine.reverse(); reversed = true; }
@@ -129,7 +130,7 @@
       const rl = keep.map(i => rowLine[i]); rowLine.length = 0; rowLine.push(...rl);
     }
     issues.rowLine = rowLine;
-    return { header: H, curves, wrap, nullv, rows: n, version, reversed, issues, las3 };
+    return { header: H, curves, wrap, nullv, headerNull, rows: n, version, reversed, issues, las3 };
   }
 
   /* ---------- Diagnosis: say why a file will not load, show the line, suggest the fix ---------- */
@@ -175,7 +176,7 @@
   }
 
   const clip = s => { s = String(s).replace(/\t/g, ' '); return s.length > 110 ? s.slice(0, 107) + '…' : s; };
-  function diagnoseLAS(text, name = '', bytes) {
+  function diagnoseLAS(text, name = '', bytes, opts = {}) {
     const P = []; const add = (level, cat, title, o = {}) => P.push({ level, cat, title, ...o });
     const bin = sniffBinary(text, name, bytes);
     if (bin) { add('error', 'File type', `This is ${bin.type}, not a LAS text file`, { fix: bin.fix }); return { problems: P, parsed: null }; }
@@ -190,7 +191,7 @@
         fix: delim ? 'Point data (depth plus values, e.g. core) and tops (well, top name, depth) load as CSV with a header row naming the depth column. For continuous logs, export LAS 2.0.' : REEXPORT, template: !delim });
       return { problems: P, parsed: null };
     }
-    const p = parseLAS(src), I = p.issues, secs = I.sections.map(s => s.name.toUpperCase());
+    const p = parseLAS(src, opts), I = p.issues, secs = I.sections.map(s => s.name.toUpperCase());
     const has = c => I.sections.some(s => s.sec === c);
     const secLine = c => I.sections.find(s => s.sec === c)?.line;
     if (p.las3 && I.skipped.length) add('info', 'Parsing', `LAS 3.0: read the Log data; skipped ${[...new Set(I.skipped)].join(', ')}`, { detail: 'Core, test and other LAS 3 data sets are not shown as logs.' });
@@ -229,6 +230,13 @@
         snippet: [I.rowLine[0], I.rowLine[p.rows >> 1]].filter(Boolean).map(l => ({ line: l, text: lines[l - 1] })), fix: 'Check NULL in ~Well matches the data, or that the export included the curve values.' });
       return { problems: P, parsed: p };
     }
+    // NULL. 0 (some Petrolog mud-log exports): every true zero (0% lithology, 0 ppm gas) would read as missing.
+    if (p.nullv === 0) {
+      const hit = vals.filter(c => c.byNull).sort((a, b) => b.byNull - a.byNull), total = hit.reduce((s, c) => s + c.byNull, 0);
+      if (total) add('warn', 'Header', `NULL is 0: ${total.toLocaleString()} zero reading${total > 1 ? 's' : ''} treated as missing`, {
+        detail: `Most affected: ${hit.slice(0, 6).map(c => `${c.mnemonic} (${c.byNull.toLocaleString()})`).join(', ')}${hit.length > 6 ? ', …' : ''}. Export LAS writes these as -999.25, so a measured zero and "not measured" can no longer be told apart. LAS 2.0 asks for a NULL value that cannot occur in the data.`,
+        fix: 'NULL is 0, so every zero reading is treated as missing. If zeros are real readings, set NULL to -999.25.', action: { kind: 'keepZeros', label: 'Keep zeros as data' } });
+    } else if (p.headerNull === 0 && opts.nullv !== undefined) add('info', 'Header', `NULL. 0 in ~Well ignored: zeros kept as data, only ${p.nullv} and the standard sentinels are null`, { action: { kind: 'zerosNull', label: 'Treat zeros as null' } });
     if (!vals.length) add('warn', 'No data', 'Only a depth column, no curves');
     const empty = vals.filter(c => c.nulls >= p.rows).map(c => c.mnemonic);
     if (empty.length) add('warn', 'No data', `${empty.length} curve${empty.length > 1 ? 's are' : ' is'} all null: ${empty.slice(0, 10).join(', ')}${empty.length > 10 ? ', …' : ''}`);
