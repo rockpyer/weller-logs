@@ -298,7 +298,7 @@
     while ((bot - top) / step > 2e6) step *= 2;
     const n = Math.round((bot - top) / step) + 1, grid = new Float64Array(n);
     for (let i = 0; i < n; i++) grid[i] = +(top + i * step).toFixed(6);
-    const out = new Map(); const byMnem = {}, spliced = {};
+    const out = new Map(); const byMnem = {}, spliced = {}, both = {};
     parts.forEach((p, j) => {
       if (j && (p.depthUnit || 'ft') !== unit) notes.push(`${p.fileName} depths converted ${p.depthUnit} → ${unit}`);
       const maxGap = Math.max(medianStep(deps[j]) * 3, step * 1.5);
@@ -309,7 +309,7 @@
         // are different tools or passes (mud-log vs wireline GR), so both are kept and the user picks.
         let t = out.get(key), overlap = 0, have = 0, add = 0;
         if (t) { for (let i = 0; i < n; i++) { const a = Number.isFinite(t.data[i]), b = Number.isFinite(data[i]); if (a) have++; if (b) add++; if (a && b) overlap++; }
-          if (overlap > Math.max(20, 0.1 * Math.min(have, add))) { notes.push(`${c.mnemonic.replace(/:\d+$/, '')} in ${p.fileName} overlaps ${t.mnemonic} from ${t.sources[0]} over ${(overlap * step).toFixed(0)} ${unit}: kept both`); t = null; } }
+          if (overlap > Math.max(20, 0.1 * Math.min(have, add))) { const ok = p.fileName + '|' + t.sources[0]; (both[ok] = both[ok] || { a: t.sources[0], b: p.fileName, list: [], ov: 0 }).list.push(c.mnemonic.replace(/:\d+$/, '')); both[ok].ov = Math.max(both[ok].ov, overlap * step); t = null; } }
         if (!t) {
           byMnem[m] = (byMnem[m] || 0) + 1;
           t = { mnemonic: byMnem[m] > 1 ? c.mnemonic.replace(/:\d+$/, '') + ':' + byMnem[m] : c.mnemonic.replace(/:\d+$/, ''), unit: c.unit, description: c.description, note: c.note, cased: c.cased, data, sources: [p.fileName] };
@@ -319,6 +319,7 @@
         t.sources.push(p.fileName); const sk = p.fileName + '|' + t.sources[0]; (spliced[sk] = spliced[sk] || { a: t.sources[0], b: p.fileName, list: [], ov: 0 }).list.push(t.mnemonic); spliced[sk].ov = Math.max(spliced[sk].ov, overlap * step);
       }
     });
+    for (const x of Object.values(both)) notes.push(`${x.b} overlaps ${x.a} over ${x.ov.toFixed(0)} ${unit} on ${x.list.length > 6 ? x.list.slice(0, 6).join(', ') + ` and ${x.list.length - 6} more` : x.list.join(', ')}: kept both`);
     for (const x of Object.values(spliced)) notes.push(`spliced ${x.list.join(', ')} from ${x.b} onto ${x.a}${x.ov > step * 2 ? ` (${x.ov.toFixed(0)} ${unit} overlap, ${x.a} kept)` : ''}`);
     const curves = [{ ...base.curves[0], data: grid, nulls: 0 }, ...[...out.values()].map(c => { let nulls = 0; for (const v of c.data) if (!Number.isFinite(v)) nulls++; return { ...c, nulls }; })];
     const blank = v => v === undefined || v === null || v === '' || (typeof v === 'number' && !Number.isFinite(v));
@@ -467,10 +468,18 @@
     const offsets = sensorOffsets(p, depthUnit);
     if (offsets.list.length && offsets.atBit) for (const o of offsets.list) for (const m of o.curves) { const c = p.curves.find(x => x.mnemonic === m); if (c) { c.data = shiftCurve(p.curves[0].data, c.data, o.off); c.note = `shifted ${o.off} ${depthUnit} from bit to sensor depth`; o.applied = true; } }
     const clean = s => String(s || '').replace(/^(WELL|COMPANY|FIELD|API NUMBER):\s*/i, '').trim();
-    const api = clean(g('API') || g('APIN') || g('UWI'));
+    let api = [g('API'), g('APIN'), g('UWI')].map(clean).find(v => v && !/enter|^-$/i.test(v)) || '', name = clean(g('WELL')) || fileName.replace(/\.las$/i, '');
+    // Regulator downloads (CalGEM, WOGCC, …) name files by API. Vendors copy ~Well from the neighbouring well, so a file-name
+    // API that names a different well wins, and the well name after it too, or the file merges into the wrong well.
+    const fn = String(fileName || '').match(/^(\d{10}(?:\d{2}){0,2})(?=\D|$)[\s_-]*([^_]*)/), fk = fn && apiKey(fn[1]), hk = apiKey(api);
+    if (fk && !hk) { api = fn[1]; notes.push(`API ${fmtApi(fk)} read from the file name`); }
+    else if (fk && hk?.us && hk.well !== fk.well) {
+      const fname = fn[2].replace(/\.las$/i, '').trim(), useName = /[A-Z]/i.test(fname) && /\d/.test(fname) && nameKey(fname) !== nameKey(name);
+      notes.push(`header API ${fmtApi(hk)}${useName ? ` and name ${name}` : ''} disagree with the file name (${fmtApi(fk)}${useName ? ' ' + fname : ''}); file name used, header ignored`);
+      api = fn[1]; if (useName) name = fname; }
     return {
-      id: 'u' + Math.random().toString(36).slice(2, 8), name: clean(g('WELL')) || fileName.replace(/\.las$/i, ''),
-      api: /enter|^-$/i.test(api) ? '' : api, fileName,
+      id: 'u' + Math.random().toString(36).slice(2, 8), name,
+      api, fileName,
       location: { lat, lon, crs }, elevation: { kb: kbSuspect ? undefined : kb, kbRecorded: kb, gl, kbSuspect, unit: depthUnit },
       field: clean(g('FLD')), company: clean(g('COMP')), county: clean(g('CNTY') || g('COUN')), state: clean(g('STAT') || g('PROV')),
       meta: { location: clean(g('LOC')), spud: clean(g('SPUD') || g('SPD') || g('SPDT')), logDate: clean(g('DATE')), service: clean(g('SRVC')), country: clean(g('CTRY')) },

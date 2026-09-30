@@ -305,8 +305,8 @@ function render(){ syncDatum();
     const F=frameOf(w), ticks=depthTicks(w,F,y,H);
     const col=document.createElement('div'); col.className='column'+(S.mode==='corr'&&w.id===S.selected?' sel':''); col.dataset.well=w.id; if(k>0&&S.mode==='corr') col.style.marginLeft=gaps[k-1].px+'px';
     const head=document.createElement('div'); head.className='colhead';
-    const warn=(w.notes||[]).some(n=>/ignored|corrected/.test(n));
-    head.innerHTML=`<span class="wname" data-wellmeta="${w.id}"${S.mode==='corr'?` data-selwell="${w.id}"`:''}>${esc(w.name)}${w.synthetic?' <small>synthetic</small>':''}${warn?' <small class="warn" title="'+esc(w.notes.join('; '))+'">⚠ header</small>':''}</span><small>${esc(w.api||'')}${F.note?' · '+F.note:''}</small>`;
+    const warn=(w.notes||[]).filter(n=>/ignored|corrected/.test(n)).join('\n');
+    head.innerHTML=`<span class="wname" data-wellmeta="${w.id}"${S.mode==='corr'?` data-selwell="${w.id}"`:''}>${esc(w.name)}${w.synthetic?' <small>synthetic</small>':''}${warn?' <small class="warn" title="'+esc(warn)+'">⚠ header</small>':''}</span><small>${esc(w.api||'')}${F.note?' · '+F.note:''}</small>`;
     col.appendChild(head);
     const tr=document.createElement('div'); tr.className='tracks';
     tr.appendChild(depthTrack(w,F,y,H,ticks,zc));
@@ -1026,7 +1026,8 @@ function addLASFiles(files){ const report=[], touched=[], fresh=new Set(), auto=
           if(target) how=`same well name${key?'':' (this file has no API)'}${apiOf(target)?'':' (the open well has no API)'}`; }
         if(target){ w=rebuildWell(target,[...partsOf(target),part],'prev'); replaceWell(target,w); r.status='merged';
           const mine=(w.notes||[]).filter(n=>n.includes(f.name));
-          r.problems.push({level:'info',cat:'Merge',title:`Merged into ${w.name} (${sourcesOf(w).length} files): ${how}`,detail:mine.join(' · ')||'',fix:'Wrong hole? Split it in Manage wells.'}); }
+          const dup=mine.some(n=>/kept both/.test(n));   // the same curves over the same depths: another pass, or another well
+          r.problems.push({level:dup?'warn':'info',cat:'Merge',title:`Merged into ${w.name} (${sourcesOf(w).length} files): ${how}${dup?'; it repeats curves over the same depths, so check it is the same hole':''}`,detail:mine.join(' · ')||'',fix:'Wrong hole? Split it in Manage wells.'}); }
         else{ w=part; w.sources=[f.name]; S.wells.push(w); fresh.add(w.id); r.status='loaded';
           const sib=key?.us&&S.wells.find(o=>o!==w&&apiOf(o)?.well===key.well);
           if(sib){ const kb=apiOf(sib).bore; if(sib.name===w.name&&key.bore!=='00'&&!/\bST\s*\d|SIDETRACK/i.test(w.name)) w.name+=' ST'+key.bore;
