@@ -1,7 +1,7 @@
 # Weller Logs
 
 Web-based well-log viewer and correlation tool. It opens LAS files (wireline and mud logs), draws tracks on
-standard scales, runs a transparent quick-look petrophysical interpretation, correlates tops across wells in MD,
+standard scales, runs a transparent quick-look petrophysical interpretation, correlates tops across wells in MD, ground level,
 TVDSS or flattened on a top, and summarizes zones with net pay and crossplots. It runs in Firefox, Brave and
 Chrome, installs as an offline web app, and saves everything to one `.lasproj` file: the LAS data, mudlog images,
 tops, tracks and settings, so a project opens on any computer. No data leaves your machine.
@@ -25,7 +25,7 @@ Methods, equations, defaults and limits: [docs/PETROPHYSICS.md](docs/PETROPHYSIC
   effective or total porosity with Rw corrected for temperature, Passey ΔlogR TOC, bad-hole flags, and net
   reservoir and net pay from cutoffs. Every parameter is in the Interpretation panel and saved with the project.
 - **Correlation.** The dot beside each well (or a click on the map) adds it to the section; the section follows the Wells
-  list order, which you drag to change and which starts west to east. Hang on MD, sea level (TVDSS) or flatten on any top.
+  list order, which you drag to change and which starts west to east. Hang on MD, ground level (TVD below GL), sea level (TVDSS) or flatten on any top.
   The depth track always labels real MD and subsea TVD (KB minus TVD, negative below sea level), whatever the hang.
   Deviated and horizontal wells use TVD from the directional survey in the LAS file. Zones are filled in the same
   colors as the stats tab. Gaps can be equal or scaled to wellhead distance, which is labeled. Drag any top line to

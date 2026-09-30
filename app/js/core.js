@@ -226,10 +226,11 @@ function loadPresets(){ S.wells=WellerSynth.PRESET_WELLS.map(presetWell); S.sele
 const wellById=id=>S.wells.find(w=>w.id===id);
 const depthOf=w=>w.curves[0].data;
 function wellRange(w){ const d=depthOf(w); return [d[0],d[d.length-1]]; }
-/* ---------- Depth frames: MD, TVDSS, or flattened on a top. Deviated wells use TVD from their survey. ---------- */
+/* ---------- Depth frames: MD, ground level (TVD below GL), TVDSS, or flattened on a top. Deviated wells use TVD from their survey. ---------- */
 function tvdOf(w){ if(!w.survey) return null; const d=depthOf(w); if(!w._tvd||w._tvd.length!==d.length) w._tvd=WellerLAS.tvdAt(w.survey,d); return w._tvd; }
 function mdToTvd(w,md){ return w.survey?WellerLAS.tvdAt(w.survey,Float64Array.of(md))[0]:md; }
-function syncDatum(){ if(!['MD','TVDSS'].includes(S.datum)&&!S.wells.some(w=>w.tops.some(t=>t.name===S.datum))) S.datum='MD'; }
+const DEPTH_DATUMS=['MD','GL','TVDSS'];
+function syncDatum(){ if(!DEPTH_DATUMS.includes(S.datum)&&!S.wells.some(w=>w.tops.some(t=>t.name===S.datum))) S.datum='MD'; }
 function frameOf(w){
   const dep=depthOf(w), mode=S.mode==='single'?'MD':S.datum, md={kind:'MD',z:m=>m,arr:dep,mono:true,note:''};
   if(mode==='MD') return md;
@@ -237,6 +238,11 @@ function frameOf(w){
   const mono=!tvd||src.every((v,i)=>i===0||v>=src[i-1]-1e-9);
   if(mode==='TVDSS'){ const e=WellerLAS.datumElevation(w); if(!Number.isFinite(e)) return {...md,note:'no elevation, shown in MD'};
     const hungGL=!Number.isFinite(w.elevation?.kb); return {kind:'TVDSS',z:m=>base(m)-e,arr:src.map(v=>v-e),mono,note:(hungGL?'hung on GL':'')+(tvd?(hungGL?', ':'')+'TVD from survey':'')}; }
+  // Ground level: TVD minus the KB–GL offset. Without KB the log is taken as already measured from GL.
+  if(mode==='GL'){ const {kb,gl}=w.elevation||{}, hasKB=Number.isFinite(kb), hasGL=Number.isFinite(gl);
+    if(!hasGL) return {...md,note:hasKB?'no GL, shown in MD':'no elevation, shown in MD'};
+    const off=hasKB?kb-gl:0, notes=[!hasKB&&'no KB, depths from GL as logged',tvd&&'TVD from survey'].filter(Boolean).join(', ');
+    return {kind:'GL',z:m=>base(m)-off,arr:src.map(v=>v-off),mono,note:notes}; }
   const t=w.tops.find(t=>t.name===mode); if(!t) return {...md,note:`no ${mode} pick, not flattened`};
   const zt=base(t.md); return {kind:'FLAT',z:m=>base(m)-zt,arr:src.map(v=>v-zt),mono,note:tvd?'TVD from survey':''};
 }
@@ -280,9 +286,9 @@ function depthTicks(w,F,y,H){
         const t=(v-qa)/(qb-qa), yy=y(a[i-1]+t*(a[i]-a[i-1])); if(yy>=0&&yy<=H) out.push({y:yy,v,major}); } }
     return out; };
   const thin=(list,gap)=>{ const out=[]; for(const t of list){ if(out.length&&Math.abs(out[out.length-1].y-t.y)<gap) continue; out.push(t); } return out; };
-  const hasSS=!!ss&&S.depthLabels.ss, showMD=S.depthLabels.md||!hasSS;
-  const primary=(hasSS&&(!showMD||(S.mode==='corr'&&S.datum==='TVDSS')))?(i=>ss[i]):(i=>d[i]);
-  return { grid:thin(walk(primary,true),3), md:showMD?thin(walk(i=>d[i],false),14):[], ss:hasSS?thin(walk(i=>ss[i],false),14):[], showMD, showSS:hasSS, hasSS:!!ss };
+  const hasSS=!!ss&&S.depthLabels.ss, showMD=S.depthLabels.md||!hasSS, gl=F.kind==='GL', dq=gl?(i=>a[i]):(i=>d[i]);
+  const primary=(hasSS&&(!showMD||(S.mode==='corr'&&S.datum==='TVDSS')))?(i=>ss[i]):dq;
+  return { grid:thin(walk(primary,true),3), md:showMD?thin(walk(dq,false),14):[], ss:hasSS?thin(walk(i=>ss[i],false),14):[], showMD, showSS:hasSS, hasSS:!!ss, mdLabel:gl?'GL':'MD' };
 }
 function render(){ syncDatum();
   const mudMode=S.mode==='mud'; $('mudView').hidden=!mudMode; document.querySelector('.side').hidden=mudMode; $('sideGutter').hidden=mudMode;
@@ -330,8 +336,8 @@ function depthTrack(w,F,y,H,ticks,zc){
   const cols=[ticks.showMD&&'md',ticks.showSS&&'ss'].filter(Boolean);
   const W=12+44*cols.length, u=dispU();
   const div=document.createElement('div'); div.className='track dtrack'; div.style.width=W+'px';
-  const chip=(k,lbl,dis)=>`<button type="button" data-dl="${k}" aria-pressed="${!!S.depthLabels[k]&&!dis}"${dis?` disabled title="No KB or GL elevation in this well"`:` title="Show ${k==='md'?'measured depth':'subsea TVD (KB minus TVD, negative below sea level)'}"`}>${lbl}</button>`;
-  div.innerHTML=`<div class="thead"><div class="tn">Depth</div><div class="dchips">${chip('md','MD',false)}${chip('ss','ssTVD',!ticks.hasSS)}</div><div class="scale" style="color:var(--muted)"><span></span><span class="c">${u}</span><span></span></div></div>`;
+  const chip=(k,lbl,dis)=>`<button type="button" data-dl="${k}" aria-pressed="${!!S.depthLabels[k]&&!dis}"${dis?` disabled title="No KB or GL elevation in this well"`:` title="Show ${k==='md'?(ticks.mdLabel==='GL'?'depth below ground level (TVD minus KB–GL)':'measured depth'):'subsea TVD (KB minus TVD, negative below sea level)'}"`}>${lbl}</button>`;
+  div.innerHTML=`<div class="thead"><div class="tn">Depth</div><div class="dchips">${chip('md',ticks.mdLabel,false)}${chip('ss','ssTVD',!ticks.hasSS)}</div><div class="scale" style="color:var(--muted)"><span></span><span class="c">${u}</span><span></span></div></div>`;
   const svg=d3.create('svg').attr('width',W).attr('height',H).attr('class','depthsvg');
   // Zone strip: the same zone colors as the stats tab and the correlation fills.
   for(const z of zonesOf(w)){ if(z.name==='Whole well') continue; const y0=y(F.z(z.top)), y1=y(F.z(z.base)); if(y1<0||y0>H) continue;
@@ -596,7 +602,7 @@ function renderSidebar(){
     return `<tr><td><button type="button" class="swatchbtn tiny" data-topcolor="${esc(t.name)}" data-color="${c}" style="background:${c}" title="Color for ${esc(t.name)} in every well"></button></td><td class="tn">${esc(t.name)}</td><td style="text-align:right"><input type="number" step="0.5" data-topmd="${esc(t.name)}" value="${+toDisp(t.md,w).toFixed(1)}" aria-label="${esc(t.name)} MD"></td><td><button class="small" data-deltop="${esc(t.name)}" title="Delete this pick">×</button></td></tr>`; }).join(''):'');
   const names=[...new Set(S.wells.flatMap(w=>[...w.tops].sort((a,b)=>a.md-b.md).map(t=>t.name)))];
   $('topNames').innerHTML=names.map(n=>`<option value="${esc(n)}">`).join('');
-  const dsel=$('datum'); const cur=S.datum; dsel.innerHTML=`<option value="MD">Measured depth</option><option value="TVDSS">Sea level (TVDSS)</option>`+names.map(n=>`<option value="${esc(n)}">Flatten on ${esc(n)}</option>`).join(''); dsel.value=names.includes(cur)||cur==='MD'||cur==='TVDSS'?cur:'MD';
+  const dsel=$('datum'); const cur=S.datum; dsel.innerHTML=`<option value="MD">Measured depth</option><option value="GL">Ground level</option><option value="TVDSS">Sea level (TVDSS)</option>`+names.map(n=>`<option value="${esc(n)}">Flatten on ${esc(n)}</option>`).join(''); dsel.value=names.includes(cur)||DEPTH_DATUMS.includes(cur)?cur:'MD';
   $('spacing').value=S.corr.spacing; $('showEmpty').checked=S.showEmpty;
   document.querySelectorAll('[data-units]').forEach(b=>b.setAttribute('aria-pressed',b.dataset.units===S.units));
   const sw=wellById(S.selected); $('stFile').innerHTML=sw?`<b title="${esc(sourcesOf(sw).join('\n'))}">${esc(sourcesOf(sw).length>1?sourcesOf(sw).length+' LAS files':sw.fileName||sw.name+'.las (synthetic)')}</b> · ${sw.rows||depthOf(sw).length} rows · KB ${Number.isFinite(sw.elevation.kb)?fmtD(sw.elevation.kb,sw)+' '+dispU():'?'} · null ${sw.nullv??-999.25}${sw.wrap?' · wrapped':''}`:'';
@@ -862,7 +868,7 @@ $('showEmpty').onchange=e=>{ S.showEmpty=e.target.checked; render(); };
    scrolls there; the rest of the logs stay a scroll away. */
 function fitView(){ if(S.mode==='stats'||S.mode==='mud') return render(); const wells=viewWells();
   render(); let [lo,hi]=frameExtent(wells);
-  if(S.mode==='corr'&&!['MD','TVDSS'].includes(S.datum)&&wells.length){ const k=wells[0].depthUnit==='m'?0.3048:1; lo=Math.max(lo,-400*k); hi=Math.min(hi,1200*k); }
+  if(S.mode==='corr'&&!DEPTH_DATUMS.includes(S.datum)&&wells.length){ const k=wells[0].depthUnit==='m'?0.3048:1; lo=Math.max(lo,-400*k); hi=Math.min(hi,1200*k); }
   const sc=$('logScroll'), svg=$('logPanel').querySelector('.tracks svg'), hdr=svg?svg.getBoundingClientRect().top-$('logPanel').getBoundingClientRect().top:120;
   const vh=Math.max(120,sc.clientHeight-hdr-24); S.view.pxPerFt=Math.min(20,Math.max(0.01,vh/Math.max(1,hi-lo))); S.view.fitted=true;
   render(); sc.scrollTop=Math.max(0,(lo-S.view.top)*S.view.pxPerFt); S.view.scroll=sc.scrollTop; }
@@ -1117,7 +1123,7 @@ function methodsHTML(){ const tr=S.tracks.filter(t=>t.curves?.length&&t.type!=='
   S_.push(['map','Curve mapping',`<table><thead><tr><th>Track</th><th>Curve</th><th>What it is</th><th>Mnemonics accepted</th></tr></thead><tbody>${tr.flatMap(t=>t.curves.filter(c=>c.aliases).map((c,i)=>`<tr><td>${i?'':esc(t.name)}</td><td>${esc(c.label)}</td><td>${esc(curveInfo(c))}</td><td class="mn">${esc(c.aliases.slice(0,14).join(' '))}${c.aliases.length>14?' …':''}</td></tr>`)).join('')}</tbody></table>
     <p class="hint">Array resistivity is numbered by depth of investigation in inches (R20…R85, RT10…RT90); the letter after it is a processing or resolution variant, and every variant is offered in the picker. Cuttings percentages map mud-log lithology names (Shale, Chalk, Marlstone…).</p>`]);
   S_.push(['depth','Depth, datums and horizontal wells',`<ul><li>Data stay in measured depth (MD). TVD comes from the survey in ~Other or an Inclinometry set, else from a TVD curve, by minimum curvature. ssTVD = KB (or GL) minus TVD.</li>
-    <li>Correlation hangs on MD, sea level (TVDSS) or a flattened top. A top that no well has falls back to MD.</li>
+    <li>Correlation hangs on MD, ground level (TVD minus KB–GL, so rigs of different heights line up), sea level (TVDSS) or a flattened top. A top that no well has falls back to MD.</li>
     <li>Horizontal wells in MD stretch the lateral; in TVD the lateral stacks onto a short interval and repeats section where it undulates (toe up or toe down). True stratigraphic thickness (TST) needs the survey and a dip model; it is not computed yet.</li>
     <li>Azimuthal GR (up, down, left, right) shows which way the bit crosses the beds.</li></ul>`]);
   S_.push(['mwd','MWD and LWD sensor offsets',`<ul><li>Each sensor sits some distance behind the bit. Deliverables are normally shifted to sensor depth already.</li>
