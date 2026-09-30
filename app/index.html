@@ -245,7 +245,7 @@ ul.list .wn{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:
 .swatchbtn.tiny{width:14px;height:14px;border-radius:3px;box-shadow:none}
 .gutter{width:6px;flex:none;cursor:col-resize;background:transparent;margin-left:-3px;margin-right:-3px;position:relative;z-index:5}
 .gutter:hover,.gutter.on{background:var(--focus);opacity:.4}
-#mwDlg td input{font-size:12.5px;padding:2px 5px}#mwDlg td input[type=text]{width:100%;min-width:6.5em}#mwDlg td input.mw-name{min-width:12em}#mwDlg td input.mw-state{min-width:4em}#mwDlg td input[type=number]{width:5em}
+#mwDlg td input{font-size:12.5px;padding:2px 5px}#mwDlg td input[type=text]{width:100%;min-width:6.5em}#mwDlg td input.mw-name{min-width:12em}#mwDlg td input.mw-state{min-width:4em}#mwDlg td input[type=number]{width:5em}#mwDlg .dlg{width:min(1180px,100%)}#mwDlg td input.mw-lat,#mwDlg td input.mw-lon{width:6.5em;-moz-appearance:textfield}#mwDlg td input.mw-lat::-webkit-inner-spin-button,#mwDlg td input.mw-lon::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
 #impBody{display:flex;flex-direction:column;gap:10px}
 .methods{width:min(860px,100%);font-size:13.5px;line-height:1.5}
 .methods h4{margin:14px 0 4px;font:600 13px "IBM Plex Sans Condensed",sans-serif;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}
@@ -532,7 +532,7 @@ i.sw{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:5p
     <div class="row"><button class="small" id="mwAll">Select all</button><span class="hint" id="mwCount"></span><span class="sp"></span><button class="small" id="mwSort" title="Order the list, and the section, west to east">Order west → east</button></div>
     <div class="row"><label>Set <select id="mwField"><option value="company">Operator</option><option value="field">Field</option><option value="county">County</option><option value="state">State</option><option value="kb">KB</option><option value="gl">GL</option></select></label><label>to <input type="text" id="mwVal"></label><button class="small" id="mwSet">Set for selected</button><span class="sp"></span><button class="small" id="mwMerge" title="Splice the selected wells' curves into the first selected well">Merge selected</button><button class="small" id="mwRemove">Remove selected</button><button class="small" id="mwClear">Clear all wells</button></div>
     <div class="tblwrap"><table>
-      <thead><tr><th></th><th>Name</th><th>API</th><th>Operator</th><th>Field</th><th>County</th><th>State</th><th>KB</th><th>GL</th><th title="Logged curves; the list is in each well's settings">Curves</th><th title="LAS files in this well">Files</th></tr></thead>
+      <thead><tr><th></th><th>Name</th><th>API</th><th>Operator</th><th>Field</th><th>County</th><th>State</th><th title="Decimal degrees, WGS84 or the well's datum; west is negative">Lat</th><th title="Decimal degrees; west is negative">Lon</th><th>KB</th><th>GL</th><th title="Logged curves; the list is in each well's settings">Curves</th><th title="LAS files in this well">Files</th></tr></thead>
       <tbody id="mwBody"></tbody>
     </table></div>
     <label class="hint"><input type="checkbox" id="mwAuto"> Merge LAS files into one well when their API matches the same borehole (first 12 digits; a 10-digit API is the original hole)</label>
@@ -587,6 +587,7 @@ i.sw{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:5p
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
 <script>window.L||document.write('<script src="vendor/leaflet.js"><\/script>')</script>
 <script src="synth.js"></script>
+<script src="js/apicodes.js"></script>
 <script src="js/las.js"></script>
 <script src="js/qc.js"></script>
 <script src="js/petro.js"></script>
