@@ -267,6 +267,22 @@
   function nameKey(n) { return String(n || '').toUpperCase().replace(/[^A-Z0-9]/g, ''); }
   function fmtApi(k) { return k?.us ? `${k.well.slice(0, 2)}-${k.well.slice(2, 5)}-${k.well.slice(5)}-${k.bore}` : (k?.key || ''); }
 
+  // State and county named by a US API number: 2-digit API state code, then the FIPS county code (not in Alaska).
+  function apiPlace(api) {
+    const k = apiKey(api), C = root.WellerAPICodes; if (!k?.us || !C) return null;
+    const sc = k.well.slice(0, 2), cc = k.well.slice(2, 5), st = C.states[sc]; if (!st) return null;
+    const m = new RegExp('(?:^|\\|)' + cc + '([^|]*)').exec(C.counties[sc] || '');
+    return { state: st[0] || st[1], stateName: st[1], county: m ? m[1] : '', stateCode: sc, countyCode: cc };
+  }
+  // Fill a blank or code-only ("04", "037") state and county from the API. Names typed or read from the file stay.
+  function fillPlace(w) {
+    const p = apiPlace(w.api); if (!p) return [];
+    const code = v => /^\s*\d{0,3}\s*$/.test(String(v ?? '')), did = [];
+    if (code(w.state) && p.state) { did.push(`state ${p.state}`); w.state = p.state; }
+    if (code(w.county) && p.county) { const was = String(w.county ?? '').trim(); did.push(`county ${p.county}` + (was && +was !== +p.countyCode ? ` (header said ${was}, API says ${p.countyCode})` : '')); w.county = p.county; }
+    return did;
+  }
+
   /* ---------- Merge files of one well onto one depth grid ---------- */
   function medianStep(d) { const s = []; for (let i = 1; i < d.length; i++) { const x = d[i] - d[i - 1]; if (x > 1e-9) s.push(x); } return s.length ? median(s) : 0; }
   // Linear interpolation of (dep, val) at grid depths, blank beyond the source's range or across its gaps.
@@ -479,7 +495,7 @@
       const fname = fn[2].replace(/\.las$/i, '').trim(), useName = /[A-Z]/i.test(fname) && /\d/.test(fname) && nameKey(fname) !== nameKey(name);
       notes.push(`header API ${fmtApi(hk)}${useName ? ` and name ${name}` : ''} disagree with the file name (${fmtApi(fk)}${useName ? ' ' + fname : ''}); file name used, header ignored`);
       api = fn[1]; if (useName) name = fname; }
-    return {
+    const w = {
       id: 'u' + Math.random().toString(36).slice(2, 8), name,
       api, fileName,
       location: { lat, lon, crs }, elevation: { kb: kbSuspect ? undefined : kb, kbRecorded: kb, gl, kbSuspect, unit: depthUnit },
@@ -489,10 +505,12 @@
       neutronMatrix, survey, casedHole, sensorOffsets: offsets,
       params: { bht: num('BHT', 'MXT', 'BHTEMP'), td: num('TDL', 'TDD', 'TD'), bitSize: num('BS', 'BIT'), rmf: num('RMF'), rm: num('RM', 'RMS') },
     };
+    const place = fillPlace(w); if (place.length) notes.push(place.join(', ') + ' from the API number');
+    return w;
   }
 
   // The elevation that depths hang from: KB when plausible, else GL (flagged), else none.
   function datumElevation(w) { const e = w.elevation || {}; return Number.isFinite(e.kb) ? e.kb : Number.isFinite(e.gl) ? e.gl : undefined; }
 
-  root.WellerLAS = { parseLAS, diagnoseLAS, sniffBinary, apiKey, nameKey, parseCoord, fmtApi, mergeWells, resample, shiftCurve, sensorOffsets, LAS_TEMPLATE, normalizeWell, parseSurvey, minCurvatureTVD, tvdAt, datumElevation, median, leadingNumber, parseHeaderLine };
+  root.WellerLAS = { parseLAS, diagnoseLAS, sniffBinary, apiKey, apiPlace, fillPlace, nameKey, parseCoord, fmtApi, mergeWells, resample, shiftCurve, sensorOffsets, LAS_TEMPLATE, normalizeWell, parseSurvey, minCurvatureTVD, tvdAt, datumElevation, median, leadingNumber, parseHeaderLine };
 })(typeof globalThis !== 'undefined' ? globalThis : this);
