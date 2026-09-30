@@ -881,10 +881,10 @@ $('logScroll').addEventListener('scroll',()=>{ if(S.mode!=='stats') S.view.scrol
 $('btnPick').onclick=()=>{ if(!$('topName').value.trim()){ $('topName').focus(); return; } S.picking=!S.picking; $('btnPick').classList.toggle('primary',S.picking); render(); };
 
 /* ---------- Browser cache of opened LAS text (IndexedDB), so a session resumes without re-picking files ---------- */
-const lasCache={ db:null,
+const lasCache={ db:null, mem:new Map(),
   open(){ return this.db||(this.db=new Promise((res,rej)=>{ try{ const r=indexedDB.open('weller',1); r.onupgradeneeded=()=>r.result.createObjectStore('las'); r.onsuccess=()=>res(r.result); r.onerror=()=>rej(r.error); }catch(e){ rej(e); } })); },
-  async put(name,text){ try{ const db=await this.open(); db.transaction('las','readwrite').objectStore('las').put({text,at:Date.now()},name); }catch(e){} },
-  async get(name){ try{ const db=await this.open(); return await new Promise((res,rej)=>{ const r=db.transaction('las').objectStore('las').get(name); r.onsuccess=()=>res(r.result?.text||null); r.onerror=()=>rej(r.error); }); }catch(e){ return null; } } };
+  async put(name,text){ this.mem.set(name,text); try{ const db=await this.open(); db.transaction('las','readwrite').objectStore('las').put({text,at:Date.now()},name); }catch(e){} },
+  async get(name){ if(this.mem.has(name)) return this.mem.get(name); try{ const db=await this.open(); return await new Promise((res,rej)=>{ const r=db.transaction('las').objectStore('las').get(name); r.onsuccess=()=>res(r.result?.text||null); r.onerror=()=>rej(r.error); }); }catch(e){ return null; } } };
 
 /* ---------- Files: one Open for LAS, projects, tops CSV and point-data CSV; drag and drop anywhere ---------- */
 const OPEN_TYPES=[{description:'Well data',accept:{'text/plain':['.las','.LAS','.txt','.csv'],'application/json':['.lasproj','.json'],'application/pdf':['.pdf'],'image/tiff':['.tif','.tiff']}}];
@@ -1142,13 +1142,18 @@ addEventListener('dragover',e=>e.preventDefault());
 addEventListener('drop',async e=>{ e.preventDefault(); dragDepth=0; document.body.classList.remove('dropping'); const files=[]; for(const f of e.dataTransfer.files) files.push(await readPicked(f)); if(files.length) openFiles(files); });
 
 /* ---------- Project save / load / autosave ---------- */
-function projectJSON(){ return { version:3, app:'weller-logs', savedAt:new Date().toISOString(), mode:S.mode, selected:S.selected, panel:S.panel, datum:S.datum, views:S.views, tracks:S.tracks, hiddenPoints:S.hiddenPoints, stats:S.stats, basemap:S.basemap, interp:S.interp, corr:S.corr, topColors:S.topColors,keepZeros:S.keepZeros?.length?S.keepZeros:undefined,
+function projectJSON(){ return { version:3, app:'weller-logs', savedAt:new Date().toISOString(), mode:S.mode, selected:S.selected, panel:S.panel, datum:S.datum, views:S.views, tracks:S.tracks, hiddenPoints:S.hiddenPoints, stats:S.stats, basemap:S.basemap, interp:S.interp, corr:S.corr, topColors:S.topColors,display:{units:S.units,depthLabels:S.depthLabels,showEmpty:S.showEmpty,headH:S.headH},keepZeros:S.keepZeros?.length?S.keepZeros:undefined,
   mudlogs:window.WellerMud?.toJSON(),
   wells:S.wells.map(w=>({id:w.id,name:w.name,api:w.api,field:w.field,company:w.company,county:w.county,state:w.state,preset:w.preset,demo:w.demo,fileName:w.fileName,pick:w.pick,shifts:w.shifts,edits:w.edits,files:partsOf(w).length>1?partsOf(w).map(p=>({fileName:p.fileName,demo:p.demo})):undefined,location:w.location,elevation:w.elevation,depthUnit:w.depthUnit,tops:w.tops,points:pointsJSON(w),curveList:w.curves.filter(c=>!c.sparse).map(c=>c.mnemonic)})) }; }
 async function loadProject(p){ if(!p||p.app!=='weller-logs') throw new Error('not a Weller Logs project'); const missing=[];
   // A file may be a well on its own or one part of a merged well; find it wherever it is now.
   const findPart=fn=>{ for(const w of S.wells){ const ps=partsOf(w); if(ps.length===1&&w.fileName===fn) return w; const q=ps.find(q=>q.fileName===fn); if(q) return q; } return null; };
   S.keepZeros=p.keepZeros||[];
+  const las=p.data?.las||{}; for(const [n,e] of Object.entries(las)){ try{ lasCache.put(n,await gunzip(e)); }catch(err){} }
+  if(p.data?.mudlogs) await window.WellerMud?.importData(p.data.mudlogs);
+  if(p.display){ const d=p.display; if(d.units) S.units=d.units; if(d.depthLabels) S.depthLabels=d.depthLabels; S.showEmpty=!!d.showEmpty; S.headH=d.headH??null;
+    lsSet('weller.units',S.units); lsSet('weller.depthLabels',S.depthLabels); lsSet('weller.headH',S.headH);
+    document.querySelectorAll('[data-units]').forEach(b=>b.setAttribute('aria-pressed',b.dataset.units===S.units)); }
   const fromCache={}; for(const r of p.wells){ if(r.preset) continue; for(const f of r.files||[{fileName:r.fileName,demo:r.demo}]){ if(!f.fileName||findPart(f.fileName)||fromCache[f.fileName]) continue;
     const text=f.demo?await fetchText('data/'+f.demo):await lasCache.get(f.fileName); if(text){ try{ const w=normalizeWell(parseLAS(text,nullOpts(f.fileName)),f.fileName); if(f.demo) w.demo=f.demo; fromCache[f.fileName]=w; }catch(e){} } } }
   const getPart=fn=>findPart(fn)||fromCache[fn];
@@ -1177,10 +1182,21 @@ document.addEventListener('keydown',e=>{ if(!(e.metaKey||e.ctrlKey)) return; con
   const el=e.target; if(el.matches?.('textarea,input[type=text],input:not([type])')) return;   // native text undo
   e.preventDefault(); if(el.blur&&el!==document.body) el.blur(); stepHistory(k==='z'&&!e.shiftKey); });
 const projName=()=>(wellById(S.selected)?.name||'project').replace(/\s+/g,'-')+'.lasproj';
-async function saveProject(as){ const text=JSON.stringify(projectJSON(),null,1);
+/* ---------- A saved project carries its LAS text (gzip) and mudlog images, so it opens on any machine ---------- */
+const b64enc=u8=>{ let s=''; for(let i=0;i<u8.length;i+=0x8000) s+=String.fromCharCode.apply(null,u8.subarray(i,i+0x8000)); return btoa(s); };
+const b64dec=s=>{ const b=atob(s), u=new Uint8Array(b.length); for(let i=0;i<b.length;i++) u[i]=b.charCodeAt(i); return u; };
+const pipe=(data,t)=>new Response(new Blob([data]).stream().pipeThrough(t));
+async function gzip(text){ return window.CompressionStream?{gz:b64enc(new Uint8Array(await pipe(text,new CompressionStream('gzip')).arrayBuffer()))}:{text}; }
+async function gunzip(e){ return e.text!=null?e.text:await pipe(b64dec(e.gz),new DecompressionStream('gzip')).text(); }
+async function projectFile(){ const p=projectJSON(), las={}, miss=[];
+  const names=[...new Set(S.wells.filter(w=>!w.preset).flatMap(partsOf).filter(q=>q.fileName&&!q.demo).map(q=>q.fileName))];
+  for(const n of names){ const t=await lasCache.get(n); if(t) las[n]=await gzip(t); else miss.push(n); }
+  p.data={las,mudlogs:await window.WellerMud?.exportData()}; return {text:JSON.stringify(p),miss}; }
+async function saveProject(as){ $('stNote').textContent='Packing the project…'; const {text,miss}=await projectFile();
+  const done=name=>{ $('stNote').textContent=`Saved ${name} (${(text.length/1048576).toFixed(1)} MB, data included)`+(miss.length?` · not in this browser, re-open to include: ${miss.join(', ')}`:''); };
   if(window.showSaveFilePicker){ try{ if(as||!S.fileHandle) S.fileHandle=await showSaveFilePicker({suggestedName:projName(),types:[{description:'Weller Logs project',accept:{'application/json':['.lasproj']}}]});
-      const w=await S.fileHandle.createWritable(); await w.write(text); await w.close(); $('stNote').textContent='Saved '+S.fileHandle.name; }catch(e){ if(e.name!=='AbortError') $('stNote').textContent='Save failed: '+e.message; } return; }
-  downloadBlob(projName(),new Blob([text],{type:'application/json'})); }
+      const w=await S.fileHandle.createWritable(); await w.write(text); await w.close(); done(S.fileHandle.name); }catch(e){ if(e.name!=='AbortError') $('stNote').textContent='Save failed: '+e.message; } return; }
+  downloadBlob(projName(),new Blob([text],{type:'application/json'})); done(projName()); }
 $('btnSave').onclick=()=>saveProject(false);
 document.addEventListener('keydown',e=>{ if(!(e.metaKey||e.ctrlKey)) return; const k=e.key.toLowerCase(); if(k==='o'){ e.preventDefault(); $('btnOpen').click(); } else if(k==='s'){ e.preventDefault(); saveProject(e.shiftKey); } else if(k==='e'){ e.preventDefault(); $('btnPng').click(); } });
 
@@ -1190,7 +1206,7 @@ async function fetchText(url){ try{ const r=await fetch(url); return r.ok?await 
 let undoProject=null;
 async function loadExample(name){
   undoProject=S.wells.length?projectJSON():null;
-  if(name==='labasin'){ S.tracks=loadTrackDefaults(); S.views=newViews(); loadPresets(); S.wells=sortWestEast(S.wells); S.mode='single'; setMode('single'); exampleNote('Synthetic LA Basin wells loaded'); return true; }
+  if(name==='labasin'){ S.tracks=loadTrackDefaults(); S.views=newViews(); loadPresets(); S.wells=sortWestEast(S.wells); S.mode='single'; setMode('single'); exampleNote('Synthetic LA Basin wells loaded'); toast('Example data project loaded: LA Basin (synthetic)'); return true; }
   $('stNote').textContent='Loading Denver Basin Niobrara logs…';
   const texts=await Promise.all(NIOBRARA_FILES.map(f=>fetchText('data/niobrara/'+f)));
   if(texts.some(t=>!t)){ $('stNote').textContent='Could not load the example logs (open the app from a web server, not a file).'; return false; }
@@ -1208,10 +1224,19 @@ async function loadExample(name){
   S.wells=[...vert,horiz].filter(Boolean);
   S.panel=[vert[0],vert[1],vert[3],vert[5],vert[6],horiz].filter(Boolean).map(w=>w.id); S.selected=(vert[3]||S.wells[0]).id;
   S.datum='Niobrara'; S.stats={...statsDefaults(),curve:'PHI',x:'NPHI',y:'RHOB',type:'nd'}; S.mode='corr'; setMode('corr');
+  toast('Example data project loaded: Denver Basin Niobrara');
   exampleNote('Denver Basin Niobrara: 7 Laramie County, WY verticals (WOGCC) and 1 Weld County, CO horizontal. Tops are rule-based picks.'+(notes.length?' · '+notes.join(' · '):''));
   return true; }
+function toast(msg){ const t=$('toast'); t.textContent=msg; t.hidden=false; t.classList.remove('out'); clearTimeout(toast.t); toast.t=setTimeout(()=>{ t.classList.add('out'); toast.t=setTimeout(()=>{ t.hidden=true; },400); },2600); }
 function exampleNote(msg){ $('stNote').innerHTML=esc(msg)+(undoProject?' <button class="small" id="btnUndoEx">Undo</button>':''); }
 document.addEventListener('click',async e=>{ if(e.target.id==='btnUndoEx'&&undoProject){ const p=undoProject; undoProject=null; await loadProject(p); } });
+// New project: nothing open, default tracks and parameters. Display preferences (units, theme) stay.
+async function newProject(){ const mud=window.WellerMud?._M.logs.length||0;
+  if((S.wells.length||mud)&&!confirm(`Start a new, empty project?\n\nThe open wells${mud?' and mudlogs (with their stored images)':''} are closed. Save first to keep this project.`)) return;
+  window.WellerMud?.clear(); S.wells=[]; S.panel=[]; S.selected=null; S.tracks=loadTrackDefaults(); S.views=newViews(); S.view=S.views.single; S.datum='MD';
+  S.hiddenPoints=[]; S.keepZeros=[]; S.stats=statsDefaults(); S.interp=interpDefaults(); S.fileHandle=null; undoProject=null; lastReport=[];
+  setMode('single'); HIST.undo=[]; HIST.redo=[]; HIST.last=editSnapshot(); $('stNote').textContent='New project: open LAS files, a project, or PDF/TIFF mudlogs'; toast('New project'); }
+$('btnNew').onclick=newProject;
 $('exampleSel').onchange=async e=>{ const v=e.target.value; e.target.value=''; if(v) await loadExample(v); };
 
 /* ---------- Boot: resume-last-session prompt ---------- */

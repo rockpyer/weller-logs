@@ -23,6 +23,12 @@ const db={ p:null,
   async run(store,mode,fn){ const d=await this.open(); return new Promise((res,rej)=>{ const t=d.transaction(store,mode), q=fn(t.objectStore(store)); t.oncomplete=()=>res(q&&'result' in q?q.result:undefined); t.onerror=()=>rej(t.error); t.onabort=()=>rej(t.error); }); },
   put(store,k,v){ return this.run(store,'readwrite',s=>s.put(v,k)); },
   get(store,k){ return this.run(store,'readonly',s=>s.get(k)); },
+  // All bands of one log as [key without the id, Blob], in one transaction.
+  bands(id){ return this.open().then(d=>new Promise((res,rej)=>{ const t=d.transaction('bands'), st=t.objectStore('bands'), r=IDBKeyRange.bound(id+'/',id+'/\uffff'), k=st.getAllKeys(r), v=st.getAll(r);
+    t.oncomplete=()=>res(k.result.map((key,i)=>[key.slice(id.length+1),v.result[i]])); t.onerror=()=>rej(t.error); })); },
+  restore(id,file,list){ return this.open().then(d=>new Promise((res,rej)=>{ const t=d.transaction(['bands','logs'],'readwrite'), st=t.objectStore('bands');
+    st.delete(IDBKeyRange.bound(id+'/',id+'/\uffff')); for(const [k,b] of list) st.put(b,id+'/'+k); t.objectStore('logs').put({complete:true,file,at:Date.now()},id);
+    t.oncomplete=res; t.onerror=()=>rej(t.error); t.onabort=()=>rej(t.error); })); },
   drop(id){ return Promise.all([this.run('bands','readwrite',s=>s.delete(IDBKeyRange.bound(id+'/',id+'/￿'))),this.run('logs','readwrite',s=>s.delete(id))]); } };
 const bandKey=(m,level,page,idx)=>`${m.id}/${level}/${page}/${idx}`;
 
@@ -341,7 +347,7 @@ function renderSide(){ const el=$('mudSide'); if(!el) return; const m=selLog();
   const list=M.logs.map((x,i)=>{ const inP=M.panel.includes(x.id), st=x.status==='ready'?(calState(x).ok?'':'needs depth'):x.status==='failed'?'failed':x.status==='missing'?'re-open file':(x.progress||x.status);
     return `<li class="${x.id===M.sel?'sel':''}" data-msel="${x.id}"><input type="checkbox" data-mpanel="${x.id}" ${inP?'checked':''} ${!inP&&M.panel.length>=MAX_PANEL?'disabled title="8 logs at most"':''} aria-label="Show ${esc(x.name)} in the panel"><span title="${esc(x.file?.name||'')}">${esc(x.name)}</span><small data-mstat="${x.id}" class="${x.status==='failed'?'warn':''}">${esc(st)}</small><button class="small link" data-mup="${i}" title="Move left" aria-label="Move up">↑</button><button class="small link" data-mdel="${x.id}" title="Remove" aria-label="Remove">×</button></li>`; }).join('');
   let html=`<div class="row"><button class="primary" id="mudOpen">Open PDF or TIFF…</button><input type="file" id="mudFile" accept=".pdf,.tif,.tiff" multiple hidden></div>
-    <p class="hint">Up to ${MAX_PANEL} logs side by side. Files over ${WARN_MB} MB ask first. Images are kept in this browser only. <span id="mudStore"></span></p>
+    <p class="hint">Up to ${MAX_PANEL} logs side by side. Files over ${WARN_MB} MB ask first. Images are kept in this browser and saved inside the project file. <span id="mudStore"></span></p>
     ${M.warn?`<div class="mwarn">${esc(M.warn.text)} <button class="small" id="mudForce">Open anyway</button> <button class="small link" id="mudWarnX">Skip</button></div>`:''}
     <section><h3>Mudlogs <span class="pill">${M.logs.length}</span> <button class="small" id="mudSortWE" title="Order the panel by longitude from the header">Sort west → east</button></h3><ul class="list">${list||'<li class="hint">None yet</li>'}</ul>${M.logs.length>1?'<button class="small link" id="mudClearAll" title="Remove every mudlog, its picks and ties, and its stored images from this browser">Remove all mudlogs</button>':''}</section>`;
   if(m){ const w=linked(m), curves=w?w.curves.filter(c=>!c.sparse&&c!==w.curves[0]).map(c=>c.mnemonic):[]; const s=sol(m), fitted=m.pages.filter(p=>p.fit).length, cal=calState(m);
@@ -384,7 +390,7 @@ function bindSide(){ const el=$('mudSide');
     if(t.id==='mudTieClear'){ const m=selLog(); m.pages.forEach(p=>p.ties=[]); render(); return; }
     if(t.dataset.mup!==undefined){ const i=+t.dataset.mup; if(i>0){ [M.logs[i-1],M.logs[i]]=[M.logs[i],M.logs[i-1]]; M.panel=M.logs.filter(m=>M.panel.includes(m.id)).map(m=>m.id); render(); } return; }
     if(t.id==='mudClearAll'){ if(!confirm(`Remove all ${M.logs.length} mudlogs, their picks and ties, and their stored images? Tops linked to LAS wells stay.`)) return;
-      for(const m of M.logs){ evict(m.id); db.drop(m.id).catch(()=>{}); } M.logs=[]; M.panel=[]; M.sel=null; M.warn=''; if(M.tool==='calib') M.tool='view'; render(); flash('All mudlogs removed'); return; }
+      clearAll(); render(); flash('All mudlogs removed'); return; }
     if(t.dataset.mdel){ const m=byId(t.dataset.mdel); if(!confirm(`Remove ${m.name} and its stored images?`)) return; M.logs=M.logs.filter(x=>x!==m); M.panel=M.panel.filter(id=>id!==m.id); if(M.sel===m.id) M.sel=M.logs[0]?.id||null; evict(m.id); db.drop(m.id).catch(()=>{}); if(M.tool==='calib') M.tool='view'; render(); return; }
     if(t.dataset.mtdel){ const [i,j]=t.dataset.mtdel.split(':').map(Number); selLog().pages[i].ties.splice(j,1); render(); return; }
     if(t.dataset.mpdel){ delPick(selLog(),t.dataset.mpdel); render(); return; }
@@ -444,6 +450,13 @@ function renderMud(){ if(!bound){ bound=true; bindSide(); bindBar(); bindPointer
   else { const sc=$('mudScroll'), zc=M.z0!=null?zOfY(HEAD+(sc.clientHeight-HEAD)/2):null; layout();
     if(M.goto==='top'){ sc.scrollTop=0; } else if(M.goto==='datum'){ scrollToZ(0,0.33); } else if(M.goto&&Number.isFinite(M.goto.z)) scrollToZ(M.goto.z,0.5); else if(zc!=null) scrollToZ(zc,0.5); M.goto=null; }
   syncScale(); schedule(); }
+function clearAll(){ for(const m of M.logs){ evict(m.id); db.drop(m.id).catch(()=>{}); } M.logs=[]; M.panel=[]; M.sel=null; M.warn=''; if(M.tool==='calib') M.tool='view'; }
+/* ---------- Project data: a saved .lasproj carries each ready log's image bands (WebP/JPEG, base64) ---------- */
+async function exportData(){ const out={};
+  for(const m of M.logs){ if(m.status!=='ready') continue; try{ const list=await db.bands(m.id), bands=[];
+    for(const [k,b] of list) bands.push([k,b.type,b64enc(new Uint8Array(await b.arrayBuffer()))]); if(bands.length) out[m.id]={file:m.file,bands}; }catch(e){} }
+  return Object.keys(out).length?out:undefined; }
+async function importData(data){ for(const [id,r] of Object.entries(data||{})){ try{ evict(id); await db.restore(id,r.file,r.bands.map(([k,t,d])=>[k,new Blob([b64dec(d)],{type:t})])); }catch(e){} } }
 function toJSON(){ if(!M.logs.length) return undefined; return { panel:M.panel, sel:M.sel, hang:M.hang, trackW:M.trackW, pxPerFt:M.pxPerFt,
   logs:M.logs.map(m=>({id:m.id,name:m.name,kind:m.kind,file:m.file,api:m.api,company:m.company,field:m.field,county:m.county,state:m.state,kb:m.kb,gl:m.gl,elevRef:m.elevRef,location:m.location,unit:m.unit,useText:m.useText,wellId:m.wellId,crop:m.crop,show:m.show,overlay:m.overlay,ovMin:m.ovMin,ovMax:m.ovMax,picks:m.picks,header:m.header,
     pages:m.pages.map(p=>({w:p.w,h:p.h,dpi:p.dpi,fit:p.fit,ties:p.ties,skip:p.skip||undefined,text:p.text||undefined})),ready:m.status==='ready'||undefined})) }; }
@@ -455,6 +468,6 @@ function fromJSON(j){ const old=new Map(M.logs.map(m=>[m.id,m]));
     return m; });
   M.panel=(j.panel||[]).filter(id=>byId(id)).slice(0,MAX_PANEL); M.sel=byId(j.sel)?j.sel:M.logs[0]?.id||null; M.hang=j.hang||'MD'; M.trackW=j.trackW||M.trackW; if(j.pxPerFt) M.pxPerFt=j.pxPerFt; }
 function exportPNG(){ $('mudCanvas').toBlob(b=>downloadBlob('mudlogs.png',b),'image/png'); }
-window.WellerMud={render:renderMud,openFiles,toJSON,fromJSON,exportPNG,_M:M,
+window.WellerMud={render:renderMud,openFiles,toJSON,fromJSON,exportData,importData,clear:clearAll,exportPNG,_M:M,
   _calY:(i,y)=>{ const r=calPages(selLog())[i]; return r.top+y*r.s-$('mudScroll').scrollTop; }, _trackX:k=>trackX(k)-$('mudScroll').scrollLeft, _yOfMd:(m,md)=>yOfZ(zOf(m,md))};
 })();

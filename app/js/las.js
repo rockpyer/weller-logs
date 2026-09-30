@@ -450,7 +450,7 @@
     if (lat === undefined) { const m = all.match(/LAT[A-Z]*\s*[:=]?\s*(-?\d+\.\d+)/i); if (m) lat = parseFloat(m[1]); }
     if (lon === undefined) { const m = all.match(/LON[A-Z]*\s*[:=]?\s*(-?\d+\.\d+)/i); if (m) lon = parseFloat(m[1]); }
     const westUS = /CALIFORNIA|COLORADO|WYOMING|UTAH|TEXAS|OKLAHOMA|KANSAS|NEW MEXICO|NORTH DAKOTA|MONTANA|\b(CA|CO|WY|UT|TX|OK|KS|NM|ND|MT)\b|UNITED STATES|USA/i.test(all);
-    if (lon !== undefined && lon > 0 && westUS && !cLon?.hemi) { lon = -lon; notes.push('longitude sign corrected to west'); }
+    if (lon !== undefined && lon > 0 && westUS && !cLon?.hemi) { lon = -lon; notes.push('longitude read as west (no sign in the header)'); }
     const crsM = all.match(/NAD\s*(27|83)/i); const zoneM = all.match(/ZONE\s*(\d)/i);
     const crs = g('GDAT') || (crsM ? `NAD${crsM[1]}${zoneM ? ' · State Plane Zone ' + zoneM[1] : ''}` : 'unknown');
     const matr = String(g('MATR') || g('NMAT') || g('DPOR') || '').toUpperCase();

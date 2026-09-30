@@ -3,7 +3,8 @@
 Web-based well-log viewer and correlation tool. It opens LAS files (wireline and mud logs), draws tracks on
 standard scales, runs a transparent quick-look petrophysical interpretation, correlates tops across wells in MD,
 TVDSS or flattened on a top, and summarizes zones with net pay and crossplots. It runs in Firefox, Brave and
-Chrome, installs as an offline web app, and saves everything to a `.lasproj` file. No data leaves your machine.
+Chrome, installs as an offline web app, and saves everything to one `.lasproj` file: the LAS data, mudlog images,
+tops, tracks and settings, so a project opens on any computer. No data leaves your machine.
 
 **Live:** https://rockpyer.github.io/weller-logs/
 
@@ -43,7 +44,10 @@ Methods, equations, defaults and limits: [docs/PETROPHYSICS.md](docs/PETROPHYSIC
 - **Several files, one well.** LAS files whose API names the same borehole (first 12 digits; a 10-digit API is the
   original hole, `00`) merge into one well on a common depth grid. The event code (digits 13–14) does not split a
   well; a sidetrack code (`-01`, `-02`) does. A file with no API joins an open well of the same name (case and
-  punctuation ignored) unless the APIs disagree. Runs of one curve that follow each other are spliced; curves that
+  punctuation ignored) unless the APIs disagree. Where the file name starts with an API (as state downloads such as
+  CalGEM and WOGCC do) that names a different well than the `~Well` header, the file name wins, with a warning: vendors
+  often copy the header from the neighboring well. The load summary warns when a merged file repeats curves over the
+  same depths, the usual sign of a wrong merge. Runs of one curve that follow each other are spliced; curves that
   overlap (mud-log GR, MWD GR, a cement-bond GR) stay separate.
 - **Several curves of one kind.** Where a well has more than one GR, ROP or other curve family, open-hole beats cased-hole
   and the curve covering the most depth is used. Pick another, or overlay all of them, in the well's settings (⚙),
@@ -74,7 +78,8 @@ Methods, equations, defaults and limits: [docs/PETROPHYSICS.md](docs/PETROPHYSIC
 - **Curve help.** Hover a track header for each curve's color, what it measures, the file it came from and what else
   in the well could stand in. About → *Methods, curve mapping and assumptions* lists every rule and the mnemonics each
   track accepts.
-- **Header clean-up.** Latitude and longitude in degrees-minutes-seconds, drill time (min/ft) converted to ROP in
+- **Header clean-up.** Latitude and longitude in degrees-minutes-seconds, a positive longitude in a western US well
+  read as west (noted, not flagged), a missing API taken from the file name, drill time (min/ft) converted to ROP in
   ft/hr, and a TVD curve used for TVD when the file has no survey.
 - **Load summary.** After opening files, one card per well says what came in and what to do: pick between duplicate
   curves, add curves no track shows, fill a missing location or elevation. Notes are folded under Details.
@@ -92,15 +97,19 @@ Methods, equations, defaults and limits: [docs/PETROPHYSICS.md](docs/PETROPHYSIC
   kept in the browser's IndexedDB, with a quarter-resolution copy for zoomed-out views, so the panel scrolls smoothly
   whatever the file size. The panel opens at 1:2400 and keeps its scale when you change the hang; **Fit** shows
   everything. The mudlog panel on the left can be dragged wider. A 40 MB uncompressed TIFF (3435 × 98,000 px) imports in about 16 s without freezing
-  the page; files over 35 MB ask first. Projects save the calibration and picks; reopen the same file to restore
-  images on another machine.
+  the page; files over 35 MB ask first. Projects save the images with the calibration and picks. **Remove all mudlogs**
+  clears the tab and its stored images.
 
 ## Use it
 
 - **Open…** (Cmd+O), or drop files anywhere: LAS, `.lasproj`, tops CSV (`well, top, md`) or point-data CSV
   (`well, md`, then one column per measurement, units in the header such as `k (mD)`). PDF and TIFF files open in
   the Mudlogs tab.
+- **New** starts an empty project (it asks first). Units and theme stay as they are.
 - **Save** (Cmd+S) writes the `.lasproj`. Brave and Chrome save back to the same file; Firefox downloads a copy.
+  The project holds the LAS files (gzip), mudlog images, tops, shifts and edits, point data, tracks (order, curves,
+  colors, scales), interpretation parameters, hang, zoom, section order, units, depth labels and header height, so
+  it opens complete on another machine. Projects saved by older versions still open; they ask for the LAS files.
 - **Export PNG** (Cmd+E) renders the log view, or the crossplot on the stats tab. **Export LAS** writes the selected well.
 - **Undo / redo**: Cmd+Z and Shift+Cmd+Z (Ctrl on Windows and Linux) step through edits to tops, tracks, parameters and the section.
 - **Esc** closes any dialog or popover without applying it. New curves in a track get their own range and a color that
@@ -113,7 +122,8 @@ Methods, equations, defaults and limits: [docs/PETROPHYSICS.md](docs/PETROPHYSIC
   by API can be turned off there. Re-opening a file with the same name replaces the earlier copy. Hover a well name for its header: operator, location, API, log date, elevations, TD.
 - The lithology track's gear edits its Vshale and PE cutoffs and colors. Hover the lithology or flag tracks for the
   class at that depth, the values behind it and MD / ssTVD; hover their header swatches for the full legend.
-- **Load example data** in the Wells panel switches between the Niobrara set and a synthetic LA Basin set.
+- **Load example data** in the Wells panel switches between the Niobrara set and a synthetic LA Basin set. The app
+  opens on the Niobrara set.
 - Reopening the app offers to resume the last session; opened LAS files are cached in the browser.
 - In Brave or Chrome, the address-bar *Install* icon adds it to the Dock and it works offline.
 

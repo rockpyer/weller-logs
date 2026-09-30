@@ -218,6 +218,8 @@ button.link{border:0;background:none;padding:2px 4px;color:var(--muted)}button.l
 .about .cta a{padding:6px 12px;border-radius:4px;text-decoration:none;border:1px solid var(--line);color:var(--ink)}
 .about .cta a.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
 .notesbtn{margin-top:6px}
+.toast{position:fixed;left:50%;top:42%;transform:translate(-50%,-50%);z-index:2000;pointer-events:none;background:var(--panel);color:var(--ink);border:1px solid var(--line);border-radius:10px;box-shadow:0 8px 30px rgba(0,0,0,.18);padding:14px 22px;font-size:16px;font-weight:600;max-width:min(90vw,520px);text-align:center;transition:opacity .4s}
+.toast.out{opacity:0}
 .tip{position:fixed;z-index:55;pointer-events:none;background:var(--panel);color:var(--ink);border:1px solid var(--line);border-radius:4px;box-shadow:0 4px 14px rgba(0,0,0,.18);padding:6px 8px;font-size:12px;max-width:280px}
 .tip .lr{display:flex;gap:6px;align-items:center;white-space:nowrap}.tip .lr i{width:10px;height:10px;border-radius:2px;flex:none;border:1px solid var(--line)}
 .tip .lr.on{font-weight:600}.tip .lr small{color:var(--muted)}
@@ -324,6 +326,7 @@ i.sw{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:5p
     </div>
     <div class="actions">
       <input type="file" id="fileIn" accept=".las,.LAS,.txt,.csv,.lasproj,.json,.pdf,.tif,.tiff" multiple hidden>
+      <button id="btnNew" title="Start an empty project">New</button>
       <button id="btnOpen" class="primary" title="LAS, project, tops CSV, point-data CSV, or a PDF/TIFF mudlog (Cmd+O). You can also drop files anywhere.">Open…</button>
       <button id="btnSave" title="Save project (Cmd+S)">Save</button>
       <button id="btnPng" title="Export the current view as PNG (Cmd+E)">Export PNG</button>
@@ -341,12 +344,12 @@ i.sw{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:5p
       <li>D3 and Leaflet; USGS National Map basemaps</li>
       <li>Curve conventions from <a href="https://github.com/andymcdgeo/petroplots" target="_blank" rel="noopener">petroplots</a></li>
       <li>Example logs: WOGCC public records via <a href="https://github.com/jessepisel/5minutesofpython" target="_blank" rel="noopener">5minutesofpython</a>; Rw from <a href="https://doi.org/10.5066/P14CRSQQ" target="_blank" rel="noopener">USGS produced-water data</a></li>
-      <li>Methods: <a href="https://github.com/rockpyer/weller-logs/blob/main/docs/PETROPHYSICS.md" target="_blank" rel="noopener">PETROPHYSICS.md</a> · <a href="https://github.com/rockpyer/weller-logs" target="_blank" rel="noopener">source on GitHub</a></li>
     </ul>
     <p><button class="small" id="btnMethods">Methods, curve mapping and assumptions</button></p>
     <p>Want a custom AI workflow, tool or subsurface analysis for your team? I build these.</p>
     <div class="cta"><a class="primary" href="https://ryweller.com/services" target="_blank" rel="noopener">Work with me</a><a href="https://www.linkedin.com/in/ryweller/" target="_blank" rel="noopener">Message on LinkedIn</a></div>
   </div>
+  <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
   <div id="notesPop" class="pop" role="dialog" aria-label="Interpretation notes" hidden></div>
   <div id="tip" class="tip" hidden></div>
   <div id="resume" class="banner" hidden>
@@ -413,7 +416,7 @@ i.sw{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:5p
       </div>
       </div>
       <div id="mudView" class="view" hidden>
-        <div class="banner mudbeta"><b>Beta</b><span>Mudlogs hang in measured depth (MD), in feet. Subsea is elevation − MD, so it assumes a vertical hole; no survey is applied. Files stay in this browser.</span></div>
+        <div class="banner mudbeta"><b>Beta</b><span>Mudlogs hang in measured depth (MD), in feet. Subsea is elevation − MD, so it assumes a vertical hole; no survey is applied. Images stay on your computer: in this browser, and inside the project file when you save.</span></div>
         <div class="viewbar" id="mudViewBar">
           <label>Hang on <select id="mudHang" aria-label="Hang on"></select></label>
           <input type="text" id="mudTop" placeholder="Top name" list="mudTopList" aria-label="Top name" style="width:10em"><datalist id="mudTopList"></datalist>
