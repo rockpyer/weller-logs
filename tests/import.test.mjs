@@ -189,3 +189,27 @@ test('lasio-style tolerance: run-together values, text nulls, extra sentinels, n
   assert.equal(r.parsed.header.well.WELL.value, 'SMITH 1');
   for (const re of [/run-together/, /text values/, /without a period/]) assert.ok(r.problems.some(p => p.level === 'info' && re.test(p.title)), String(re));
 });
+
+test('a file-name API that names another well beats a copied ~Well header', () => {
+  const hdr = { api: '0403730579', rows: [[80, 1], [81, 2]], extra: '' };
+  const same = well(hdr, '040373057900_WEZU 24G_Mud Log - Petrolog 80_ - 9614__10-19-2022.las');
+  assert.equal(apiKey(same.api).key, '0403730579-00'); assert.ok(!same.notes.some(n => /file name/.test(n)));
+  const other = well(hdr, '040373058000_WEZU 24F_Mud Log - Petrolog 80_ - 9,590__10-01-2022.las');
+  assert.equal(apiKey(other.api).key, '0403730580-00'); assert.equal(other.name, 'WEZU 24F');
+  assert.ok(other.notes.some(n => /disagree with the file name.*header ignored/.test(n)));
+  const blank = well({ ...hdr, api: 'Enter Well ID' }, '040373058000_x.las');
+  assert.equal(apiKey(blank.api).key, '0403730580-00'); assert.ok(blank.notes.some(n => /read from the file name/.test(n)));
+});
+
+test('overlapping runs give one "kept both" note per file pair, not one per curve', () => {
+  const rows = Array.from({ length: 60 }, (_, i) => [1000 + i, i, i, i]), curves = ['DEPT .F', 'GR .GAPI', 'ROP .FT/HR', 'WOB .KLBS'];
+  const m = mergeWells([well({ rows, curves }, 'a.las'), well({ rows, curves }, 'b.las')]);
+  const kept = m.notes.filter(n => /kept both/.test(n));
+  assert.equal(kept.length, 1); assert.match(kept[0], /b\.las overlaps a\.las over \d+ ft on GR, ROP, WOB/);
+});
+
+test('an ELEV line that labels GL and KB is read by label, not by its first number', () => {
+  const w = well({ rows: [[80, 1], [81, 2]], extra: "ELEV. 1313.49? GL, 1336.99' KB :\n" });
+  assert.equal(w.elevation.kb, 1336.99); assert.equal(w.elevation.gl, 1313.49); assert.equal(w.elevation.kbSuspect, false);
+  assert.equal(well({ rows: [[80, 1], [81, 2]], extra: 'ELEV. 1336.99 :\n' }).elevation.kb, 1336.99);
+});
