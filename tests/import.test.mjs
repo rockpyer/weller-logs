@@ -207,3 +207,9 @@ test('overlapping runs give one "kept both" note per file pair, not one per curv
   const kept = m.notes.filter(n => /kept both/.test(n));
   assert.equal(kept.length, 1); assert.match(kept[0], /b\.las overlaps a\.las over \d+ ft on GR, ROP, WOB/);
 });
+
+test('an ELEV line that labels GL and KB is read by label, not by its first number', () => {
+  const w = well({ rows: [[80, 1], [81, 2]], extra: "ELEV. 1313.49? GL, 1336.99' KB :\n" });
+  assert.equal(w.elevation.kb, 1336.99); assert.equal(w.elevation.gl, 1313.49); assert.equal(w.elevation.kbSuspect, false);
+  assert.equal(well({ rows: [[80, 1], [81, 2]], extra: 'ELEV. 1336.99 :\n' }).elevation.kb, 1336.99);
+});

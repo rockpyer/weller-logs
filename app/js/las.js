@@ -416,7 +416,9 @@
     const W = p.header.well, P = p.header.params;
     const h = k => W[k] ?? P[k];
     const g = k => h(k)?.value;
-    const num = (...ks) => { for (const k of ks) { const v = leadingNumber(g(k)); if (v !== undefined && !(k === 'EKB' && v === 0)) return v; } return undefined; };
+    // A generic ELEV/EREF that labels its numbers ("1313.49 GL, 1336.99' KB") is read by label below, not by its first number.
+    const labeled = k => /^(ELEV|EREF)$/.test(k) && /\b(KB|RKB|DF|GL)\b/i.test(String(g(k) || ''));
+    const num = (...ks) => { for (const k of ks) { if (labeled(k)) continue; const v = leadingNumber(g(k)); if (v !== undefined && !(k === 'EKB' && v === 0)) return v; } return undefined; };
     const notes = [];
     const dep = p.curves[0]; const du = String(dep?.unit || '').toUpperCase();
     const depthUnit = /^(M|METER|METERS|METRES?)$/.test(du) ? 'm' : 'ft';
