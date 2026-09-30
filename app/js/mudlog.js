@@ -131,7 +131,7 @@ function applyHeader(m){ const h=m.header||{};
   for(const k of ['company','field','county','state']) if(h[k]&&!m[k]) m[k]=h[k];
   if(h.name&&!h.nameHidden) m.name=h.name;
   if(h.api&&!m.api) m.api=h.api; if(Number.isFinite(h.kb)&&m.kb==null) m.kb=h.kb; if(Number.isFinite(h.gl)&&m.gl==null) m.gl=h.gl;
-  if(h.location&&!m.location) m.location=h.location; if(h.unit) m.unit=h.unit; }
+  if(h.location&&!m.location) m.location=h.location; if(h.unit) m.unit=h.unit; WellerLAS.fillPlace(m); }
 function autoLink(m){ if(m.wellId&&wellById(m.wellId)) return; const key=WellerLAS.apiKey(m.api), nm=normName(m.name);
   const w=S.wells.find(w=>key&&WellerLAS.apiKey(w.api)===key)||S.wells.find(w=>nm&&nm.length>3&&normName(w.name)===nm); if(w) link(m,w.id); }
 // Linking moves the mudlog's own picks into the well's tops (a top the well already has wins); unlinking keeps

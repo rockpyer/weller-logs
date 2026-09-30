@@ -181,3 +181,20 @@ test('NULL -999.25 files get no zero warning', () => {
   const { diagnoseLAS } = globalThis.WellerLAS;
   assert.ok(!diagnoseLAS(NULL0.replace('NULL.        0', 'NULL.  -999.25'), 'x.las').problems.some(p => /NULL is 0/.test(p.title)));
 });
+
+test('API number names the state and county when the header gives codes or nothing', async () => {
+  await import('../app/js/apicodes.js');
+  const { apiPlace, fillPlace } = globalThis.WellerLAS;
+  assert.equal(apiPlace('0403730582').county, 'Los Angeles');
+  assert.equal(apiPlace('04-037-24344').state, 'CA');
+  assert.equal(apiPlace('42-329-12345-00-01').county, 'Midland');
+  assert.equal(apiPlace('049-021-12345').state, 'WY');
+  assert.equal(apiPlace('50-029-12345').county, '');   // Alaska county codes are not FIPS
+  assert.equal(apiPlace('not an api'), null);
+  const w = { api: '04-037-24344', county: '030', state: '04' };
+  fillPlace(w); assert.deepEqual([w.state, w.county], ['CA', 'Los Angeles']);
+  const kept = { api: '0403730579', county: 'Ventura', state: 'California' };
+  assert.deepEqual(fillPlace(kept), []); assert.equal(kept.county, 'Ventura');
+  const blank = load(LAS12.replace('STAT .               STATE:  Wyoming\n', '').replace('49-021-20933-0000', '04-037-30582-0000'));
+  assert.deepEqual([blank.state, blank.county], ['CA', 'Los Angeles']);
+});

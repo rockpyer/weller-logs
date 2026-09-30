@@ -723,7 +723,7 @@ function openWellDlg(id){ const w=wellById(id); if(!w) return; wellEditing=w; $(
   const src=sourcesOf(w); $('wdSources').innerHTML=src.length>1?`<b>${src.length} source files</b>, merged on one depth grid: ${src.map(esc).join(', ')}`:''; $('wdSplit').hidden=src.length<2;
   $('wellDlg').hidden=false; }
 $('wdSave').onclick=()=>{ const w=wellEditing; const n=v=>v===''?undefined:+v; w.name=$('wdName').value; w.api=$('wdApi').value; w.field=$('wdField').value; w.elevation.kb=n($('wdKb').value); w.elevation.gl=n($('wdGl').value); w.depthUnit=$('wdUnit').value;
-  w.location.lat=n($('wdLat').value); w.location.lon=n($('wdLon').value); w.location.crs=$('wdCrs').value; w.company=$('wdOp').value; w.county=$('wdCounty').value; w.state=$('wdState').value; w._ss=null; $('wellDlg').hidden=true; render(); };
+  w.location.lat=n($('wdLat').value); w.location.lon=n($('wdLon').value); w.location.crs=$('wdCrs').value; w.company=$('wdOp').value; w.county=$('wdCounty').value; w.state=$('wdState').value; WellerLAS.fillPlace(w); w._ss=null; $('wellDlg').hidden=true; render(); };
 $('wdCancel').onclick=()=>{ $('wellDlg').hidden=true; };
 // Curve pickers for one well. The same controls sit in the load summary and in well settings.
 function choicesHTML(w){ return curveChoices(w).map(m=>{ const p=w.pick?.[m.key]||'', auto=curveCandidates(w,m.cfg)[0];
@@ -746,17 +746,22 @@ $('wdRemove').onclick=()=>{ removeWells([wellEditing]); $('wellDlg').hidden=true
 function removeWells(list){ S.wells=S.wells.filter(w=>!list.includes(w)); S.panel=S.panel.filter(id=>wellById(id)); if(!wellById(S.selected)) S.selected=S.wells[0]?.id||null; render(); }
 
 /* ---------- Manage wells: rename and fill header fields in bulk, remove or clear wells ---------- */
-const MW_FIELDS=[['name','Name','text'],['api','API','text'],['company','Operator','text'],['field','Field','text'],['county','County','text'],['state','State','text'],['kb','KB','number'],['gl','GL','number']];
+const MW_FIELDS=[['name','Name','text'],['api','API','text'],['company','Operator','text'],['field','Field','text'],['county','County','text'],['state','State','text'],['lat','Lat','number'],['lon','Lon','number'],['kb','KB','number'],['gl','GL','number']];
+const MW_NUM={kb:'elevation',gl:'elevation',lat:'location',lon:'location'};
 let mwRows=null;
-function mwGet(w,k){ return k==='kb'||k==='gl'?w.elevation[k]:w[k]; }
-function openManageWells(){ $('mwAuto').checked=lsGet('weller.autoMerge',true); mwRows=S.wells.map(w=>({w,sel:false,gone:false,into:null,split:false,v:Object.fromEntries(MW_FIELDS.map(([k])=>[k,mwGet(w,k)??'']))})); drawMW(); $('mwDlg').hidden=false; }
-function drawMW(){ $('mwBody').innerHTML=mwRows.map((r,i)=>r.gone?'':`<tr><td><input type="checkbox" data-mwsel="${i}"${r.sel?' checked':''} aria-label="Select ${esc(r.w.name)}"></td>${MW_FIELDS.map(([k,,t])=>`<td><input type="${t}" data-mw="${i}" data-k="${k}" value="${esc(r.v[k])}"${t==='number'?' step="0.1"':''} class="mw-${k}"></td>`).join('')}<td class="num">${r.w.curves.filter(c=>!c.sparse&&!c.computed).length-1}</td><td class="num">${mwFiles(r,i)}</td></tr>`).join('')
-    ||'<tr><td colspan="11" class="hint">No wells. Apply to clear the project.</td></tr>';
+function mwGet(w,k){ return MW_NUM[k]?w[MW_NUM[k]]?.[k]:w[k]; }
+// County and state from the API while they are blank, a bare code ("037", "04") or what the API filled before.
+function mwPlace(r){ const p=WellerLAS.apiPlace(r.v.api); r.auto=r.auto||{};
+  for(const k of ['state','county']){ const cur=String(r.v[k]??'').trim(); if(p?.[k]&&(/^\d{0,3}$/.test(cur)||cur===r.auto[k])){ r.v[k]=r.auto[k]=p[k]; } } }
+function openManageWells(){ $('mwAuto').checked=lsGet('weller.autoMerge',true); mwRows=S.wells.map(w=>({w,sel:false,gone:false,into:null,split:false,v:Object.fromEntries(MW_FIELDS.map(([k])=>[k,mwGet(w,k)??'']))})); mwRows.forEach(mwPlace); drawMW(); $('mwDlg').hidden=false; }
+function drawMW(){ $('mwBody').innerHTML=mwRows.map((r,i)=>r.gone?'':`<tr><td><input type="checkbox" data-mwsel="${i}"${r.sel?' checked':''} aria-label="Select ${esc(r.w.name)}"></td>${MW_FIELDS.map(([k,,t])=>`<td><input type="${t}" data-mw="${i}" data-k="${k}" value="${esc(r.v[k])}"${t==='number'?` step="${k==='lat'||k==='lon'?'any':'0.1'}"`:''}${r.auto?.[k]&&r.auto[k]===r.v[k]?' title="From the API number"':''} class="mw-${k}"></td>`).join('')}<td class="num">${r.w.curves.filter(c=>!c.sparse&&!c.computed).length-1}</td><td class="num">${mwFiles(r,i)}</td></tr>`).join('')
+    ||'<tr><td colspan="13" class="hint">No wells. Apply to clear the project.</td></tr>';
   const n=mwRows.filter(r=>r.sel&&!r.gone).length; $('mwCount').textContent=n?`${n} selected`:'Select rows to edit or remove several at once'; $('mwSet').disabled=$('mwRemove').disabled=!n; $('mwMerge').disabled=n<2; }
 function mwFiles(r,i){ const merged=mwRows.filter(x=>x.into===r), k=sourcesOf(r.w).length+merged.reduce((a,x)=>a+sourcesOf(x.w).length,0);
   const tip=[...sourcesOf(r.w),...merged.flatMap(x=>sourcesOf(x.w))].join('\n');
   return `<span title="${esc(tip)}">${k||'—'}</span>`+(merged.length?` <button class="small" data-mwunmerge="${i}" title="Undo this merge">unmerge</button>`:sourcesOf(r.w).length>1?` <button class="small" data-mwsplit="${i}" title="One well per file">${r.split?'will split':'split'}</button>`:''); }
-$('mwDlg').addEventListener('input',e=>{ const t=e.target; if(t.dataset.mw!==undefined) mwRows[+t.dataset.mw].v[t.dataset.k]=t.value; });
+$('mwDlg').addEventListener('input',e=>{ const t=e.target; if(t.dataset.mw===undefined) return; const i=+t.dataset.mw, r=mwRows[i]; r.v[t.dataset.k]=t.value;
+  if(t.dataset.k==='api'){ mwPlace(r); for(const k of ['state','county']){ const el=$('mwBody').querySelector(`[data-mw="${i}"][data-k="${k}"]`); if(el&&el.value!==r.v[k]){ el.value=r.v[k]; el.title='From the API number'; } } } });
 $('mwDlg').addEventListener('change',e=>{ const t=e.target; if(t.dataset.mwsel!==undefined){ mwRows[+t.dataset.mwsel].sel=t.checked; drawMW(); } });
 $('mwBody').addEventListener('click',e=>{ const t=e.target;
   if(t.dataset.mwsplit!==undefined){ const r=mwRows[+t.dataset.mwsplit]; r.split=!r.split; drawMW(); }
@@ -774,7 +779,7 @@ $('mwRemove').onclick=()=>{ mwRows.forEach(r=>{ if(r.sel){ r.gone=true; r.into=n
 $('mwClear').onclick=()=>{ mwRows.forEach(r=>{ r.gone=true; r.into=null; }); drawMW(); };
 $('mwCancel').onclick=()=>{ $('mwDlg').hidden=true; };
 $('mwSave').onclick=()=>{ const keep=mwRows.filter(r=>!r.gone), n=v=>v===''||v==null?undefined:+v;
-  for(const {w,v} of keep){ for(const [k] of MW_FIELDS){ if(k==='kb'||k==='gl') w.elevation[k]=n(v[k]); else w[k]=String(v[k]).trim()||(k==='name'?w.name:''); } w._ss=null; }
+  for(const {w,v} of keep){ for(const [k] of MW_FIELDS){ if(MW_NUM[k]){ const g=w[MW_NUM[k]]=w[MW_NUM[k]]||{}; g[k]=n(v[k]); } else w[k]=String(v[k]).trim()||(k==='name'?w.name:''); } WellerLAS.fillPlace(w); w._ss=null; }
   S.wells=[...keep.map(r=>r.w),...mwRows.filter(r=>r.into).map(r=>r.w)]; const msg=[];
   for(const r of keep){ const others=mwRows.filter(x=>x.into===r).map(x=>x.w); if(others.length){ const nw=mergeInto(r.w,others); msg.push(`merged ${others.length+1} into ${nw.name}`); } }
   for(const r of keep) if(r.split){ const w=wellById(r.w.id); if(w) msg.push(`split ${w.name} into ${splitWell(w).length}`); }
@@ -1156,7 +1161,7 @@ async function loadProject(p){ if(!p||p.app!=='weller-logs') throw new Error('no
     let live;
     if(ref.files){ const fs=ref.files.map(f=>f.fileName); live=byFiles(fs); if(!live){ const parts=fs.map(getPart); if(parts.some(x=>!x)){ missing.push(...fs.filter((f,i)=>!parts[i])); return null; } live=rebuildWell(null,parts); } }
     else live=byFiles([ref.fileName])||getPart(ref.fileName);
-    if(live){ if(ref.demo) live.demo=ref.demo; Object.assign(live,{tops:ref.tops,elevation:ref.elevation,location:ref.location,name:ref.name,api:ref.api,field:ref.field,id:ref.id,pick:ref.pick,shifts:ref.shifts,edits:ref.edits,_grP:null}); for(const k of ['company','county','state']) if(ref[k]!==undefined) live[k]=ref[k]; applyShifts(live); restorePoints(live,ref.points); return live; } missing.push(ref.fileName||ref.name); return null; }).filter(Boolean);
+    if(live){ if(ref.demo) live.demo=ref.demo; Object.assign(live,{tops:ref.tops,elevation:ref.elevation,location:ref.location,name:ref.name,api:ref.api,field:ref.field,id:ref.id,pick:ref.pick,shifts:ref.shifts,edits:ref.edits,_grP:null}); for(const k of ['company','county','state']) if(ref[k]!==undefined) live[k]=ref[k]; WellerLAS.fillPlace(live); applyShifts(live); restorePoints(live,ref.points); return live; } missing.push(ref.fileName||ref.name); return null; }).filter(Boolean);
   S.tracks=migrateTracks(p.tracks); S.views=p.views||newViews(); S.view=S.views[viewKey(S.mode)]||S.views.single; S.datum=p.datum||'MD'; S.topColors=p.topColors||S.topColors; S.hiddenPoints=p.hiddenPoints||[]; S.stats={...statsDefaults(),...(p.stats||{})}; S.interp={...interpDefaults(),...(p.interp||{})}; S.corr={...S.corr,...(p.corr||{})}; if(!p.tracks.some(t=>t.id==='t8')) S.tracks=[...S.tracks,...defaultTracks().filter(t=>['t8','t9','t10','t11','t12'].includes(t.id))]; setBasemap(p.basemap||'map'); if((p.version||1)<2) pointSeriesNames().forEach(placePointSeries); S.panel=(p.panel||[]).filter(id=>wellById(id));
   // Older projects kept section order separately: move those wells into that order within the list.
   if((p.version||1)<3){ const pos=S.wells.map((w,i)=>S.panel.includes(w.id)?i:-1).filter(i=>i>=0); S.panel.forEach((id,k)=>{ S.wells[pos[k]]=wellById(id); }); } S.selected=wellById(p.selected)?p.selected:(S.wells[0]?.id||null);

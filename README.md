@@ -108,9 +108,12 @@ Methods, equations, defaults and limits: [docs/PETROPHYSICS.md](docs/PETROPHYSIC
 - **ft / m** in the top bar switches display units; data stay in each file's own unit. ◐ switches to a dark theme.
 - **Scale** is a print ratio: 1:240 is 5 in per 100 ft, 1:600 is 2 in per 100 ft (nominal on screen at 96 px per inch).
   **Fit** fits the logs to the window. Logs and Correlation keep their own zoom and scroll.
-- **Manage wells** renames wells, fills operator, field, county, state and elevations for several at once, merges
+- **Manage wells** renames wells, fills operator, field, county, state, latitude/longitude and elevations for several at once, merges
   selected wells, splits a merged well back into one well per file, and removes or clears wells. Automatic merging
   by API can be turned off there. Re-opening a file with the same name replaces the earlier copy. Hover a well name for its header: operator, location, API, log date, elevations, TD.
+- **State and county from the API number.** When a file leaves them blank or gives only codes (`04`, `037`), the
+  first five API digits fill them in (04-037 → CA, Los Angeles). API county codes are FIPS codes outside Alaska;
+  the table is `app/js/apicodes.js`, built by `scripts/make-api-codes.py`. Names already in the file are kept.
 - The lithology track's gear edits its Vshale and PE cutoffs and colors. Hover the lithology or flag tracks for the
   class at that depth, the values behind it and MD / ssTVD; hover their header swatches for the full legend.
 - **Load example data** in the Wells panel switches between the Niobrara set and a synthetic LA Basin set.
