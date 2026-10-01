@@ -212,7 +212,7 @@ function resolveCurve(well,cfg){ const pick=well.pick?.[famKey(cfg)]; if(pick&&p
 const newViews=()=>({single:{pxPerFt:0.35,top:0,bottom:1000},corr:{pxPerFt:0.35,top:0,bottom:1000}});
 const lsGet=(k,d)=>{ try{ const v=localStorage.getItem(k); return v==null?d:JSON.parse(v); }catch(e){ return d; } };
 const lsSet=(k,v)=>{ try{ localStorage.setItem(k,JSON.stringify(v)); return true; }catch(e){ return false; } };
-const S={ mode:'single', wells:[], selected:null, panel:[], showEmpty:false, tracks:loadTrackDefaults(), views:newViews(), datum:'MD', picking:false, hiddenPoints:[], stats:null, basemap:'map', interp:interpDefaults(), corr:{gap:64,spacing:'equal',scale:0.75},
+const S={ mode:'single', wells:[], selected:null, panel:[], showEmpty:false, tracks:loadTrackDefaults(), views:newViews(), datum:'MD', picking:false, hiddenPoints:[], stats:null, basemap:'map', mapGrid:{kind:''}, interp:interpDefaults(), corr:{gap:64,spacing:'equal',scale:0.75},
   units:lsGet('weller.units','imperial'), depthLabels:lsGet('weller.depthLabels',{md:true,ss:true}), topColors:lsGet('weller.topColors',{}) };
 S.headH=lsGet('weller.headH',null);
 S.view=S.views.single;   // the active tab's zoom and scroll; Logs and Correlation each keep their own
@@ -297,8 +297,9 @@ function depthTicks(w,F,y,H){
   return { grid:thin(walk(primary,true),3), md:showMD?thin(walk(dq,false),14):[], ss:hasSS?thin(walk(i=>ss[i],false),14):[], showMD, showSS:hasSS, hasSS:!!ss, mdLabel:gl?'GL':'MD' };
 }
 function render(){ syncDatum();
-  const mudMode=S.mode==='mud'; $('mudView').hidden=!mudMode; document.querySelector('.side').hidden=mudMode; $('sideGutter').hidden=mudMode;
-  if(S.picking&&(mudMode||S.mode==='stats')) setPicking(false);
+  const mudMode=S.mode==='mud', mapMode=S.mode==='map'; $('mudView').hidden=!mudMode; $('mapView').hidden=!mapMode; $('sideMap').hidden=mapMode; document.querySelector('.side').hidden=mudMode; $('sideGutter').hidden=mudMode;
+  if(S.picking&&(mudMode||mapMode||S.mode==='stats')) setPicking(false);
+  if(mapMode){ $('statsView').hidden=true; $('logView').hidden=true; syncPanel(); renderSidebar(); autosave(); return; }
   if(mudMode){ $('statsView').hidden=true; $('logView').hidden=true; syncPanel(); window.WellerMud?.render(); autosave(); return; }
   const statsMode=S.mode==='stats'; $('statsView').hidden=!statsMode; $('logView').hidden=statsMode;
   syncPanel();
@@ -603,7 +604,7 @@ function redrawOverlay(){ const ctx=S._ctx; if(!ctx||S.mode!=='corr') return; co
 function refreshTops(name){ const ctx=S._ctx;
   for(const w of S.wells) if(S.interp?.enabled&&S._topsDirty?.has(w.id)){ const was=JSON.stringify(w.tocBaseline||null); try{ computeInterp(w); }catch(e){} if(JSON.stringify(w.tocBaseline||null)!==was) S._needRender=true; }
   S._topsDirty=null; const wells=viewWells();
-  if(!ctx||S.mode==='stats'||S.mode==='mud'||(S.mode==='corr'&&name&&S.datum===name)||ctx.cols.length!==wells.length||ctx.cols.some((c,i)=>c.w!==wells[i])){ S._needRender=false; clearTimeout(S._rt); render(); return; }
+  if(!ctx||S.mode==='stats'||S.mode==='mud'||S.mode==='map'||(S.mode==='corr'&&name&&S.datum===name)||ctx.cols.length!==wells.length||ctx.cols.some((c,i)=>c.w!==wells[i])){ S._needRender=false; clearTimeout(S._rt); render(); return; }
   // A new shallowest top moves the TOC baseline zone: redraw the tops now, rebuild the logs once the picking pauses.
   if(S._needRender){ S._needRender=false; clearTimeout(S._rt); S._rt=setTimeout(()=>{ if(!S.drag) render(); },700); }
   const zc=zoneColorMap(); S._zc=zc;
@@ -698,7 +699,7 @@ $('pbWells').addEventListener('change',e=>{ const id=e.target.dataset.pbmd; if(i
   if(!Number.isFinite(v)){ renderPickBar(); return; } const md=fromDisp(v,w), [a,b]=wellRange(w); if(md<Math.min(a,b)||md>Math.max(a,b)) $('stNote').textContent=`⚠ ${fmtD(md,w,1)} ${dispU()} is outside ${w.name}'s log (${fmtD(Math.min(a,b),w)}–${fmtD(Math.max(a,b),w)})`;
   setTopMD(w,S.pickTop,md); S.selected=w.id; refreshTops(S.pickTop); });
 $('pbWells').addEventListener('click',e=>{ const d=e.target.closest('[data-pbdel]'); if(!d) return; e.preventDefault(); const w=wellById(d.dataset.pbdel); if(!w) return; w.tops=w.tops.filter(t=>t.name!==S.pickTop); (S._topsDirty||(S._topsDirty=new Set())).add(w.id); refreshTops(S.pickTop); });
-document.addEventListener('keydown',e=>{ if(e.metaKey||e.ctrlKey||e.altKey) return; const el=e.target, typing=el.matches?.('input,textarea,select,[contenteditable]'); if(typing||S.mode==='stats'||S.mode==='mud'||document.querySelector('.modal:not([hidden])')) return;
+document.addEventListener('keydown',e=>{ if(e.metaKey||e.ctrlKey||e.altKey) return; const el=e.target, typing=el.matches?.('input,textarea,select,[contenteditable]'); if(typing||S.mode==='stats'||S.mode==='mud'||S.mode==='map'||document.querySelector('.modal:not([hidden])')) return;
   if(e.key==='t'||e.key==='T'){ e.preventDefault(); setPicking(!S.picking); return; }
   if(!S.picking) return;
   if(e.key==='Escape'){ setPicking(false); return; }
@@ -857,7 +858,7 @@ function openWellDlg(id){ const w=wellById(id); if(!w) return; wellEditing=w; $(
   const logs=w.curves.slice(1).filter(c=>!c.sparse&&!c.computed), comp=w.curves.filter(c=>c.computed), pts=w.curves.filter(c=>c.sparse);
   $('wdCurves').innerHTML=`<b>${logs.length} logged curves</b>: ${logs.map(c=>`<span title="${esc(c.description||'')}">${esc(c.mnemonic)}${c.unit?` <small>${esc(c.unit)}</small>`:''}</span>`).join(', ')}`+(comp.length?`<br><b>${comp.length} computed</b>: ${comp.map(c=>esc(c.mnemonic)).join(', ')}`:'')+(pts.length?`<br><b>${pts.length} point series</b>: ${pts.map(c=>esc(c.mnemonic)).join(', ')}`:'');
   drawCurveChoices(w);
-  const src=sourcesOf(w); $('wdSources').innerHTML=src.length>1?`<b>${src.length} source files</b>, merged on one depth grid: ${src.map(esc).join(', ')}`:''; $('wdSplit').hidden=src.length<2;
+  const src=sourcesOf(w); $('wdSources').innerHTML=src.length>1?`<b>${src.length} source files</b>, merged on one depth grid: ${src.map(esc).join(', ')}`:''; $('wdSplit').hidden=src.length<2; drawWdSurvey(w);
   $('wellDlg').hidden=false; }
 $('wdSave').onclick=()=>{ const w=wellEditing; const n=v=>v===''?undefined:+v; w.name=$('wdName').value; w.api=$('wdApi').value; w.field=$('wdField').value; w.elevation.kb=n($('wdKb').value); w.elevation.gl=n($('wdGl').value); w.depthUnit=$('wdUnit').value;
   w.location.lat=n($('wdLat').value); w.location.lon=n($('wdLon').value); w.location.crs=$('wdCrs').value; w.company=$('wdOp').value; w.county=$('wdCounty').value; w.state=$('wdState').value; WellerLAS.fillPlace(w); w._ss=null; $('wellDlg').hidden=true; render(); };
@@ -1007,7 +1008,7 @@ async function exportPNG(){ const panel=$('logPanel'); const pr=panel.getBoundin
       const svg=tr.querySelector('svg'); const sr=rel(svg); const img=await svgToImage(svg); ctx.drawImage(img,sr.x,sr.y,sr.w,sr.h); } }
   const ov=$('overlay'); if(ov.childNodes.length){ const img=await svgToImage(ov); ctx.drawImage(img,0,0); }
   return cv; }
-$('btnPng').onclick=async()=>{ if(S.mode==='mud') return window.WellerMud?.exportPNG(); if(S.mode==='stats'){ $('stXp').toBlob(b=>downloadBlob(`crossplot_${S.stats.x}_${S.stats.y}.png`.replace(/[^\w.-]+/g,'_'),b),'image/png'); return; } $('stNote').textContent='Rendering PNG…'; $('cursor').style.display='none';
+$('btnPng').onclick=async()=>{ if(S.mode==='mud') return window.WellerMud?.exportPNG(); if(S.mode==='map'){ $('stNote').textContent='Map PNG export is not available yet; use a screenshot.'; return; } if(S.mode==='stats'){ $('stXp').toBlob(b=>downloadBlob(`crossplot_${S.stats.x}_${S.stats.y}.png`.replace(/[^\w.-]+/g,'_'),b),'image/png'); return; } $('stNote').textContent='Rendering PNG…'; $('cursor').style.display='none';
   try{ const cv=await exportPNG(); cv.toBlob(b=>{ downloadBlob(($('vbWell').textContent||'panel').replace(/[^\w-]+/g,'_')+'.png',b); },'image/png'); }
   catch(err){ $('stNote').textContent='PNG export failed: '+err.message; } };
 
@@ -1017,10 +1018,10 @@ $('logPanel').addEventListener('click',e=>{ const h=e.target.closest('[data-selw
 document.querySelectorAll('[data-mode]').forEach(b=>b.onclick=()=>setMode(b.dataset.mode));
 const viewKey=m=>m==='corr'?'corr':'single';
 // Logs and Correlation keep their own zoom and scroll: leaving a flattened section never strands the Logs tab.
-function setMode(m){ const was=S.mode; if(was!=='stats'&&was!=='mud') S.view.scroll=$('logScroll').scrollTop;
+function setMode(m){ const was=S.mode; if(was!=='stats'&&was!=='mud'&&was!=='map') S.view.scroll=$('logScroll').scrollTop;
   S.mode=m; document.querySelectorAll('[data-mode]').forEach(b=>b.setAttribute('aria-selected',b.dataset.mode===m));
   if(m==='corr'&&S.panel.length===0&&S.selected) S.panel=[S.selected];
-  if(m==='stats'||m==='mud'){ render(); return; }
+  if(m==='stats'||m==='mud'||m==='map'){ render(); return; }
   S.view=S.views[viewKey(m)]||(S.views[viewKey(m)]={pxPerFt:0.35});
   if(!S.view.fitted) return fitView();
   render(); $('logScroll').scrollTop=S.view.scroll||0; }
@@ -1030,7 +1031,7 @@ $('btnFit').onclick=fitView;
 $('showEmpty').onchange=e=>{ S.showEmpty=e.target.checked; render(); };
 /* Fit: the whole log fits the screen height. A section flattened on a top fits the interval around that top and
    scrolls there; the rest of the logs stay a scroll away. */
-function fitView(){ if(S.mode==='stats'||S.mode==='mud') return render(); const wells=viewWells();
+function fitView(){ if(S.mode==='stats'||S.mode==='mud'||S.mode==='map') return render(); const wells=viewWells();
   render(); let [lo,hi]=frameExtent(wells);
   if(S.mode==='corr'&&!DEPTH_DATUMS.includes(S.datum)&&wells.length){ const k=wells[0].depthUnit==='m'?0.3048:1; lo=Math.max(lo,-400*k); hi=Math.min(hi,1200*k); }
   const sc=$('logScroll'), svg=$('logPanel').querySelector('.tracks svg'), hdr=svg?svg.getBoundingClientRect().top-$('logPanel').getBoundingClientRect().top:120;
@@ -1053,7 +1054,7 @@ $('scaleSel').onchange=e=>setRatio(+e.target.value);
 $('zoomIn').onclick=()=>stepScale(1); $('zoomOut').onclick=()=>stepScale(-1);
 $('logScroll').addEventListener('wheel',e=>{ if(!(e.ctrlKey||e.metaKey)) return; e.preventDefault(); const yIn=e.clientY-$('logScroll').getBoundingClientRect().top; zoomTo(S.view.pxPerFt*(e.deltaY<0?1.2:1/1.2),yIn); },{passive:false});
 $('logScroll').addEventListener('scroll',()=>{ if(S.mode!=='stats') S.view.scroll=$('logScroll').scrollTop; },{passive:true});
-$('btnPick').onclick=()=>{ const v=$('topName').value.trim(); if(!v&&!S.picking){ $('topName').focus(); return; } if(S.picking&&(!v||v===S.pickTop)) return setPicking(false); if(S.mode==='stats'||S.mode==='mud') setMode('single'); setPicking(true,v); scrollToTop(S.pickTop); };
+$('btnPick').onclick=()=>{ const v=$('topName').value.trim(); if(!v&&!S.picking){ $('topName').focus(); return; } if(S.picking&&(!v||v===S.pickTop)) return setPicking(false); if(S.mode==='stats'||S.mode==='mud'||S.mode==='map') setMode('single'); setPicking(true,v); scrollToTop(S.pickTop); };
 
 /* ---------- Browser cache of opened LAS text (IndexedDB), so a session resumes without re-picking files ---------- */
 const lasCache={ db:null, mem:new Map(),
@@ -1075,7 +1076,7 @@ async function readPicked(f){ if(/\.(pdf|tiff?)$/i.test(f.name)) return {name:f.
 function kindOf(f){ if(f.table) return tableKind(f); const t=f.text.trimStart(); if(/\.(lasproj|json)$/i.test(f.name)||t[0]==='{') return 'project';
   if(t[0]==='~'||/\.(las|dlis|lis|tif|tiff|pdf|xlsx?|zip)$/i.test(f.name)||/^#[^\n]*\n\s*~/.test(t)||WellerLAS.sniffBinary(f.text,f.name,f.bytes)) return 'las'; return tableKind(f); }
 // Plain tops and well headers load straight away; anything else asks what it is and which column is which.
-const tableKind=f=>{ const t=tableOf(f); if(!t.table.columns.length||!t.table.rows.length) return 'unknown'; const g=f._guess||(f._guess=WellerTables.guess(t.table)); return g.sure?'table':'ask'; };
+const tableKind=f=>{ if(WellerSurvey.isSurvey(f.text)) return 'survey'; const t=tableOf(f); if(!t.table.columns.length||!t.table.rows.length) return 'unknown'; const g=f._guess||(f._guess=WellerTables.guess(t.table)); return g.sure?'table':'ask'; };
 const TABLE_HELP='A header row, then one row per record. Tops: well or API, top name and MD. Well header: well or API and at least two of KB, GL, latitude, longitude, X, Y, spud, status, type, field, operator or TD. Point data: well or API, a depth, then a label or one column per measurement. Survey: well or API, MD, inclination, azimuth.';
 
 /* ---------- "What's in this file?": the type and which column is which, for a table that is not plainly tops or a header ---------- */
@@ -1118,7 +1119,7 @@ $('kindMap').addEventListener('input',e=>{ if(e.target.id==='kindName') K.name=e
 $('kindSkip').onclick=()=>closeKind(null);
 $('kindApply').onclick=()=>{ if(kindProblem()) return; closeKind({kind:K.kind,map:K.map,t:K.t,name:K.name.trim()||seriesName(K.f.name)}); };
 async function openFiles(files){ const mud=files.filter(f=>f.mud); files=files.filter(f=>!f.mud); if(mud.length) window.WellerMud?.openFiles(mud.map(f=>f.file)); if(!files.length) return;
-  const by={project:[],las:[],table:[],ask:[],unknown:[]}; for(const f of files) by[kindOf(f)].push(f); const report=[];
+  const by={project:[],las:[],table:[],survey:[],ask:[],unknown:[]}; for(const f of files) by[kindOf(f)].push(f); const report=[];
   const other=(f,fn)=>{ try{ report.push({file:f.name,status:'loaded',note:fn(),problems:[]}); }catch(err){ report.push({file:f.name,status:'failed',problems:[{level:'error',cat:'Parsing',title:err.message}]}); } };
   // LAS picked with an older project (one without the LAS inside) restores its wells instead of loading as new ones.
   if(by.project.length&&by.las.length){ const want=new Set(); for(const f of by.project){ try{ for(const r of JSON.parse(f.text).wells||[]) for(const x of r.files||[r]) if(x.fileName) want.add(x.fileName); }catch(e){} }
@@ -1136,6 +1137,7 @@ async function openFiles(files){ const mud=files.filter(f=>f.mud); files=files.f
   for(const {f,a} of later){ try{ const r=a.kind==='events'?importEvents(a.t,a.map,f.name,a.name):a.kind==='survey'?importSurveyTable(a.t,a.map,f.name):importValuePoints(a.t,a.map,f.name);
       if(a.kind==='survey') for(const w of S.wells){ w._ss=null; } report.push({file:f.name,status:'loaded',note:r.note,problems:r.problems}); }
     catch(err){ report.push({file:f.name,status:'failed',problems:[{level:'error',cat:'Import',title:err.message}]}); } }
+  if(by.survey.length) report.push(...importSurveys(by.survey));
   for(const f of by.unknown) report.push({file:f.name,status:'failed',problems:[{level:'error',cat:'File type',title:`No rows to read (columns: ${tableOf(f).table.columns.slice(0,12).join(', ')||'none'})`,fix:TABLE_HELP}]});
   render(); showImportSummary(report); }
 
@@ -1152,7 +1154,7 @@ function rebuildWell(prev,parts,prefer='prev'){ const m=WellerLAS.mergeWells(par
     for(const g of ['location','elevation']) for(const [k,v] of Object.entries(prev[g]||{})) if(ok(v)&&(prefer==='prev'||!ok(m[g][k]))) m[g][k]=v;
     for(const g of ['header','attrs']) if(prev[g]) m[g]={...prev[g]};
     const tops=[...(prev.tops||[])]; for(const t of m.tops) if(!tops.some(x=>x.name===t.name)) tops.push(t); m.tops=tops;
-    m.curves.push(...prev.curves.filter(c=>c.sparse&&!m.curves.some(x=>x.mnemonic===c.mnemonic))); if(prev.pick) m.pick={...prev.pick}; if(prev.shifts||prev.edits){ if(prev.shifts) m.shifts={...prev.shifts}; if(prev.edits) m.edits=structuredClone(prev.edits); applyShifts(m); } }
+    m.curves.push(...prev.curves.filter(c=>c.sparse&&!m.curves.some(x=>x.mnemonic===c.mnemonic))); if(prev.pick) m.pick={...prev.pick}; if(prev.dirSurvey){ m.dirSurvey=prev.dirSurvey; applyDirSurvey(m); } if(prev.shifts||prev.edits){ if(prev.shifts) m.shifts={...prev.shifts}; if(prev.edits) m.edits=structuredClone(prev.edits); applyShifts(m); } }
   if(parts.length>1) m.parts=parts; return m; }
 // Offsets a well's files report, with the file they came from.
 const offsetsOf=w=>partsOf(w).flatMap(p=>(p.sensorOffsets?.list||[]).map(o=>({...o,file:p.fileName,atBit:p.sensorOffsets.atBit})));
@@ -1189,6 +1191,34 @@ function exportLAS(w){ if(!w){ $('stNote').textContent='Select a well to export'
   downloadBlob(`${w.name.replace(/[^\w.-]+/g,'_')}.las`,new Blob([text],{type:'text/plain'})); }
 $('btnLas').onclick=()=>exportLAS(wellById(S.selected));
 $('wdLas').onclick=()=>exportLAS(wellEditing);
+
+/* ---------- Directional surveys from their own files (CSV, text reports, .xlsx, pasted cells) ----------
+   An imported survey replaces the one in the LAS for TVD, the map trajectory and thickness; removing it brings that back. */
+const depthUnitOf=w=>/^m/i.test(w.depthUnit||'')?'m':'ft';
+function applyDirSurvey(w){ if(w._lasSurvey===undefined) w._lasSurvey=w.survey?.imported?null:(w.survey||null);
+  w.survey=w.dirSurvey?WellerSurvey.build(w.dirSurvey,depthUnitOf(w)):w._lasSurvey; w._tvd=null; w._ss=null; }
+function surveySummary(w){ const s=w.survey; if(!s) return '';
+  const n=s.md.length, last=n-1, disp=s.north?Math.hypot(s.north[last],s.east[last]):NaN, maxInc=Math.max(...s.inc);
+  return `${n} stations, ${fmtD(s.md[0],w)}–${fmtD(s.md[last],w)} ${dispU()} MD, max ${maxInc.toFixed(1)}°`+(Number.isFinite(disp)&&!s.fromCurve?`, ${fmtD(disp,w)} ${dispU()} from the wellhead`:''); }
+function drawWdSurvey(w){ const s=w.survey, src=w.dirSurvey?`from ${esc(w.dirSurvey.source||'an imported file')}`+(w.dirSurvey.azRef?`, azimuths to ${esc(w.dirSurvey.azRef)} north`:''):s?.fromCurve?`TVD from the ${esc(s.fromCurve)} curve, no azimuth (no map trajectory)`:s?'from the LAS file':'';
+  $('wdSurvey').innerHTML=`<b>Directional survey</b>: ${s?`${surveySummary(w)} · ${src}`:'none (vertical hole assumed)'}${(s?.notes||[]).length?` <span class="hint">(${s.notes.map(esc).join('; ')})</span>`:''}
+    <button class="small" id="wdSvLoad" title="CSV, tab-delimited, text report or .xlsx with MD, Inc and Azi (or MD, TVD, N/S, E/W)">Load survey…</button>${w.dirSurvey?'<button class="small" id="wdSvDrop">Remove imported survey</button>':''}`; }
+$('wdSurvey').addEventListener('click',e=>{ const w=wellEditing; if(!w) return;
+  if(e.target.id==='wdSvLoad'){ const inp=$('surveyIn'); inp.onchange=async()=>{ const f=inp.files[0]; inp.value=''; if(!f) return; const files=[await readPicked(f)].flat();
+      const recs=files.flatMap(x=>WellerSurvey.readSurvey(x.text,x.name).surveys.map(r=>({...r,source:x.name})));
+      if(!recs.length){ $('stNote').textContent=`${f.name}: no survey found (needs MD with Inc and Azi, or MD with TVD, N/S and E/W)`; return; }
+      const r=recs.find(r=>WellerTables.matchWell([w],r))||recs[0]; setDirSurvey(w,r); drawWdSurvey(w); render(); }; inp.click(); }
+  if(e.target.id==='wdSvDrop'){ delete w.dirSurvey; applyDirSurvey(w); drawWdSurvey(w); render(); } });
+function setDirSurvey(w,rec){ w.dirSurvey=WellerSurvey.toJSON(rec); applyDirSurvey(w); if(S.interp?.enabled) computeInterp(w); }
+// Match each survey to an open well by API or name (from a column, the preamble or the file name). One open well takes an unnamed survey.
+function importSurveys(files){ const out=[];
+  for(const f of files){ const {surveys,problems}=WellerSurvey.readSurvey(f.text,f.name), done=[], probs=problems.map(t=>({level:'warn',cat:'Survey',title:t}));
+    for(const r of surveys){ let w=WellerTables.matchWell(S.wells,{name:r.name,api:r.api,alias:''});
+      if(!w&&S.wells.length===1&&!r.api){ w=S.wells[0]; probs.push({level:'info',cat:'Survey',title:`No well named in the file; attached to ${w.name}, the only open well`}); }
+      if(!w){ probs.push({level:'warn',cat:'Match',title:`No open well for ${r.name||r.api||'this survey'}`,fix:'Open the LAS first, or open the well\'s ⚙ settings and use Load survey… to attach it to that well.'}); continue; }
+      setDirSurvey(w,{...r,source:f.name}); done.push(`${w.name}: ${surveySummary(w)}`); if(r.unit==='') probs.push({level:'info',cat:'Units',title:`${w.name}: survey depth unit not stated; read as ${depthUnitOf(w)}, the well's unit`}); }
+    out.push({file:f.name,status:done.length?'loaded':'failed',note:done.length?'Survey: '+done.join('; '):undefined,problems:done.length||probs.length?probs:[{level:'error',cat:'Survey',title:'No survey stations read'}]}); }
+  return out; }
 
 /* ---------- Curve QC: coverage across wells, checks per curve, despike, GR normalization ---------- */
 const QC_FAMS=[['GR','GR'],['SP','SP'],['CAL','Caliper'],['RD','Deep res'],['RM','Med res'],['RS','Shal res'],['RHOB','Density'],['NPHI','Neutron'],['PE','PE'],['DT','Sonic'],['DPHI','Den por'],['K','Spectral'],['ROP','ROP'],['TG','Gas']];
@@ -1348,7 +1378,7 @@ function methodsHTML(){ const tr=S.tracks.filter(t=>t.curves?.length&&t.type!=='
     <li>Job-dependent scales (casing, tension, shock, temperature) come from each well's data (p2–p98); curves of one unit in a track share a scale.</li></ul>`]);
   S_.push(['map','Curve mapping',`<table><thead><tr><th>Track</th><th>Curve</th><th>What it is</th><th>Mnemonics accepted</th></tr></thead><tbody>${tr.flatMap(t=>t.curves.filter(c=>c.aliases).map((c,i)=>`<tr><td>${i?'':esc(t.name)}</td><td>${esc(c.label)}</td><td>${esc(curveInfo(c))}</td><td class="mn">${esc(c.aliases.slice(0,14).join(' '))}${c.aliases.length>14?' …':''}</td></tr>`)).join('')}</tbody></table>
     <p class="hint">Array resistivity is numbered by depth of investigation in inches (R20…R85, RT10…RT90); the letter after it is a processing or resolution variant, and every variant is offered in the picker. Cuttings percentages map mud-log lithology names (Shale, Chalk, Marlstone…).</p>`]);
-  S_.push(['depth','Depth, datums and horizontal wells',`<ul><li>Data stay in measured depth (MD). TVD comes from the survey in ~Other or an Inclinometry set, else from a TVD curve, by minimum curvature. ssTVD = KB (or GL) minus TVD.</li>
+  S_.push(['depth','Depth, datums and horizontal wells',`<ul><li>Data stay in measured depth (MD). TVD comes from an imported survey file, else the survey in ~Other or an Inclinometry set, else from a TVD curve, by minimum curvature. North and east offsets from the same calculation draw the well path on the map; a TVD curve alone has no azimuth, so no path.</li><li>Isopach maps grid true vertical thickness (TVD difference between two tops), posted at the interval's midpoint along the path; structure maps grid subsea depth of a top. The grid is a thin-plate spline with slight smoothing, drawn only within the wells' convex hull plus 15% of their extent (at least 200 m); wells within 15 m share their mean. Azimuths are used as given (true or grid north are not converted). ssTVD = KB (or GL) minus TVD.</li>
     <li>Correlation hangs on MD, ground level (TVD minus KB–GL, so rigs of different heights line up), sea level (TVDSS) or a flattened top. A top that no well has falls back to MD.</li>
     <li>Horizontal wells in MD stretch the lateral; in TVD the lateral stacks onto a short interval and repeats section where it undulates (toe up or toe down). True stratigraphic thickness (TST) needs the survey and a dip model; it is not computed yet.</li>
     <li>Azimuthal GR (up, down, left, right) shows which way the bit crosses the beds.</li></ul>`]);
@@ -1383,10 +1413,11 @@ addEventListener('paste',e=>{ if(e.target.closest?.('input,textarea,select,[cont
 
 /* ---------- Project save / load / autosave ---------- */
 // A survey imported from a table is not in the LAS, so the project carries it.
-function restoreSurvey(w,s){ if(!s?.md?.length) return; const md=Float64Array.from(s.md), inc=Float64Array.from(s.inc), azi=Float64Array.from(s.azi); w.survey={md,inc,azi,tvd:WellerLAS.minCurvatureTVD(md,inc,azi),fromTable:s.fromTable}; w._tvd=null; w._ss=null; }
-function projectJSON(){ return { version:3, app:'weller-logs', savedAt:new Date().toISOString(), mode:S.mode, selected:S.selected, panel:S.panel, datum:S.datum, views:S.views, tracks:S.tracks, hiddenPoints:S.hiddenPoints, stats:S.stats, basemap:S.basemap, interp:S.interp, corr:S.corr, topColors:S.topColors,display:{units:S.units,depthLabels:S.depthLabels,showEmpty:S.showEmpty,headH:S.headH},keepZeros:S.keepZeros?.length?S.keepZeros:undefined,
+// Projects saved before survey files kept a table survey as ref.survey.
+const dirSurveyOf=ref=>ref.dirSurvey||(ref.survey?.md?.length?{md:ref.survey.md,inc:ref.survey.inc,azi:ref.survey.azi,source:ref.survey.fromTable||'',unit:'',notes:[]}:undefined);
+function projectJSON(){ return { version:3, app:'weller-logs', savedAt:new Date().toISOString(), mode:S.mode, selected:S.selected, panel:S.panel, datum:S.datum, views:S.views, tracks:S.tracks, hiddenPoints:S.hiddenPoints, stats:S.stats, basemap:S.basemap, mapGrid:S.mapGrid?.kind?S.mapGrid:undefined, interp:S.interp, corr:S.corr, topColors:S.topColors,display:{units:S.units,depthLabels:S.depthLabels,showEmpty:S.showEmpty,headH:S.headH},keepZeros:S.keepZeros?.length?S.keepZeros:undefined,
   mudlogs:window.WellerMud?.toJSON(),
-  wells:S.wells.map(w=>({id:w.id,name:w.name,api:w.api,field:w.field,company:w.company,county:w.county,state:w.state,preset:w.preset,demo:w.demo,fileName:w.fileName,pick:w.pick,shifts:w.shifts,edits:w.edits,files:partsOf(w).length>1?partsOf(w).map(p=>({fileName:p.fileName,demo:p.demo})):undefined,location:w.location,elevation:w.elevation,header:w.header,attrs:w.attrs,depthUnit:w.depthUnit,tops:w.tops,points:pointsJSON(w),survey:w.survey?.fromTable?{fromTable:w.survey.fromTable,md:[...w.survey.md],inc:[...w.survey.inc],azi:[...w.survey.azi]}:undefined,curveList:w.curves.filter(c=>!c.sparse).map(c=>c.mnemonic)})) }; }
+  wells:S.wells.map(w=>({id:w.id,name:w.name,api:w.api,field:w.field,company:w.company,county:w.county,state:w.state,preset:w.preset,demo:w.demo,fileName:w.fileName,pick:w.pick,shifts:w.shifts,edits:w.edits,files:partsOf(w).length>1?partsOf(w).map(p=>({fileName:p.fileName,demo:p.demo})):undefined,location:w.location,elevation:w.elevation,header:w.header,attrs:w.attrs,depthUnit:w.depthUnit,tops:w.tops,points:pointsJSON(w),dirSurvey:w.dirSurvey,curveList:w.curves.filter(c=>!c.sparse).map(c=>c.mnemonic)})) }; }
 async function loadProject(p){ if(!p||p.app!=='weller-logs') throw new Error('not a Weller Logs project'); const missing=[];
   // A file may be a well on its own or one part of a merged well; find it wherever it is now.
   const findPart=fn=>{ for(const w of S.wells){ const ps=partsOf(w); if(ps.length===1&&w.fileName===fn) return w; const q=ps.find(q=>q.fileName===fn); if(q) return q; } return null; };
@@ -1400,12 +1431,12 @@ async function loadProject(p){ if(!p||p.app!=='weller-logs') throw new Error('no
     const text=f.demo?await fetchText('data/'+f.demo):await lasCache.get(f.fileName); if(text){ try{ const w=normalizeWell(parseLAS(text,nullOpts(f.fileName)),f.fileName); if(f.demo) w.demo=f.demo; fromCache[f.fileName]=w; }catch(e){} } } }
   const getPart=fn=>findPart(fn)||fromCache[fn];
   const byFiles=fs=>S.wells.find(w=>sourcesOf(w).join('\n')===fs.join('\n'));
-  S.wells=p.wells.map(ref=>{ if(ref.preset){ const cfg=WellerSynth.PRESET_WELLS.find(c=>c.id===ref.preset); const w=presetWell(cfg); w.tops=ref.tops; w.elevation=ref.elevation; w.header=ref.header; w.attrs=ref.attrs; if(ref.edits){ w.edits=ref.edits; applyShifts(w); } restorePoints(w,ref.points); restoreSurvey(w,ref.survey); return w; }
+  S.wells=p.wells.map(ref=>{ if(ref.preset){ const cfg=WellerSynth.PRESET_WELLS.find(c=>c.id===ref.preset); const w=presetWell(cfg); w.tops=ref.tops; w.elevation=ref.elevation; w.header=ref.header; w.attrs=ref.attrs; if(ref.edits){ w.edits=ref.edits; applyShifts(w); } const ds=dirSurveyOf(ref); if(ds){ w.dirSurvey=ds; applyDirSurvey(w); } restorePoints(w,ref.points); return w; }
     let live;
     if(ref.files){ const fs=ref.files.map(f=>f.fileName); live=byFiles(fs); if(!live){ const parts=fs.map(getPart); if(parts.some(x=>!x)){ missing.push(...fs.filter((f,i)=>!parts[i])); return null; } live=rebuildWell(null,parts); } }
     else live=byFiles([ref.fileName])||getPart(ref.fileName);
-    if(live){ if(ref.demo) live.demo=ref.demo; Object.assign(live,{tops:ref.tops,elevation:ref.elevation,location:ref.location,header:ref.header,attrs:ref.attrs,name:ref.name,api:ref.api,field:ref.field,id:ref.id,pick:ref.pick,shifts:ref.shifts,edits:ref.edits,_grP:null}); for(const k of ['company','county','state']) if(ref[k]!==undefined) live[k]=ref[k]; WellerLAS.fillPlace(live); applyShifts(live); restorePoints(live,ref.points); restoreSurvey(live,ref.survey); return live; } missing.push(ref.fileName||ref.name); return null; }).filter(Boolean);
-  S.tracks=migrateTracks(p.tracks); S.views=p.views||newViews(); S.view=S.views[viewKey(S.mode)]||S.views.single; S.datum=p.datum||'MD'; S.topColors=p.topColors||S.topColors; S.hiddenPoints=p.hiddenPoints||[]; S.stats={...statsDefaults(),...(p.stats||{})}; S.interp={...interpDefaults(),...(p.interp||{})}; S.corr={...S.corr,...(p.corr||{})}; if(!p.tracks.some(t=>t.id==='t8')) S.tracks=[...S.tracks,...defaultTracks().filter(t=>['t8','t9','t10','t11','t12'].includes(t.id))]; setBasemap(p.basemap||'map'); if((p.version||1)<2) pointSeriesNames().forEach(placePointSeries); S.panel=(p.panel||[]).filter(id=>wellById(id));
+    if(live){ if(ref.demo) live.demo=ref.demo; Object.assign(live,{tops:ref.tops,elevation:ref.elevation,location:ref.location,header:ref.header,attrs:ref.attrs,name:ref.name,api:ref.api,field:ref.field,id:ref.id,pick:ref.pick,shifts:ref.shifts,edits:ref.edits,dirSurvey:dirSurveyOf(ref),_grP:null}); for(const k of ['company','county','state']) if(ref[k]!==undefined) live[k]=ref[k]; WellerLAS.fillPlace(live); applyDirSurvey(live); applyShifts(live); restorePoints(live,ref.points); return live; } missing.push(ref.fileName||ref.name); return null; }).filter(Boolean);
+  S.tracks=migrateTracks(p.tracks); S.views=p.views||newViews(); S.view=S.views[viewKey(S.mode)]||S.views.single; S.datum=p.datum||'MD'; S.topColors=p.topColors||S.topColors; S.hiddenPoints=p.hiddenPoints||[]; S.stats={...statsDefaults(),...(p.stats||{})}; S.interp={...interpDefaults(),...(p.interp||{})}; S.corr={...S.corr,...(p.corr||{})}; S.mapGrid=p.mapGrid||{kind:''}; if(!p.tracks.some(t=>t.id==='t8')) S.tracks=[...S.tracks,...defaultTracks().filter(t=>['t8','t9','t10','t11','t12'].includes(t.id))]; setBasemap(p.basemap||'map'); if((p.version||1)<2) pointSeriesNames().forEach(placePointSeries); S.panel=(p.panel||[]).filter(id=>wellById(id));
   // Older projects kept section order separately: move those wells into that order within the list.
   if((p.version||1)<3){ const pos=S.wells.map((w,i)=>S.panel.includes(w.id)?i:-1).filter(i=>i>=0); S.panel.forEach((id,k)=>{ S.wells[pos[k]]=wellById(id); }); } S.selected=wellById(p.selected)?p.selected:(S.wells[0]?.id||null);
   window.WellerMud?.fromJSON(p.mudlogs); computeAllInterp(); setMode(p.mode||'single'); $('stNote').textContent=missing.length?`Re-open these LAS files to restore them: ${missing.join(', ')}`:'Project loaded'; return missing; }

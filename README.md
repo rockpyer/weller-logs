@@ -45,7 +45,23 @@ Methods, equations, defaults and limits: [docs/PETROPHYSICS.md](docs/PETROPHYSIC
   lines, PE-density with matrix points, or any two curves, colored by zone, GR band or well. The summary table gives
   gross, net, net-to-gross, net pay, average porosity and Sw, porosity-feet and hydrocarbon-feet per zone, with true
   vertical thickness in deviated wells. Everything exports as CSV.
-- **Map.** USGS National Map topo or satellite imagery. NAD27 coordinates are shifted to WGS84.
+- **Map.** USGS National Map topo or satellite imagery. NAD27 coordinates are shifted to WGS84. Wells with a
+  directional survey are drawn from the wellhead to TD as seen from above. The side panel keeps a small map with
+  Map · Satellite · Gridding in its header (Gridding opens the **Map** tab) and a color bar labeled with the contour interval.
+- **Isopach and structure maps** (Map tab). Pick *Isopach* and two tops, or *Structure* and one top. The panel beside
+  the map lists each well's value (click a row to select the well), how the surface was made, and the full legend. Each well
+  posts its value: true vertical thickness (TVD from the survey), placed where the well path is halfway through the
+  interval, or the top's subsea depth, placed where the path crosses it. A thin-plate spline contours the values at
+  a round interval, only inside the wells' convex hull plus a margin; beyond that the map is blank. Wells missing a
+  pick say so on the map. The basemap turns grey under the colors; hover gives the gridded value and the nearest
+  well's. Thick (or deep) is dark. Fewer than three wells, or wells on a line, post values without contours.
+- **Directional surveys** load from their own files: CSV, tab-delimited, fixed-width text reports, `.xlsx` or pasted
+  cells. Columns are found by name (MD, Inc, Azi, and TVD, N/S, E/W when given) below any preamble; units come from
+  the header, a units row or the preamble; the well from a well or API column, the preamble (`Well Name:`, `API:`) or
+  the file name, and one sheet may hold several wells. A file with only MD, TVD and offsets works too. TVD and
+  offsets are recomputed by minimum curvature, tied in at the first station, and a disagreement with the file's own
+  TVD is noted. An imported survey replaces the LAS one and is saved in the project; each well's ⚙ has *Load
+  survey…* and *Remove imported survey*. `samples/Inglewood_12_A_survey.txt` is a synthetic example for the LA Basin set.
 - **Robust LAS reading.** LAS 1.2, 2.0 and 3.0 (Log, Tops and Inclinometry data sets; comma or tab delimiters, quoted text), wrapped data, several null values, headers with label and value swapped,
   lasio-style tolerance (run-together values like `-999.25-999.25`, comma decimal marks, text nulls such as `NA` or `INF`,
   extra sentinels such as `9999.25` and `2147483647`, header lines missing the period, byte-order marks and old Mac line ends),
@@ -184,7 +200,9 @@ app/js/petro.js      petrophysics equations (browser and Node)
 app/js/interp.js     interpretation workflow and its panel
 app/js/core.js       state, tracks, depth frames, correlation, files, project
 app/js/stats.js      zone summations, box plots, crossplots, CSV exports
-app/js/map.js        Leaflet map, basemaps, NAD27 to WGS84
+app/js/map.js        Leaflet map, basemaps, NAD27 to WGS84, well paths, isopach and structure maps
+app/js/survey.js     directional survey files: column finding, units, wells, minimum curvature (browser and Node)
+app/js/grid.js       thin-plate spline gridding inside the wells' hull (browser and Node)
 app/js/points.js     point-data import and drawing
 app/js/mudcal.js     mudlog depth-label fitting, page calibration, header reading (browser and Node)
 app/js/mudlog.js     Mudlogs tab: import, strip storage, correlation canvas, calibration, picks

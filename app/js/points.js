@@ -134,8 +134,8 @@ function importSurveyTable(t, map, fileName) {
   for (const [w, rs] of g.byWell) {
     rs.sort((a, b) => a.top - b.top); if (rs.length < 2) { notes.push(`${w.name}: one station, not used`); continue; }
     const md = Float64Array.from(rs, r => r.top), inc = Float64Array.from(rs, r => r.inc), azi = Float64Array.from(rs, r => r.azi);
-    if (w.survey && !w.survey.fromCurve) notes.push(`${w.name}: replaced the survey from the LAS`);
-    w.survey = { md, inc, azi, tvd: WellerLAS.minCurvatureTVD(md, inc, azi), fromTable: fileName }; w._tvd = null;
+    if (w.survey && !w.survey.fromCurve && !w.dirSurvey) notes.push(`${w.name}: replaced the survey from the LAS`);
+    setDirSurvey(w, { md: [...md], inc: [...inc], azi: [...azi], source: fileName, unit: '', notes: [] });
   }
   const n = [...g.byWell.values()].reduce((a, r) => a + r.length, 0);
   return { note: `Survey: ${plural(n, 'station')} in ${plural(g.byWell.size, 'well')}` + (notes.length ? '; ' + notes.join('; ') : ''), problems: importProblems(g) };

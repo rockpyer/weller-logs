@@ -349,47 +349,60 @@
     const tops = [];
     parts.forEach((p, j) => { for (const t of p.tops || []) if (!tops.some(x => x.name === t.name)) tops.push({ ...t, md: t.md * k[j] }); });
     const sj = parts.findIndex(p => p.survey), sv = parts[sj]?.survey;
-    w.survey = sv && k[sj] !== 1 ? { ...sv, md: sv.md.map(v => v * k[sj]), tvd: sv.tvd.map(v => v * k[sj]) } : sv || null;
+    w.survey = sv && k[sj] !== 1 ? { ...sv, md: sv.md.map(v => v * k[sj]), tvd: sv.tvd.map(v => v * k[sj]), north: sv.north?.map(v => v * k[sj]), east: sv.east?.map(v => v * k[sj]) } : sv || null;
     return Object.assign(w, { curves, tops, notes: [...new Set([...parts.flatMap(p => p.notes || []), ...notes])], rows: n, wrap: false, reversed: false, sources: parts.map(p => p.fileName), stepMerged: step });
   }
 
   /* ---------- Directional survey from ~Other, and TVD by minimum curvature ---------- */
   function parseSurvey(otherLines) {
-    let cols = null; const md = [], inc = [], azi = [], tvd = [];
+    let cols = null; const md = [], inc = [], azi = [], tvd = [], north = [], east = [];
     for (const raw of otherLines) {
       const l = raw.replace(/^#/, '').trim(); if (!l) continue;
       const toks = l.split(/[\s,]+/);
       if (toks.every(t => Number.isFinite(+t))) {
         if (!cols) continue;
         const v = toks.map(Number); if (v.length < 3) continue;
-        md.push(v[cols.md]); inc.push(v[cols.inc]); azi.push(v[cols.azi]); tvd.push(cols.tvd >= 0 ? v[cols.tvd] : NaN);
+        const at = i => i >= 0 && i < v.length ? v[i] : NaN;
+        md.push(v[cols.md]); inc.push(v[cols.inc]); azi.push(v[cols.azi]); tvd.push(at(cols.tvd)); north.push(at(cols.n)); east.push(at(cols.e));
         continue;
       }
       const up = toks.map(t => t.toUpperCase());
       const find = re => up.findIndex(t => re.test(t));
       const iMd = find(/^(MD|DEPTH|DEPT|MEAS)/), iInc = find(/^(INC|INCL|INCLINATION|DEV)/), iAzi = find(/^(AZ|AZM|AZI|AZIM|AZIMUTH)/);
       if (iMd >= 0 && iInc >= 0 && iAzi >= 0) {
-        cols = { md: iMd, inc: iInc, azi: iAzi, tvd: find(/^TVD$/) };
+        cols = { md: iMd, inc: iInc, azi: iAzi, tvd: find(/^TVD$/), n: find(/^(\+?N\/-?S|NS|N-S|NORTH|DN|LATOFF)$/), e: find(/^(\+?E\/-?W|EW|E-W|EAST|DE|DEPOFF)$/) };
       }
     }
     if (md.length < 2) return null;
-    const s = { md: Float64Array.from(md), inc: Float64Array.from(inc), azi: Float64Array.from(azi), tvd: Float64Array.from(tvd) };
-    if (s.tvd.some(v => !Number.isFinite(v))) s.tvd = minCurvatureTVD(s.md, s.inc, s.azi);
+    const F = a => Float64Array.from(a), ok = a => a.every(Number.isFinite);
+    const s = { md: F(md), inc: F(inc), azi: F(azi), tvd: F(tvd) };
+    // The vendor's TVD and offsets win where the file gives them; the first station ties in the rest.
+    const tie = ok(tvd) && Number.isFinite(north[0]) && Number.isFinite(east[0]) ? { tvd: tvd[0], north: north[0], east: east[0] } : null;
+    const mc = minCurvature(s.md, s.inc, s.azi, tie);
+    if (!ok(tvd)) s.tvd = mc.tvd;
+    s.north = ok(north) ? F(north) : mc.north; s.east = ok(east) ? F(east) : mc.east;
     return s;
   }
 
-  function minCurvatureTVD(md, inc, azi) {
-    const r = Math.PI / 180, tvd = new Float64Array(md.length);
-    tvd[0] = md[0] * Math.cos(inc[0] * r);   // tie-in: straight hole from surface to the first station
-    for (let i = 1; i < md.length; i++) {
+  // Minimum curvature: TVD, north and east offsets from the wellhead, and dogleg severity (degrees per 100 depth units).
+  // Without a tie-in, the hole is straight from surface to the first station along its inclination and azimuth.
+  function minCurvature(md, inc, azi, tie) {
+    const r = Math.PI / 180, n = md.length, tvd = new Float64Array(n), north = new Float64Array(n), east = new Float64Array(n), dls = new Float64Array(n);
+    if (tie) { tvd[0] = tie.tvd; north[0] = tie.north; east[0] = tie.east; }
+    else { const h = md[0] * Math.sin(inc[0] * r); tvd[0] = md[0] * Math.cos(inc[0] * r); north[0] = h * Math.cos(azi[0] * r); east[0] = h * Math.sin(azi[0] * r); }
+    for (let i = 1; i < n; i++) {
       const i1 = inc[i - 1] * r, i2 = inc[i] * r, a1 = azi[i - 1] * r, a2 = azi[i] * r, dmd = md[i] - md[i - 1];
       const cosDL = Math.cos(i2 - i1) - Math.sin(i1) * Math.sin(i2) * (1 - Math.cos(a2 - a1));
       const dl = Math.acos(Math.min(1, Math.max(-1, cosDL)));
-      const rf = dl > 1e-9 ? (2 / dl) * Math.tan(dl / 2) : 1;
-      tvd[i] = tvd[i - 1] + (dmd / 2) * (Math.cos(i1) + Math.cos(i2)) * rf;
+      const rf = dl > 1e-9 ? (2 / dl) * Math.tan(dl / 2) : 1, h = dmd / 2 * rf;
+      tvd[i] = tvd[i - 1] + h * (Math.cos(i1) + Math.cos(i2));
+      north[i] = north[i - 1] + h * (Math.sin(i1) * Math.cos(a1) + Math.sin(i2) * Math.cos(a2));
+      east[i] = east[i - 1] + h * (Math.sin(i1) * Math.sin(a1) + Math.sin(i2) * Math.sin(a2));
+      dls[i] = dmd > 0 ? dl / r * 100 / dmd : 0;
     }
-    return tvd;
+    return { tvd, north, east, dls };
   }
+  const minCurvatureTVD = (md, inc, azi) => minCurvature(md, inc, azi).tvd;
 
   // TVD at each log depth: interpolate the survey; above it, parallel to the first station; below it, along the last inclination.
   function tvdAt(survey, depth) {
@@ -512,5 +525,5 @@
   // The elevation that depths hang from: KB when plausible, else GL (flagged), else none.
   function datumElevation(w) { const e = w.elevation || {}; return Number.isFinite(e.kb) ? e.kb : Number.isFinite(e.gl) ? e.gl : undefined; }
 
-  root.WellerLAS = { parseLAS, diagnoseLAS, sniffBinary, apiKey, apiPlace, fillPlace, nameKey, parseCoord, fmtApi, mergeWells, resample, shiftCurve, sensorOffsets, LAS_TEMPLATE, normalizeWell, parseSurvey, minCurvatureTVD, tvdAt, datumElevation, median, leadingNumber, parseHeaderLine };
+  root.WellerLAS = { parseLAS, diagnoseLAS, sniffBinary, apiKey, apiPlace, fillPlace, nameKey, parseCoord, fmtApi, mergeWells, resample, shiftCurve, sensorOffsets, LAS_TEMPLATE, normalizeWell, parseSurvey, minCurvature, minCurvatureTVD, tvdAt, datumElevation, median, leadingNumber, parseHeaderLine };
 })(typeof globalThis !== 'undefined' ? globalThis : this);
