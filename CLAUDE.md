@@ -8,3 +8,6 @@ This is a public repository.
   not only a PR diff, and put that link at the top of the final reply. `app/` is plain static files: serve it with
   `npm run web` to test, and publish the same files as a preview page.
 - Test in a real browser before pushing (`npm test` plus a headless Chromium pass over the changed UI).
+- **Merge small asked-for changes.** When the owner explicitly asked for a change and it is small or moderate (not a large
+  new feature or a design overhaul), merge the PR yourself (squash) as soon as `npm test` passes, the browser check is done
+  and CI is green. Ask first only for large functional or design changes.
