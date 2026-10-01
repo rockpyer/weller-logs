@@ -102,9 +102,20 @@ Methods, equations, defaults and limits: [docs/PETROPHYSICS.md](docs/PETROPHYSIC
 
 ## Use it
 
-- **Open…** (Cmd+O), or drop files anywhere: LAS, `.lasproj`, tops CSV (`well, top, md`) or point-data CSV
+- **Open…** (Cmd+O), or drop files anywhere: LAS, `.lasproj`, tops or well-header tables, or point-data CSV
   (`well, md`, then one column per measurement, units in the header such as `k (mD)`). PDF and TIFF files open in
   the Mudlogs tab.
+- **Tops and well-header tables** load from CSV, tab-delimited text, an Excel `.xlsx` (every sheet), or cells copied
+  from a spreadsheet and pasted anywhere (Cmd+V, header row included). Columns are recognized by name, extra columns
+  are fine:
+  - *Tops*: well name or API, a top name (`Formation`, `Marker / Formation Top`…) and MD (`MD`, `Top (ft MD)`…).
+  - *Well header*: well name or API plus any of operator, field, county, state, KB, GL, KB above GL, latitude,
+    longitude, surface X/Y and CRS, spud and completion dates, status, type, TD (MD and TVD) and depth datum.
+    Other columns (casing depth, scope…) are kept as named values and shown on hover over the well name.
+  - Rows match open wells by API (first 10 digits; a 9-digit API that lost its leading zero is fixed) or by well or
+    short name, ignoring case, spaces and punctuation. Repeated rows collapse. Where rows disagree, or a value
+    differs from the well's, **Review import** asks which to keep (the value most rows give is preselected) or takes
+    a typed one. Blank fields fill without asking. Several files opened together merge first.
 - **New** closes all wells, mudlogs and their stored files (it asks first). Tick "Also reset settings" to return
   tracks, interpretation parameters, units, depth labels, header height and map to defaults; theme stays.
 - **Older projects** saved before the LAS text was stored inside: open the .lasproj together with its LAS files
