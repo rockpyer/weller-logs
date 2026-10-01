@@ -126,8 +126,9 @@ function renderStats() {
   const opt = sel => all.map(c => `<option value="${esc(c.label)}"${c.label === sel ? ' selected' : ''}>${esc(c.label)}${c.pointSeries ? ' (points)' : ''}</option>`).join('');
   if (!all.some(c => c.label === S.stats.curve)) S.stats.curve = all[0]?.label;
   if (!all.some(c => c.label === S.stats.x)) S.stats.x = all.find(c => c.label === 'NPHI')?.label || all[0]?.label;
+  if (!all.some(c => c.label === S.stats.z)) S.stats.z = all.find(c => c.label === 'GR')?.label || all[0]?.label;
   if (!all.some(c => c.label === S.stats.y)) S.stats.y = all.find(c => c.label === 'RHOB')?.label || all[1]?.label || all[0]?.label;
-  $('stCurve').innerHTML = opt(S.stats.curve); $('stX').innerHTML = opt(S.stats.x); $('stY').innerHTML = opt(S.stats.y);
+  $('stCurve').innerHTML = opt(S.stats.curve); $('stX').innerHTML = opt(S.stats.x); $('stY').innerHTML = opt(S.stats.y); $('stZ').innerHTML = opt(S.stats.z); $('stZ').hidden = S.stats.color !== 'curve';
   $('stType').value = S.stats.type || 'custom'; $('stColor').value = S.stats.color || 'zone'; $('stClean').checked = S.stats.clean !== false;
   $('stXY').hidden = S.stats.type && S.stats.type !== 'custom'; $('stCleanWrap').hidden = S.stats.type !== 'pickett';
   drawBoxes(rows, all.find(c => c.label === S.stats.curve), colors);
@@ -137,7 +138,7 @@ function renderStats() {
     : T === 'pickett' ? [cfgOf('PHIE', ['PHIE', 'PHIT_ND', 'PHIT', 'PHI'], { min: 0.01, max: 1, log: true, unit: 'v/v' }), cfgOf('Deep', A.RD, { min: 0.1, max: 1000, log: true, unit: 'Ω·m' })]
     : T === 'pe' ? [cfgOf('PEF', A.PE, { min: 0, max: 7, unit: 'b/e' }), cfgOf('RHOB', A.RHOB, { min: 1.9, max: 3.0, unit: 'g/cc' })]
     : [all.find(c => c.label === S.stats.x), all.find(c => c.label === S.stats.y)];
-  drawCrossplot(pair[0], pair[1], colors, T);
+  drawCrossplot(pair[0], pair[1], colors, T, all.find(c => c.label === S.stats.z));
 }
 
 function drawBoxes(rows, cfg, colors) {
@@ -187,6 +188,18 @@ function pairSamples(w, cx, cy) {
   return out.filter(p => Number.isFinite(p[0]) && Number.isFinite(p[1]) && (!cx.log || p[0] > 0) && (!cy.log || p[1] > 0));
 }
 
+// Curve value at a depth: nearest log sample within 1 ft, or the nearest point of a point series.
+function sampleAt(w, c, md) { if (c.sparse) { const k = nearestPoint(c, md, 0.5); return k < 0 ? NaN : c.data[k]; }
+  const dep = depthOf(w), i = d3.bisectCenter(dep, md); return Math.abs(dep[i] - md) <= 1 ? c.data[i] : NaN; }
+// Five inner breaks splitting a curve's values (across the given wells) into six equal-count groups, with min and max attached.
+function curveGroups(wells, cfg) {
+  const v = []; for (const w of wells) { const c = resolveCurve(w, cfg); if (!c) continue; const step = c.sparse ? 1 : Math.max(1, Math.floor(c.data.length / 20000));
+    for (let i = 0; i < c.data.length; i += step) if (Number.isFinite(c.data[i]) && (!cfg.log || c.data[i] > 0)) v.push(c.data[i]); }
+  if (!v.length) return null; v.sort((a, b) => a - b);
+  const q = p => v[Math.min(v.length - 1, Math.floor(p * v.length))], br = [1, 2, 3, 4, 5].map(k => q(k / 6));
+  br.min = v[0]; br.max = v[v.length - 1]; return br;
+}
+
 // GR in six bands over 0-150 API (the petroplots convention), light to dark in one hue; stepped for each theme.
 const GR_BANDS = { light: ['#86b6ef', '#5598e7', '#2a78d6', '#1c5cab', '#104281', '#0d366b'], dark: ['#184f95', '#256abf', '#3987e5', '#6da7ec', '#9ec5f4', '#cde2fb'] };
 // Matrix neutron readings on each calibration (thermal neutron, fresh water). The calibration matrix is exact by
@@ -195,7 +208,7 @@ const ND_MATRIX = { limestone: { sandstone: -0.035, limestone: 0, dolomite: 0.02
 const RHO_MA = { sandstone: 2.65, limestone: 2.71, dolomite: 2.87 };
 const PE_POINTS = [['Quartz', 1.81, 2.65], ['Calcite', 5.08, 2.71], ['Dolomite', 3.14, 2.87], ['Anhydrite', 5.05, 2.98]];
 
-function drawCrossplot(cx, cy, colors, type = 'custom') {
+function drawCrossplot(cx, cy, colors, type = 'custom', cz) {
   const cv = $('stXp'); const W = Math.max(320, cv.parentElement.clientWidth - 4), H = Math.min(540, Math.round(W * 0.82));
   const dpr = window.devicePixelRatio || 1; cv.width = W * dpr; cv.height = H * dpr; cv.style.width = W + 'px'; cv.style.height = H + 'px';
   const ctx = cv.getContext('2d'); ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, W, H);
@@ -219,8 +232,10 @@ function drawCrossplot(cx, cy, colors, type = 'custom') {
   const wellsOn = statWells(), wellColor = new Map(wellsOn.map((w, i) => [w.id, ZONE_COLORS[dark ? 'dark' : 'light'][i % 6]]));
   const vshCut = S.interp?.cut?.vsh ?? 0.5, cleanOnly = type === 'pickett' && S.stats.clean !== false;
   let n = 0, skipped = 0; const temps = [], matrices = new Set();
+  // Color by a third curve: six equal-count groups over that curve in the plotted wells, light to dark.
+  const zBreaks = mode === 'curve' && cz ? curveGroups(wellsOn, cz) : null;
   for (const w of wellsOn) {
-    const grC = resolveCurve(w, { aliases: A.GR }), vshC = w.curves.find(c => c.computed && c.mnemonic === 'VSH_GR'), dep = depthOf(w);
+    const zC = zBreaks && resolveCurve(w, cz), grC = resolveCurve(w, { aliases: A.GR }), vshC = w.curves.find(c => c.computed && c.mnemonic === 'VSH_GR'), dep = depthOf(w);
     if (type === 'nd' && resolveCurve(w, cy) && resolveCurve(w, cx)) matrices.add(w.neutronMatrix || 'limestone');
     const tvd = tvdOf(w) || dep, td = tvd[tvd.length - 1];
     for (const [a, b, z, pt, md] of pairSamples(w, cx, cy)) {
@@ -229,6 +244,7 @@ function drawCrossplot(cx, cy, colors, type = 'custom') {
       if (type === 'pickett') temps.push(WellerPetro.tempAtDepth(tvd[i], S.interp.surfaceT, w.params?.bht, td));
       let col = colors.get(z) || muted;
       if (mode === 'well') col = wellColor.get(w.id);
+      else if (mode === 'curve') { const v = zC ? sampleAt(w, zC, md) : NaN; col = zBreaks && Number.isFinite(v) ? bands[Math.min(5, d3.bisectRight(zBreaks, v))] : muted; }
       else if (mode === 'gr') { const g = grC && !grC.sparse ? grC.data[i] : NaN; col = Number.isFinite(g) ? bands[Math.min(5, Math.max(0, Math.floor(g / 25)))] : muted; }
       ctx.fillStyle = col;
       if (pt) { ctx.globalAlpha = 1; ctx.beginPath(); ctx.arc(x(a), y(b), 3.5, 0, 7); ctx.fill(); ctx.strokeStyle = paper; ctx.stroke(); }
@@ -250,7 +266,7 @@ function drawCrossplot(cx, cy, colors, type = 'custom') {
       for (const p of [0, .1, .2, .3]) { const X = x(nma * (1 - p) + p), Y = y(rma * (1 - p) + p); ctx.beginPath(); ctx.arc(X, Y, 2.5, 0, 7); ctx.fill(); if (lith === 'limestone' || exact) ctx.fillText(`${Math.round(p * 100)}`, X + 5, Y - 4); }
       ctx.textAlign = 'right'; ctx.fillText(lith[0].toUpperCase() + lith.slice(1) + (exact ? '' : ' ≈'), x(nma) - 6, y(rma) + 4); ctx.textAlign = 'left';
     }
-    notes.push(`Neutron ${cal ? cal + '-calibrated' : ''}: the solid line is exact, dashed lines are approximate. Porosity ticks in %.`);
+    notes.push(`${cal ? 'Neutron ' + cal + '-calibrated' : 'Neutron'}: the solid line is exact, dashed lines are approximate. Porosity ticks in %.`);
   } else if (type === 'pickett') {
     const I = S.interp, T = temps.length ? WellerLAS.median(temps) : I.rwTemp, rwT = WellerPetro.rwAtTemp(I.rw, I.rwTemp, T);
     for (const sw of [1, 0.5, 0.25]) {
@@ -267,6 +283,8 @@ function drawCrossplot(cx, cy, colors, type = 'custom') {
   ctx.restore();
   $('stXpNote').textContent = `${n.toLocaleString()} samples plotted${n ? '' : ' (no overlapping data)'}. ${notes.join(' ')}`;
   if (mode === 'gr') $('stXpLegend').innerHTML = 'GR API ' + bands.map((c, i) => `<span><i style="background:${c}"></i>${i * 25}–${i === 5 ? '150+' : (i + 1) * 25}</span>`).join('');
+  else if (mode === 'curve' && zBreaks) { const e = [zBreaks.min, ...zBreaks, zBreaks.max]; $('stXpLegend').innerHTML = esc(cz.label) + ' ' + bands.map((c, i) => `<span><i style="background:${c}"></i>${f3(e[i], cz.log)}–${f3(e[i + 1], cz.log)}</span>`).join(''); }
+  else if (mode === 'curve') $('stXpLegend').innerHTML = `No ${esc(cz?.label || 'color curve')} data in these wells.`;
   else if (mode === 'well') $('stXpLegend').innerHTML = wellsOn.map(w => `<span><i style="background:${wellColor.get(w.id)}"></i>${esc(w.name)}</span>`).join('');
   cv.onmousemove = e => { const r = cv.getBoundingClientRect(), px = e.clientX - r.left, py = e.clientY - r.top;
     if (px < m.l || px > W - m.r || py < m.t || py > H - m.b) { $('stXpRead').textContent = ''; return; }
@@ -313,6 +331,7 @@ document.addEventListener('change', e => {
   else if (t.id === 'stX') { S.stats.x = t.value; render(); }
   else if (t.id === 'stY') { S.stats.y = t.value; render(); }
   else if (t.id === 'stType') { S.stats.type = t.value; render(); }
+  else if (t.id === 'stZ') { S.stats.z = t.value; render(); }
   else if (t.id === 'stColor') { S.stats.color = t.value; render(); }
   else if (t.id === 'stClean') { S.stats.clean = t.checked; render(); }
 });

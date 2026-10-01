@@ -607,8 +607,16 @@ function showCursor(e,md,w,resolved){ const dep=depthOf(w); const c=$('cursor'),
   // In pick mode the cursor carries the top's name and the depth a click will set.
   const pk=S.picking&&!!S.pickTop; c.classList.toggle('pk',pk); let tag=c.firstChild; if(pk){ if(!tag){ tag=document.createElement('span'); tag.className='ptag'; c.appendChild(tag); } tag.hidden=false; tag.style.left=(e.clientX-pr.left+14)+'px'; tag.textContent=`${S.pickTop} · ${fmtD(snapMD(md),w,1)}`; } else if(tag) tag.hidden=true;
   const i=Math.min(dep.length-1,Math.max(0,d3.bisectCenter(dep,md)));
-  setHTML($('stCursor'),`<b>${esc(w.name)}</b> ${depthText(w,md)}`);
-  setHTML($('stVals'),resolved.filter(r=>r.curve).map(r=>{ const c=r.curve; if(c.sparse){ const k=nearestPoint(c,md); return k<0?'':`${c.mnemonic} <b>${fmtVal(c.data[k],r.cfg)}</b> @${c.md[k]}`; } return `${c.mnemonic} <b>${fmtVal(c.data[i],r.cfg)}</b>`; }).filter(Boolean).join(' · ')); }
+  setHTML($('stCursor'),`<b title="${esc(w.name)}">${esc(shortWell(w.name))}</b> ${depthText(w,md)}`);
+  // Only real, non-zero readings, first few in track order; the rest go in the tooltip.
+  const vals=resolved.filter(r=>r.curve).map(r=>{ const c=r.curve; if(c.sparse){ const k=nearestPoint(c,md); return k<0?null:{c,v:c.data[k],cfg:r.cfg,at:c.md[k]}; } return {c,v:c.data[i],cfg:r.cfg}; })
+    .filter(x=>x&&Number.isFinite(x.v)&&x.v!==0);
+  const one=x=>`<span title="${esc(x.c.mnemonic)}">${esc(abbr(x.c.mnemonic))}</span> <b>${fmtVal(x.v,x.cfg)}</b>${x.at!=null?' @'+x.at:''}`, more=vals.slice(STATUS_VALS);
+  setHTML($('stVals'),vals.slice(0,STATUS_VALS).map(one).join(' · ')+(more.length?` · <span title="${esc(more.map(x=>`${x.c.mnemonic} ${fmtVal(x.v,x.cfg)}`).join('\n'))}">+${more.length}</span>`:'')); }
+const STATUS_VALS=5;
+const abbr=(s,n=8)=>s.length>n?s.slice(0,n-1)+'…':s;
+// Well names can carry an API number or a file name; keep the readable part, at most 18 characters.
+function shortWell(name){ const s=String(name).replace(/^\d{10,14}[_\s-]*/,'').replace(/\.las$/i,'').split(/[_]/)[0].trim()||String(name); return abbr(s,18); }
 function drawCorrelations(cols,y,gaps,zc){
   const ov=d3.select('#overlay'), panel=$('logPanel'), panelR=panel.getBoundingClientRect();
   const geo=cols.map(c=>{ const r=c.el.getBoundingClientRect(); const trk=c.el.querySelector('.tracks svg').getBoundingClientRect(); return {l:r.left-panelR.left,r:r.right-panelR.left,y0:trk.top-panelR.top,c}; });
@@ -711,7 +719,7 @@ function renderSidebar(){
   const dsel=$('datum'); const cur=S.datum; dsel.innerHTML=`<option value="MD">Measured depth</option><option value="GL">Ground level</option><option value="TVDSS">Sea level (TVDSS)</option>`+names.map(n=>`<option value="${esc(n)}">Flatten on ${esc(n)}</option>`).join(''); dsel.value=names.includes(cur)||DEPTH_DATUMS.includes(cur)?cur:'MD';
   $('spacing').value=S.corr.spacing; $('showEmpty').checked=S.showEmpty;
   document.querySelectorAll('[data-units]').forEach(b=>b.setAttribute('aria-pressed',b.dataset.units===S.units));
-  const sw=wellById(S.selected); $('stFile').innerHTML=sw?`<b title="${esc(sourcesOf(sw).join('\n'))}">${esc(sourcesOf(sw).length>1?sourcesOf(sw).length+' LAS files':sw.fileName||sw.name+'.las (synthetic)')}</b> · ${sw.rows||depthOf(sw).length} rows · KB ${Number.isFinite(sw.elevation.kb)?fmtD(sw.elevation.kb,sw)+' '+dispU():'?'} · null ${sw.nullv??-999.25}${sw.wrap?' · wrapped':''}`:'';
+  const sw=wellById(S.selected); $('stFile').innerHTML=sw?`<b title="${esc([sw.name,...sourcesOf(sw),`${sw.rows||depthOf(sw).length} rows · null ${sw.nullv??-999.25}${sw.wrap?' · wrapped':''}`].join('\n'))}">${esc(shortWell(sw.name))}</b>${Number.isFinite(sw.elevation.kb)?` · KB ${fmtD(sw.elevation.kb,sw)} ${dispU()}`:''}`:'';
 }
 /* Well list: drag a row to reorder wells, and with them the section. */
 { const list=$('wellList'); let dragId=null;
