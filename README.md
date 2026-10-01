@@ -164,7 +164,7 @@ Methods, equations, defaults and limits: [docs/PETROPHYSICS.md](docs/PETROPHYSIC
   first five API digits fill them in (04-037 → CA, Los Angeles). API county codes are FIPS codes outside Alaska;
   the table is `app/js/apicodes.js`, built by `scripts/make-api-codes.py`. Names already in the file are kept.
 - The lithology track's gear edits its Vshale and PE cutoffs and colors. Hover the lithology or flag tracks for the
-  class at that depth, the values behind it and MD / ssTVD; hover their header swatches for the full legend.
+  class at that depth, the values behind it and MD / TVDSS; hover their header swatches for the full legend.
 - **Load example data** in the Wells panel switches between the Niobrara set and a synthetic LA Basin set. The app
   opens on the Niobrara set.
 - Reopening the app offers to resume the last session; opened LAS files are cached in the browser.
