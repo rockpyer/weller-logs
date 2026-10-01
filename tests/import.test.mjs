@@ -196,7 +196,7 @@ test('a file-name API that names another well beats a copied ~Well header', () =
   assert.equal(apiKey(same.api).key, '0403730579-00'); assert.ok(!same.notes.some(n => /file name/.test(n)));
   const other = well(hdr, '040373058000_WEZU 24F_Mud Log - Petrolog 80_ - 9,590__10-01-2022.las');
   assert.equal(apiKey(other.api).key, '0403730580-00'); assert.equal(other.name, 'WEZU 24F');
-  assert.ok(other.notes.some(n => /disagree with the file name.*header ignored/.test(n)));
+  assert.ok(other.notes.some(n => /file name says .*header says .*ignored/.test(n)));
   const blank = well({ ...hdr, api: 'Enter Well ID' }, '040373058000_x.las');
   assert.equal(apiKey(blank.api).key, '0403730580-00'); assert.ok(blank.notes.some(n => /read from the file name/.test(n)));
 });

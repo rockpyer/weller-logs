@@ -493,7 +493,7 @@
     if (fk && !hk) { api = fn[1]; notes.push(`API ${fmtApi(fk)} read from the file name`); }
     else if (fk && hk?.us && hk.well !== fk.well) {
       const fname = fn[2].replace(/\.las$/i, '').trim(), useName = /[A-Z]/i.test(fname) && /\d/.test(fname) && nameKey(fname) !== nameKey(name);
-      notes.push(`header API ${fmtApi(hk)}${useName ? ` and name ${name}` : ''} disagree with the file name (${fmtApi(fk)}${useName ? ' ' + fname : ''}); file name used, header ignored`);
+      notes.push(`API: the file name says ${fmtApi(fk)}${useName ? ` (${fname})` : ''}, the LAS header says ${fmtApi(hk)}${useName ? ` (${name})` : ''}. Using the file name, since vendors often copy the header from a neighboring well; the header value was ignored. If the header is right, change the API in Well settings.`);
       api = fn[1]; if (useName) name = fname; }
     const w = {
       id: 'u' + Math.random().toString(36).slice(2, 8), name,

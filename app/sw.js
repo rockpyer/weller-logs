@@ -1,11 +1,16 @@
 // Offline cache for the app shell. Bump VERSION on every release so clients refresh.
-const VERSION = 'weller-v13';
-const SHELL = ['./', './index.html', './synth.js', './js/apicodes.js', './js/las.js', './js/qc.js', './js/petro.js', './js/points.js', './js/map.js', './js/stats.js', './js/interp.js', './js/core.js', './js/mudcal.js', './js/mudlog.js', './js/mudworker.js', './vendor/d3.min.js', './vendor/leaflet.js', './manifest.webmanifest', './icon-192.png', './icon-512.png'];
+const VERSION = 'weller-v16';
+const SHELL = ['./', './index.html', './synth.js', './js/apicodes.js', './js/las.js', './js/qc.js', './js/petro.js', './js/tables.js', './js/points.js', './js/map.js', './js/stats.js', './js/interp.js', './js/core.js', './js/mudcal.js', './js/mudlog.js', './js/mudworker.js', './vendor/d3.min.js', './vendor/leaflet.js', './manifest.webmanifest', './icon-192.png', './icon-512.png'];
 self.addEventListener('install', e => { e.waitUntil(caches.open(VERSION).then(c => c.addAll(SHELL)).then(() => self.skipWaiting())); });
 self.addEventListener('activate', e => { e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => k !== VERSION).map(k => caches.delete(k)))).then(() => self.clients.claim())); });
+// Files that never change at their URL (versioned CDN libraries, vendor copies, example data) come from the cache
+// first: no network round trip on reload. App code stays network first, so a fresh deploy wins. The example data
+// counts as fixed between releases; bumping VERSION clears it.
+const FIXED = /cdnjs\.cloudflare\.com|fonts\.(googleapis|gstatic)\.com|\/vendor\/|\/data\/niobrara\//;
+const keep = (req, r) => { if ((r.ok || (r.type === 'opaque' && FIXED.test(req.url))) && (new URL(req.url).origin === location.origin || FIXED.test(req.url))) { const c = r.clone(); caches.open(VERSION).then(k => k.put(req, c)); } return r; };
 self.addEventListener('fetch', e => {
   if (e.request.method !== 'GET') return;
-  // Network first for same-origin shell files (fresh deploys win), cache fallback when offline. CDN scripts: cache after first success.
-  e.respondWith(fetch(e.request).then(r => { if (r.ok && (new URL(e.request.url).origin === location.origin || /cdnjs\.cloudflare\.com/.test(e.request.url))) caches.open(VERSION).then(c => c.put(e.request, r.clone())); return r; })
+  if (FIXED.test(e.request.url)) { e.respondWith(caches.match(e.request).then(m => m || fetch(e.request).then(r => keep(e.request, r)))); return; }
+  e.respondWith(fetch(e.request).then(r => keep(e.request, r))
     .catch(() => caches.match(e.request).then(m => m || (e.request.mode === 'navigate' ? caches.match('./index.html') : undefined))));
 });

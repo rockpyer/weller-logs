@@ -1,7 +1,7 @@
 # Weller Logs
 
 Web-based well-log viewer and correlation tool. It opens LAS files (wireline and mud logs), draws tracks on
-standard scales, runs a transparent quick-look petrophysical interpretation, correlates tops across wells in MD,
+standard scales, runs a transparent quick-look petrophysical interpretation, correlates tops across wells in MD, ground level,
 TVDSS or flattened on a top, and summarizes zones with net pay and crossplots. It runs in Firefox, Brave and
 Chrome, installs as an offline web app, and saves everything to one `.lasproj` file: the LAS data, mudlog images,
 tops, tracks and settings, so a project opens on any computer. No data leaves your machine.
@@ -25,7 +25,7 @@ Methods, equations, defaults and limits: [docs/PETROPHYSICS.md](docs/PETROPHYSIC
   effective or total porosity with Rw corrected for temperature, Passey ΔlogR TOC, bad-hole flags, and net
   reservoir and net pay from cutoffs. Every parameter is in the Interpretation panel and saved with the project.
 - **Correlation.** The dot beside each well (or a click on the map) adds it to the section; the section follows the Wells
-  list order, which you drag to change and which starts west to east. Hang on MD, sea level (TVDSS) or flatten on any top.
+  list order, which you drag to change and which starts west to east. Hang on MD, ground level (TVD below GL), sea level (TVDSS) or flatten on any top.
   The depth track always labels real MD and subsea TVD (KB minus TVD, negative below sea level), whatever the hang.
   Deviated and horizontal wells use TVD from the directional survey in the LAS file. Zones are filled in the same
   colors as the stats tab. Gaps can be equal or scaled to wellhead distance, which is labeled. The app warns when
@@ -107,10 +107,24 @@ Methods, equations, defaults and limits: [docs/PETROPHYSICS.md](docs/PETROPHYSIC
 
 ## Use it
 
-- **Open…** (Cmd+O), or drop files anywhere: LAS, `.lasproj`, tops CSV (`well, top, md`) or point-data CSV
+- **Open…** (Cmd+O), or drop files anywhere: LAS, `.lasproj`, tops or well-header tables, or point-data CSV
   (`well, md`, then one column per measurement, units in the header such as `k (mD)`). PDF and TIFF files open in
   the Mudlogs tab.
-- **New** starts an empty project (it asks first). Units and theme stay as they are.
+- **Tops and well-header tables** load from CSV, tab-delimited text, an Excel `.xlsx` (every sheet), or cells copied
+  from a spreadsheet and pasted anywhere (Cmd+V, header row included). Columns are recognized by name, extra columns
+  are fine:
+  - *Tops*: well name or API, a top name (`Formation`, `Marker / Formation Top`…) and MD (`MD`, `Top (ft MD)`…).
+  - *Well header*: well name or API plus any of operator, field, county, state, KB, GL, KB above GL, latitude,
+    longitude, surface X/Y and CRS, spud and completion dates, status, type, TD (MD and TVD) and depth datum.
+    Other columns (casing depth, scope…) are kept as named values and shown on hover over the well name.
+  - Rows match open wells by API (first 10 digits; a 9-digit API that lost its leading zero is fixed) or by well or
+    short name, ignoring case, spaces and punctuation. Repeated rows collapse. Where rows disagree, or a value
+    differs from the well's, **Review import** asks which to keep (the value most rows give is preselected) or takes
+    a typed one. Blank fields fill without asking. Several files opened together merge first.
+- **New** closes all wells, mudlogs and their stored files (it asks first). Tick "Also reset settings" to return
+  tracks, interpretation parameters, units, depth labels, header height and map to defaults; theme stays.
+- **Older projects** saved before the LAS text was stored inside: open the .lasproj together with its LAS files
+  (select them all in one Open) and the wells come back with their tops and edits. Save again to pack them in.
 - **Save** (Cmd+S) writes the `.lasproj`. Brave and Chrome save back to the same file; Firefox downloads a copy.
   The project holds the LAS files (gzip), mudlog images, tops, shifts and edits, point data, tracks (order, curves,
   colors, scales), interpretation parameters, hang, zoom, section order, units, depth labels and header height, so
