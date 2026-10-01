@@ -21,6 +21,11 @@ Methods, equations, defaults and limits: [docs/PETROPHYSICS.md](docs/PETROPHYSIC
   and PE, and interpretation tracks. The density scale follows the neutron's recorded matrix (read from the LAS
   header), so crossover reads correctly in every well. Fills can be solid or colored by value. Point data (core,
   XRD, pressures) plots as markers on any track.
+- **Point data and other tables.** A CSV or sheet that is plainly tops or a well header loads straight away. Anything
+  else asks *What's in this file?*: labeled depths (corrosion, perfs, shows; one depth or top and base), measurements
+  at depth, tops, well header or directional survey, with the well, API, label and depth columns preselected and a
+  preview of which wells are open. MD or TVD (converted through the survey). Labeled depths land in one track, in the
+  logs and the correlation panel, with a lane and color per class; **Split** in Point data gives each class its own track.
 - **Interpretation.** Vshale (linear, Larionov, Clavier), neutron-density porosity, Archie or Simandoux Sw on
   effective or total porosity with Rw corrected for temperature, Passey ΔlogR TOC, bad-hole flags, and net
   reservoir and net pay from cutoffs. Every parameter is in the Interpretation panel and saved with the project.
