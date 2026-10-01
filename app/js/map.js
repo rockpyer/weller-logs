@@ -152,7 +152,7 @@ function drawGrid(gr) {
   box.hidden = false;
   box.innerHTML = `<span class="lgfull"><b>${esc(gridTitle())}</b> <span class="hint">${S.mapGrid.kind === 'iso' ? 'TVT' : 'ssTVD'}, ${u}</span></span>
     <div class="lgbar" style="background:linear-gradient(90deg,${stops.join(',')})"></div><div class="lgends"><span>${lo}</span><span>${hi}</span></div>
-    <span class="hint lgfull">${gr.pts.length} well${gr.pts.length > 1 ? 's' : ''} · contours every ${fmtV(gr.step, gr.step)} ${u} · gridded only between wells</span>`;
+    <span class="hint lgshort">${S.mapGrid.kind === 'iso' ? 'Thickness' : 'Structure'}, ${fmtV(gr.step, gr.step)} ${u} contours</span><span class="hint lgfull">${gr.pts.length} wells · ${fmtV(gr.step, gr.step)} ${u} contours</span>`;
 }
 // Grid controls: kind, top, and base for an isopach (defaults to the next top down).
 function syncGridControls() {
@@ -212,10 +212,11 @@ function renderMap() {
       .on('click', () => (S.mode === 'corr' ? toggleSection(w.id) : clickWell(w.id))).addTo(MAP.layer);
   }
   if (!MAP.zoomHooked) { MAP.zoomHooked = true; MAP.map.on('zoomend', () => renderMap()); MAP.map.on('mousemove', hoverGrid); MAP.map.on('mouseout', () => { if (MAP.hint != null) $('mapHint').textContent = MAP.hint; }); }
-  const off = S.wells.length - placed.length;
-  MAP.hint = (gridOn && MAP.cur?.reason && MAP.cur.pts.length ? `Not contoured: ${MAP.cur.reason}. ` : '') + (S.mode === 'map' ? 'Click a well to select it; hover the map for gridded values.' : S.mode === 'corr' ? 'Click a well to add or remove it from A–A′' : 'Click a well to show it.')
-    + (off ? ` ${off} well${off > 1 ? 's have' : ' has'} no location: set it in well settings.` : '');
+  // Only alerts here: which wells are missing from the map, and why a grid is not contoured.
+  const noLoc = S.wells.filter(w => !placed.some(p => p.w === w)).map(w => w.name);
+  MAP.hint = [gridOn && MAP.cur?.reason && MAP.cur.pts.length ? `Not contoured: ${MAP.cur.reason}.` : '', noLoc.length ? `No location: ${noLoc.join(', ')}` : ''].filter(Boolean).join(' ');
   $('mapHint').textContent = MAP.hint;
+  $('map').title = S.mode === 'corr' ? 'Click a well to add or remove it from A–A′' : '';
 }
 // Hover on a grid: the gridded value there and the nearest well's posted value.
 function hoverGrid(e) {
@@ -223,7 +224,7 @@ function hoverGrid(e) {
   const [x, y] = gr.P.toXY([e.latlng.lat, e.latlng.lng]), G = gr.G;
   if (WellerGrid.hullDistance(G.hull, x, y) > G.pad) { $('mapHint').textContent = MAP.hint; return; }
   let best = null, bd = Infinity; for (const p of gr.pts) { const [px, py] = gr.P.toXY(p.ll), d = Math.hypot(px - x, py - y); if (d < bd) { bd = d; best = p; } }
-  $('mapHint').textContent = `≈ ${fmtV(G.f(x, y), gr.step / 10)} ${dispU()} gridded here · nearest well ${best.w.name}: ${fmtV(best.v, gr.step / 10)} ${dispU()}, ${fmtDist(bd / 1000)} away`;
+  $('mapHint').textContent = `≈ ${fmtV(G.f(x, y), gr.step / 10)} ${dispU()} · nearest ${best.w.name}: ${fmtV(best.v, gr.step / 10)} ${dispU()}, ${fmtDist(bd / 1000)}`;
 }
 // Grid controls and the larger map.
 document.getElementById('mapGrid').onchange = e => { S.mapGrid = { ...S.mapGrid, kind: e.target.value }; renderMap(); autosave(); };
@@ -232,15 +233,13 @@ document.getElementById('mapBase').onchange = e => { S.mapGrid = { ...S.mapGrid,
 document.getElementById('mapBig').onclick = e => { e.preventDefault(); setMode('map'); };
 // Map tab side panel: what is mapped, each well's value and where it sits, and how the surface was made.
 function renderMapInfo(placed, gridOn) {
-  const gr = MAP.cur, u = dispU(), g = S.mapGrid || {}, el = $('mapInfo'), paths = placed.filter(p => hasPath(p.w)).length, off = S.wells.length - placed.length;
-  const wellsLine = `${placed.length} well${placed.length === 1 ? '' : 's'} on the map${paths ? `, ${paths} with a directional survey (path drawn to TD)` : ''}${off ? `; ${off} without a location (set it in ⚙)` : ''}.`;
-  if (!gridOn || !gr) { el.innerHTML = `<h3>Wells</h3><p>${wellsLine}</p><p class="hint">Choose <b>Isopach</b> and two tops for true vertical thickness, or <b>Structure</b> and a top for its subsea depth. Each well posts its value and the map is contoured between the wells.</p>`; return; }
-  const rows = [...gr.pts.map(p => ({ w: p.w, v: fmtV(p.v, (gr.step || 10) / 10) + ' ' + u })), ...gr.missing.map(m => ({ w: m.w, v: `<span class="hint">${esc(m.why)}</span>` }))]
+  const gr = MAP.cur, u = dispU(), g = S.mapGrid || {}, el = $('mapInfo');
+  if (!gridOn || !gr) { el.innerHTML = `<h3>Gridding</h3><p class="hint">Isopach: thickness between two tops. Structure: subsea depth of a top.</p>`; return; }
+  const rows = [...gr.pts.map(p => ({ w: p.w, v: fmtV(p.v, (gr.step || 10) / 10) })), ...gr.missing.map(m => ({ w: m.w, v: `<span class="hint">${esc(m.why)}</span>` }))]
     .sort((a, b) => S.wells.indexOf(a.w) - S.wells.indexOf(b.w));
-  const what = g.kind === 'iso' ? `True vertical thickness from <b>${esc(g.top)}</b> to <b>${esc(g.base)}</b> (TVD from the survey where there is one), posted where the well path is halfway through the interval.` : `Subsea depth of <b>${esc(g.top)}</b> (datum elevation minus TVD, negative below sea level), posted where the well path crosses it.`;
-  el.innerHTML = `<h3>${esc(gridTitle())}</h3><p>${what}</p>
-    <table><thead><tr><th>Well</th><th class="n">${g.kind === 'iso' ? 'TVT' : 'ssTVD'}</th></tr></thead><tbody>${rows.map(r => `<tr data-well="${r.w.id}" class="${r.w.id === S.selected ? 'sel' : ''}"><td>${esc(r.w.name)}</td><td class="n">${r.v}</td></tr>`).join('')}</tbody></table>
-    <p class="hint">${gr.url ? `Thin-plate spline through ${gr.pts.length} wells, contoured every ${fmtV(gr.step, gr.step)} ${u} from ${fmtV(gr.lo, gr.step / 10)} to ${fmtV(gr.hi, gr.step / 10)}. Drawn only within the wells' outline plus a margin; ${g.kind === 'iso' ? 'thicker' : 'deeper'} is darker.` : `Not contoured: ${esc(gr.reason || 'no values')}.`} ${wellsLine}</p>`;
+  el.innerHTML = `<h3>${esc(gridTitle())}</h3>
+    <table><thead><tr><th>Well</th><th class="n">${g.kind === 'iso' ? 'TVT' : 'ssTVD'}, ${u}</th></tr></thead><tbody>${rows.map(r => `<tr data-well="${r.w.id}" class="${r.w.id === S.selected ? 'sel' : ''}"><td>${esc(r.w.name)}</td><td class="n">${r.v}</td></tr>`).join('')}</tbody></table>
+    <p class="hint" title="${g.kind === 'iso' ? 'True vertical thickness (TVD from the survey), posted mid-interval along the well path.' : 'Datum elevation minus TVD, posted where the well path crosses the top.'} Thin-plate spline, drawn only within the wells' outline plus a margin.">${gr.url ? `${fmtV(gr.step, gr.step)} ${u} contours · ${g.kind === 'iso' ? 'thicker' : 'deeper'} is darker` : `Not contoured: ${esc(gr.reason || 'no values')}`}</p>`;
 }
 document.getElementById('mapInfo').addEventListener('click', e => { const r = e.target.closest('tr[data-well]'); if (r) clickWell(r.dataset.well); });
 

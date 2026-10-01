@@ -75,7 +75,7 @@ details>summary.mapsum{display:flex;align-items:center;gap:6px;margin-bottom:6px
 .mapbody{flex:1;display:flex;min-height:0}#mapTabSlot{flex:1;display:flex;min-width:0;padding:10px}#mapTabSlot #mapBox{flex:1;display:flex;flex-direction:column;min-height:0}#mapTabSlot #map{flex:1;height:auto}
 .mapinfo{width:300px;flex:none;overflow:auto;border-left:1px solid var(--line);background:var(--panel);padding:10px 12px;font-size:13px}.mapinfo h3{margin:0 0 6px;font-size:14px}.mapinfo table{width:100%;border-collapse:collapse;margin:8px 0;font-size:13px}.mapinfo th{font-size:12px;color:var(--muted);font-weight:600}.mapinfo td,.mapinfo th{padding:2px 4px;border-bottom:1px solid var(--line);text-align:left}.mapinfo td.n{text-align:right;font:12px "IBM Plex Mono",monospace;font-variant-numeric:tabular-nums}.mapinfo tr.sel td{font-weight:600}.mapinfo tr[data-well]{cursor:pointer}
 @media (max-width:900px){.mapbody{flex-direction:column}.mapinfo{width:auto;border-left:0;border-top:1px solid var(--line);max-height:40vh}}
-.maplegend.compact{padding:3px 5px;max-width:140px}.maplegend.compact .lgfull{display:none}.maplegend.compact .lgbar{height:6px;margin:0 0 1px;width:120px}
+.maplegend.compact{padding:3px 5px;max-width:140px}.maplegend.compact .lgfull{display:none}.maplegend:not(.compact) .lgshort{display:none}.maplegend.compact .lgbar{height:6px;margin:0 0 1px;width:120px}
 #map.gridOn .leaflet-tile-pane{filter:grayscale(1) opacity(.55)}
 .leaflet-image-layer.gridimg{image-rendering:auto}
 .maplegend{position:absolute;right:6px;bottom:18px;z-index:1000;background:var(--paper);color:var(--ink);border:1px solid var(--line);border-radius:4px;padding:5px 7px;font:11px "IBM Plex Sans",sans-serif;max-width:220px;pointer-events:none}
@@ -411,7 +411,7 @@ i.sw{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:5p
   </div>
   <div class="shell">
     <aside class="side">
-      <details open id="sideMap"><summary class="mapsum"><h2>Map</h2><span class="tools seg" role="group" aria-label="Basemap"><button class="small" data-basemap="map" aria-pressed="true">Map</button><button class="small" data-basemap="sat" aria-pressed="false">Satellite</button></span><button class="small" id="mapBig" title="Open the Map tab: contours, legend and values per well">⤢</button></summary>
+      <details open id="sideMap"><summary class="mapsum"><h2>Map</h2><span class="tools seg" role="group" aria-label="Basemap"><button class="small" data-basemap="map" aria-pressed="true">Map</button><button class="small" data-basemap="sat" aria-pressed="false">Satellite</button><button class="small" id="mapBig" title="Isopach and structure maps (Map tab)">Gridding</button></span></summary>
         <div id="mapSlot"><div id="mapBox">
           <div id="map" role="region" aria-label="Well location map"><div id="mapLegend" class="maplegend" hidden></div></div>
           <p class="hint" id="mapHint"></p>

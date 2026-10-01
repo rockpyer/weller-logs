@@ -42,7 +42,7 @@ Methods, equations, defaults and limits: [docs/PETROPHYSICS.md](docs/PETROPHYSIC
   vertical thickness in deviated wells. Everything exports as CSV.
 - **Map.** USGS National Map topo or satellite imagery. NAD27 coordinates are shifted to WGS84. Wells with a
   directional survey are drawn from the wellhead to TD as seen from above. The side panel keeps a small map with
-  Map/Satellite in its header and a bare color bar; ⤢ opens the **Map** tab.
+  Map · Satellite · Gridding in its header (Gridding opens the **Map** tab) and a color bar labeled with the contour interval.
 - **Isopach and structure maps** (Map tab). Pick *Isopach* and two tops, or *Structure* and one top. The panel beside
   the map lists each well's value (click a row to select the well), how the surface was made, and the full legend. Each well
   posts its value: true vertical thickness (TVD from the survey), placed where the well path is halfway through the
