@@ -293,6 +293,7 @@ function depthTicks(w,F,y,H){
 }
 function render(){ syncDatum();
   const mudMode=S.mode==='mud'; $('mudView').hidden=!mudMode; document.querySelector('.side').hidden=mudMode; $('sideGutter').hidden=mudMode;
+  if(S.picking&&(mudMode||S.mode==='stats')) setPicking(false);
   if(mudMode){ $('statsView').hidden=true; $('logView').hidden=true; syncPanel(); window.WellerMud?.render(); autosave(); return; }
   const statsMode=S.mode==='stats'; $('statsView').hidden=!statsMode; $('logView').hidden=statsMode;
   syncPanel();
@@ -323,7 +324,7 @@ function render(){ syncDatum();
   fitHeads(panel);
   S._ctx={cols,y};
   if(S.mode==='corr') drawCorrelations(cols,y,gaps,zc); else S._corrWarn='';
-  renderSidebar();
+  renderSidebar(); renderPickBar();
   autosave();
 }
 function haversineKm(a,b){ const r=Math.PI/180, dLat=(b[0]-a[0])*r, dLon=(b[1]-a[1])*r; const h=Math.sin(dLat/2)**2+Math.cos(a[0]*r)*Math.cos(b[0]*r)*Math.sin(dLon/2)**2; return 12742*Math.asin(Math.sqrt(h)); }
@@ -340,17 +341,14 @@ function depthTrack(w,F,y,H,ticks,zc){
   const chip=(k,lbl,dis)=>`<button type="button" data-dl="${k}" aria-pressed="${!!S.depthLabels[k]&&!dis}"${dis?` disabled title="No KB or GL elevation in this well"`:` title="Show ${k==='md'?(ticks.mdLabel==='GL'?'depth below ground level (TVD minus KB–GL)':'measured depth'):'subsea TVD (KB minus TVD, negative below sea level)'}"`}>${lbl}</button>`;
   div.innerHTML=`<div class="thead"><div class="tn">Depth</div><div class="dchips">${chip('md',ticks.mdLabel,false)}${chip('ss','ssTVD',!ticks.hasSS)}</div><div class="scale" style="color:var(--muted)"><span></span><span class="c">${u}</span><span></span></div></div>`;
   const svg=d3.create('svg').attr('width',W).attr('height',H).attr('class','depthsvg');
-  // Zone strip: the same zone colors as the stats tab and the correlation fills.
-  for(const z of zonesOf(w)){ if(z.name==='Whole well') continue; const y0=y(F.z(z.top)), y1=y(F.z(z.base)); if(y1<0||y0>H) continue;
-    svg.append('rect').attr('x',0).attr('width',7).attr('y',Math.max(0,y0)).attr('height',Math.max(0,Math.min(H,y1)-Math.max(0,y0))).attr('fill',zc.get(z.name)||'transparent').append('title').text(z.name); }
+  svg.classed('pick',S.picking);
   gridPath(svg,ticks.grid.map(t=>`M${t.major?W-6:W-3},${t.y}H${W}`),'grid s');
   cols.forEach((c,j)=>{ const x=12+44*j+40; for(const t of ticks[c]) svg.append('text').attr('x',x).attr('y',t.y+3.5).attr('text-anchor','end').attr('class','depth'+(c==='ss'?' ss':'')).text((Math.round(t.v)||0).toLocaleString().replace(/^-/,'−')); });
-  for(const tp of w.tops){ const yy=y(F.z(tp.md)); if(yy<0||yy>H) continue; svg.append('line').attr('x1',8).attr('x2',W).attr('y1',yy).attr('y2',yy).attr('class','top').attr('data-top',tp.name).style('stroke',zc.get(tp.name)||null); }
-  const node=svg.node();
-  const onMove=perFrame(e=>{ if(S.drag) return; const r=node.getBoundingClientRect(); const z=y.invert(e.clientY-r.top); showCursor(e.clientY-$('logPanel').getBoundingClientRect().top,mdAtZ(w,F,z),w,[]); });
+  const node=svg.node(); topMarks(node,w,F,y,zc);
+  const onMove=perFrame(e=>{ if(S.drag) return; const r=node.getBoundingClientRect(); const z=y.invert(e.clientY-r.top); showCursor(e,mdAtZ(w,F,z),w,[]); });
   node.addEventListener('mousemove',onMove);
   node.addEventListener('mouseleave',()=>{ onMove.cancel(); $('cursor').style.display='none'; });
-  attachTopDrag(node,w,F,y); div.appendChild(node); return div;
+  attachPick(node,w,F,y); attachTopDrag(node,w,F,y); div.appendChild(node); return div;
 }
 // Curve colors with at least 3:1 contrast on both the light (#FFFFFF) and dark (#1F262E) track background.
 const CURVE_COLORS=['#E4572E','#3A86FF','#2A9D8F','#9B59B6','#D63384','#6A8D2F','#E07A1F','#1F77B4'];
@@ -541,12 +539,9 @@ function logTrack(w,t,F,y,H,ticks){
         for(const r of runs) g.append('path').attr('d',r.length>1?wl(r):`M${r[0][0]},${Y(r[0][1])}h0.01`).attr('fill','none').attr('stroke',col).attr('stroke-width',1).attr('stroke-dasharray','1 2').attr('stroke-linecap','round').attr('opacity',.8); } }
   }
   flushBands();
-  const firstVis=visibleTracks(w)[0];
-  for(const tp of w.tops){ const yy=y(F.z(tp.md)); if(yy<0||yy>H) continue; svg.append('line').attr('x1',0).attr('x2',width).attr('y1',yy).attr('y2',yy).attr('class','top').attr('data-top',tp.name).style('stroke',S._zc?.get(tp.name)||null);
-    if(t===firstVis) svg.append('text').attr('x',3).attr('y',yy-3).attr('class','toplbl').attr('data-top',tp.name).text(tp.name); }
-  const node=svg.node();
+  const node=svg.node(); if(t===visibleTracks(w)[0]) node.dataset.toplbl='1'; topMarks(node,w,F,y,S._zc);
   const flagsOn=resolved.filter(r=>r.curve&&!r.curve.sparse);
-  const onMove=perFrame(e=>{ if(S.drag) return; const r=node.getBoundingClientRect(); const z=y.invert(e.clientY-r.top), md=mdAtZ(w,F,z); showCursor(e.clientY-$('logPanel').getBoundingClientRect().top,md,w,resolved);
+  const onMove=perFrame(e=>{ if(S.drag) return; const r=node.getBoundingClientRect(); const z=y.invert(e.clientY-r.top), md=mdAtZ(w,F,z); showCursor(e,md,w,resolved);
     const i=Math.min(dep.length-1,Math.max(0,d3.bisectCenter(dep,md)));
     if(lithCls){ const L=lithCls(i); if(!L.k) return hideTip(); const rule=lithRules(LP,hasPE)[L.k];
       showTip(e,`<div class="lr on"><i style="background:${patCSS(L.k,LP.colors[L.k],!t.nopat)}"></i>${esc(L.k)}</div><div class="tipv">Vsh <b>${L.vsh.toFixed(2)}</b>${Number.isFinite(L.pe)?` · PE <b>${L.pe.toFixed(2)}</b> b/e`:''}</div><div class="tipr">Rule: ${esc(rule)}</div><div class="tipd">${depthText(w,md)}</div>`); }
@@ -558,26 +553,59 @@ function logTrack(w,t,F,y,H,ticks){
   const leg=head.querySelector('.legend');
   if(leg&&t.type==='lith'){ leg.addEventListener('mousemove',e=>showTip(e,legendTip(`Computed lithology from ${vSrc==='GR'?gr.mnemonic:vSrc||'GR'}${hasPE?' and PE':' only'}: a quick look from cutoffs, not described cuttings${gr?.cased?'. Cased-hole GR: unreliable':''}`,Object.entries(lithRules(LP,hasPE)).map(([n,r])=>[n,patCSS(n,LP.colors[n],!t.nopat),r])))); leg.addEventListener('mouseleave',hideTip); }
   if(leg&&t.type==='flags'){ leg.addEventListener('mousemove',e=>showTip(e,legendTip('Flags',flagsOn.map(f=>[f.cfg.label,f.cfg.color,(f.curve.description||'').replace(/^[^:]*:\s*/,'')])))); leg.addEventListener('mouseleave',hideTip); }
-  node.addEventListener('click',e=>{ if(!S.picking) return; const r=node.getBoundingClientRect(); const md=Math.round(mdAtZ(w,F,y.invert(e.clientY-r.top))*2)/2; placeTop(w,md); });
-  attachTopDrag(node,w,F,y);
+  attachPick(node,w,F,y); attachTopDrag(node,w,F,y);
   div.appendChild(node); return div;
 }
-/* Drag a top line to move it. Hovering within 5 px of a top shows a resize cursor. */
+/* Drag a top line to move it, in or out of pick mode. Hovering within 5 px of a top shows a resize cursor.
+   In pick mode a press on a line that does not move is still a pick, so a top can go right next to another. */
 function attachTopDrag(node,w,F,y){
-  const near=e=>{ const r=node.getBoundingClientRect(), py=e.clientY-r.top; let best=null,bd=6; for(const tp of w.tops){ const d=Math.abs(y(F.z(tp.md))-py); if(d<bd){ bd=d; best=tp; } } return best; };
-  node.addEventListener('pointermove',e=>{ if(!S.drag&&!S.picking) node.style.cursor=near(e)?'ns-resize':''; });
-  node.addEventListener('pointerdown',e=>{ if(S.picking||e.button!==0) return; const tp=near(e); if(!tp) return; e.preventDefault();
-    const col=node.closest('.column'), r=node.getBoundingClientRect(); S.drag={w,tp,F,y,col,top:r.top,md:tp.md};
+  const near=e=>{ const r=node.getBoundingClientRect(), py=e.clientY-r.top; let best=null,bd=6; for(const tp of w.tops){ const d=Math.abs(y(F.z(tp.md))-py)-(tp.name===S.pickTop?1:0); if(d<bd){ bd=d; best=tp; } } return best; };
+  node.addEventListener('pointermove',e=>{ if(!S.drag) node.style.cursor=near(e)?'ns-resize':''; });
+  node.addEventListener('pointerdown',e=>{ if(e.button!==0) return; const tp=near(e); if(!tp) return; e.preventDefault();
+    const col=node.closest('.column'), r=node.getBoundingClientRect(); S.drag={w,tp,F,y,col,top:r.top,md:tp.md,y0:e.clientY,moved:false};
     node.setPointerCapture(e.pointerId); document.body.classList.add('dragging'); });
-  node.addEventListener('pointermove',e=>{ const D=S.drag; if(!D||D.w!==w) return;
-    const z=D.y.invert(e.clientY-D.top); D.md=Math.round(mdAtZ(w,D.F,z)*2)/2; const yy=D.y(D.F.z(D.md));
+  node.addEventListener('pointermove',e=>{ const D=S.drag; if(!D||D.w!==w) return; if(Math.abs(e.clientY-D.y0)>2) D.moved=true; if(!D.moved) return;
+    const z=D.y.invert(e.clientY-D.top); D.md=snapMD(mdAtZ(w,D.F,z)); const yy=D.y(D.F.z(D.md));
     D.col.querySelectorAll(`[data-top="${CSS.escape(D.tp.name)}"]`).forEach(el=>{ if(el.tagName==='line'){ el.setAttribute('y1',yy); el.setAttribute('y2',yy); } else el.setAttribute('y',yy-3); });
+    if(S.mode==='corr'&&!D.raf) D.raf=requestAnimationFrame(()=>{ D.raf=0; if(S.drag!==D) return; const was=D.tp.md; D.tp.md=D.md; redrawOverlay(); D.tp.md=was; });
     $('stNote').textContent=`${D.tp.name}: ${depthText(w,D.md)} in ${w.name}`; });
   const end=e=>{ const D=S.drag; if(!D||D.w!==w) return; S.drag=null; document.body.classList.remove('dragging');
-    if(Math.abs(D.md-D.tp.md)>=0.5){ D.tp.md=D.md; D.tp.source='user'; w._grP=null; if(S.interp?.enabled) computeInterp(w); } render(); };
+    if(!D.moved){ if(!S.picking) return; S._noClick=false; return; }   // a press without a drag: let the click pick
+    S._noClick=true; setTimeout(()=>{ S._noClick=false; },0);
+    if(Math.abs(D.md-D.tp.md)>=0.25){ D.tp.md=D.md; D.tp.source='user'; S.lastPick={wid:w.id,name:D.tp.name}; S.selected=w.id; } refreshTops(D.tp.name); };
   node.addEventListener('pointerup',end); node.addEventListener('pointercancel',end);
 }
-function showCursor(yPx,md,w,resolved){ const dep=depthOf(w); const c=$('cursor'); if(c.style.display!=='block') c.style.display='block'; c.style.transform=`translateY(${yPx}px)`;
+// Picks land on the nearest half foot (or half metre): finer than any log resolves.
+const snapMD=md=>Math.round(md*2)/2;
+function attachPick(node,w,F,y){ node.addEventListener('click',e=>{ if(!S.picking||S._noClick||!S.pickTop) return; const r=node.getBoundingClientRect(); placeTop(w,snapMD(mdAtZ(w,F,y.invert(e.clientY-r.top)))); }); }
+/* Top lines, their labels and the depth track's zone strip, drawn into one track. The same code redraws them in place
+   after a pick, so picking never rebuilds the curves. */
+function topMarks(node,w,F,y,zc){ const svg=d3.select(node), H=+node.getAttribute('height'), W=+node.getAttribute('width'), depth=node.classList.contains('depthsvg');
+  svg.selectAll('.top,.toplbl,.zs').remove();
+  if(depth){ const first=node.firstChild;
+    // Zone strip: the same zone colors as the stats tab and the correlation fills.
+    for(const z of zonesOf(w)){ if(z.name==='Whole well') continue; const y0=y(F.z(z.top)), y1=y(F.z(z.base)); if(y1<0||y0>H) continue;
+      const r=document.createElementNS('http://www.w3.org/2000/svg','rect'); node.insertBefore(r,first);
+      d3.select(r).attr('class','zs').attr('x',0).attr('width',7).attr('y',Math.max(0,y0)).attr('height',Math.max(0,Math.min(H,y1)-Math.max(0,y0))).attr('fill',zc?.get(z.name)||'transparent').append('title').text(z.name); } }
+  for(const tp of w.tops){ const yy=y(F.z(tp.md)); if(yy<0||yy>H) continue; const on=S.picking&&tp.name===S.pickTop;
+    svg.append('line').attr('x1',depth?8:0).attr('x2',W).attr('y1',yy).attr('y2',yy).attr('class','top'+(on?' on':'')).attr('data-top',tp.name).style('stroke',zc?.get(tp.name)||null);
+    if(node.dataset.toplbl) svg.append('text').attr('x',3).attr('y',yy-3).attr('class','toplbl').attr('data-top',tp.name).text(tp.name); } }
+function redrawOverlay(){ const ctx=S._ctx; if(!ctx||S.mode!=='corr') return; const ov=$('overlay'); ov.innerHTML=''; $('logPanel').querySelectorAll('.gaplbl').forEach(c=>c.remove()); drawCorrelations(ctx.cols,ctx.y,wellGaps(ctx.cols.map(c=>c.w)),S._zc); }
+/* After tops change: redraw the top lines and the correlation, not the logs. A full render at 1:240 across a section
+   takes a second; this takes a few milliseconds. Flattened on the top that moved, the frame itself moves: full render. */
+function refreshTops(name){ const ctx=S._ctx;
+  for(const w of S.wells) if(S.interp?.enabled&&S._topsDirty?.has(w.id)){ const was=JSON.stringify(w.tocBaseline||null); try{ computeInterp(w); }catch(e){} if(JSON.stringify(w.tocBaseline||null)!==was) S._needRender=true; }
+  S._topsDirty=null; const wells=viewWells();
+  if(!ctx||S.mode==='stats'||S.mode==='mud'||(S.mode==='corr'&&name&&S.datum===name)||ctx.cols.length!==wells.length||ctx.cols.some((c,i)=>c.w!==wells[i])){ S._needRender=false; clearTimeout(S._rt); render(); return; }
+  // A new shallowest top moves the TOC baseline zone: redraw the tops now, rebuild the logs once the picking pauses.
+  if(S._needRender){ S._needRender=false; clearTimeout(S._rt); S._rt=setTimeout(()=>{ if(!S.drag) render(); },700); }
+  const zc=zoneColorMap(); S._zc=zc;
+  for(const c of ctx.cols){ c.el.querySelectorAll('.tracks svg').forEach(n=>topMarks(n,c.w,c.F,ctx.y,zc)); c.el.classList.toggle('sel',S.mode==='corr'&&c.w.id===S.selected); }
+  if(S.mode==='corr') redrawOverlay();
+  renderSidebar(); renderPickBar(); autosave(); }
+function showCursor(e,md,w,resolved){ const dep=depthOf(w); const c=$('cursor'), pr=$('logPanel').getBoundingClientRect(); if(c.style.display!=='block') c.style.display='block'; c.style.transform=`translateY(${e.clientY-pr.top}px)`;
+  // In pick mode the cursor carries the top's name and the depth a click will set.
+  const pk=S.picking&&!!S.pickTop; c.classList.toggle('pk',pk); let tag=c.firstChild; if(pk){ if(!tag){ tag=document.createElement('span'); tag.className='ptag'; c.appendChild(tag); } tag.hidden=false; tag.style.left=(e.clientX-pr.left+14)+'px'; tag.textContent=`${S.pickTop} · ${fmtD(snapMD(md),w,1)}`; } else if(tag) tag.hidden=true;
   const i=Math.min(dep.length-1,Math.max(0,d3.bisectCenter(dep,md)));
   setHTML($('stCursor'),`<b>${esc(w.name)}</b> ${depthText(w,md)}`);
   setHTML($('stVals'),resolved.filter(r=>r.curve).map(r=>{ const c=r.curve; if(c.sparse){ const k=nearestPoint(c,md); return k<0?'':`${c.mnemonic} <b>${fmtVal(c.data[k],r.cfg)}</b> @${c.md[k]}`; } return `${c.mnemonic} <b>${fmtVal(c.data[i],r.cfg)}</b>`; }).filter(Boolean).join(' · ')); }
@@ -609,7 +637,53 @@ function drawCorrelations(cols,y,gaps,zc){
   S._corrWarn=full.join('\n'); const el=$('stNote');
   if(short.length){ el.textContent='⚠ '+(short.length>2?short.slice(0,2).join(' · ')+` · ${short.length-2} more`:short.join(' · ')); el.title=S._corrWarn; } else el.title='';
 }
-function placeTop(w,md){ const name=$('topName').value.trim(); if(!name) return; const ex=w.tops.find(t=>t.name===name); if(ex) ex.md=md; else w.tops.push({name,md,source:'user'}); S.picking=false; $('btnPick').classList.remove('primary'); $('stNote').textContent=`${name} set at ${depthText(w,md)} in ${w.name}`; if(S.interp?.enabled) computeInterp(w); render(); }
+/* ---------- Picking tops: choose a top once, then click it in well after well. Pick mode stays on until Done or Esc. ---------- */
+function setTopMD(w,name,md){ const ex=w.tops.find(t=>t.name===name); if(ex){ ex.md=md; ex.source='user'; } else w.tops.push({name,md,source:'user'}); w._grP=null; (S._topsDirty||(S._topsDirty=new Set())).add(w.id); S.lastPick={wid:w.id,name}; }
+function placeTop(w,md){ const name=S.pickTop; if(!name) return; setTopMD(w,name,md); S.selected=w.id;
+  const vw=viewWells(), left=vw.filter(x=>!x.tops.some(t=>t.name===name));
+  refreshTops(name);
+  $('stNote').textContent=`${name} at ${depthText(w,md)} in ${w.name}`+(vw.length>1?(left.length?` · ${vw.length-left.length} of ${vw.length} picked, next: ${left.map(x=>x.name).join(', ')}`:` · picked in all ${vw.length} wells`):'')+(S._corrWarn?' · ⚠ '+S._corrWarn:''); }
+function topNames(){ return [...new Set(S.wells.flatMap(w=>[...w.tops].sort((a,b)=>a.md-b.md).map(t=>t.name)))]; }
+function setPicking(on,name){ if(name!==undefined){ name=String(name).trim(); if(name) S.pickTop=name; }
+  if(on&&!S.pickTop) S.pickTop=topNames()[0]||'';
+  S.picking=!!on&&(S.mode==='single'||S.mode==='corr');
+  $('btnTops').setAttribute('aria-pressed',S.picking); $('btnPick').classList.toggle('primary',S.picking); $('pickBar').hidden=!S.picking;
+  document.querySelectorAll('#logPanel .tracks svg').forEach(n=>n.classList.toggle('pick',S.picking));
+  if(!S.picking) $('cursor').classList.remove('pk');
+  if(S._ctx) S._ctx.cols.forEach(c=>c.el.querySelectorAll('line.top').forEach(l=>l.classList.toggle('on',S.picking&&l.dataset.top===S.pickTop)));
+  renderPickBar(); if(S.picking&&!S.pickTop) $('pbNew').focus(); }
+function renderPickBar(){ if(!S.picking) return; const zc=S._zc||zoneColorMap(), names=topNames(), vw=viewWells(), u=dispU();
+  if(S.pickTop&&!names.includes(S.pickTop)) names.push(S.pickTop);
+  setHTML($('pbTops'),names.map((n,i)=>{ const k=vw.filter(w=>w.tops.some(t=>t.name===n)).length;
+    return `<button type="button" data-ptop="${esc(n)}" aria-pressed="${n===S.pickTop}" title="Pick ${esc(n)}${i<9?' ('+(i+1)+')':''}"><i style="background:${zc.get(n)||'var(--muted)'}"></i>${esc(n)}<small>${k}/${vw.length}</small>${i<9?`<kbd>${i+1}</kbd>`:''}</button>`; }).join('')||'<span class="hint">No tops yet: type a name →</span>');
+  const nm=S.pickTop;
+  $('pbWellsRow').hidden=!nm; $('pbMdLbl').textContent=`MD ${u}`;
+  setHTML($('pbWells'),nm?vw.map(w=>{ const t=w.tops.find(t=>t.name===nm), last=S.lastPick?.wid===w.id&&S.lastPick?.name===nm;
+    return `<label class="pbw${t?'':' miss'}${last?' last':''}" data-pbwell="${w.id}" title="${t?esc(depthText(w,t.md)):'Not picked: click the log, or type the depth'}">${esc(w.name)}<input type="number" step="0.5" data-pbmd="${w.id}" value="${t?+toDisp(t.md,w).toFixed(1):''}" placeholder="—" aria-label="${esc(nm)} MD in ${esc(w.name)}">${t?`<button type="button" class="small" data-pbdel="${w.id}" title="Delete ${esc(nm)} in ${esc(w.name)}">×</button>`:''}</label>`; }).join(''):'');
+  // Inputs being typed in keep their text: setHTML skips identical markup, and the value is only rewritten when it moved.
+  $('pbHint').innerHTML=nm?`Click <b>${esc(nm)}</b> in ${vw.length>1?'each well':'the log'}. Drag any top line to move it; type an MD for an exact depth. <kbd>↑</kbd><kbd>↓</kbd> nudge the last pick ½ ${u} (<kbd>Shift</kbd> 5)`+(S.mode==='single'?`, <kbd>[</kbd><kbd>]</kbd> previous or next well. Correlation picks every well in the section at once.`:'.')+` <kbd>Esc</kbd> done.`:'Type a top name and press Enter to start picking it.'; }
+function scrollToTop(name){ const ctx=S._ctx; if(!ctx||!name) return; const sc=$('logScroll'), sr=sc.getBoundingClientRect(); let ys=[];
+  for(const c of ctx.cols){ const t=c.w.tops.find(t=>t.name===name); if(!t) continue; const svg=c.el.querySelector('.tracks svg'); if(!svg) continue; ys.push(svg.getBoundingClientRect().top-sr.top+sc.scrollTop+ctx.y(c.F.z(t.md))); }
+  if(!ys.length){ for(const w of S.wells){ const t=w.tops.find(t=>t.name===name); if(!t) continue; const c=ctx.cols[0], svg=c?.el.querySelector('.tracks svg'); if(svg&&(S.mode==='single'||S.datum==='MD')){ ys.push(svg.getBoundingClientRect().top-sr.top+sc.scrollTop+ctx.y(c.F.z(t.md))); break; } } }
+  if(!ys.length) return; const m=d3.median(ys), vis=m>sc.scrollTop+40&&m<sc.scrollTop+sc.clientHeight-40; if(!vis) sc.scrollTop=m-sc.clientHeight/2; S.view.scroll=sc.scrollTop; }
+function stepWell(dir){ const i=S.wells.findIndex(w=>w.id===S.selected), n=S.wells.length; if(!n) return; S.selected=S.wells[((i<0?0:i)+dir+n)%n].id; render(); renderPickBar(); scrollToTop(S.pickTop); }
+function nudgeLast(d){ const L=S.lastPick, w=wellById(L?.wid), t=w?.tops.find(t=>t.name===L.name); if(!t) return; setTopMD(w,t.name,snapMD(t.md+fromDisp(d,w))); $('stNote').textContent=`${t.name} at ${depthText(w,t.md)} in ${w.name}`; refreshTops(t.name); }
+$('btnTops').onclick=()=>setPicking(!S.picking);
+$('pbDone').onclick=()=>setPicking(false);
+$('pbTops').addEventListener('click',e=>{ const b=e.target.closest('[data-ptop]'); if(!b) return; setPicking(true,b.dataset.ptop); scrollToTop(S.pickTop); });
+$('pbNew').addEventListener('keydown',e=>{ if(e.key!=='Enter') return; e.preventDefault(); const v=e.target.value.trim(); if(!v) return; e.target.value=''; setPicking(true,v); e.target.blur(); scrollToTop(v); $('stNote').textContent=`Picking ${v}: click it in each well`; });
+$('pbNew').addEventListener('change',e=>{ const v=e.target.value.trim(); if(v&&topNames().includes(v)){ e.target.value=''; setPicking(true,v); scrollToTop(v); } });
+$('pbWells').addEventListener('change',e=>{ const id=e.target.dataset.pbmd; if(id===undefined) return; const w=wellById(id), v=parseFloat(e.target.value); if(!w||!S.pickTop) return;
+  if(!Number.isFinite(v)){ renderPickBar(); return; } const md=fromDisp(v,w), [a,b]=wellRange(w); if(md<Math.min(a,b)||md>Math.max(a,b)) $('stNote').textContent=`⚠ ${fmtD(md,w,1)} ${dispU()} is outside ${w.name}'s log (${fmtD(Math.min(a,b),w)}–${fmtD(Math.max(a,b),w)})`;
+  setTopMD(w,S.pickTop,md); S.selected=w.id; refreshTops(S.pickTop); });
+$('pbWells').addEventListener('click',e=>{ const d=e.target.closest('[data-pbdel]'); if(!d) return; e.preventDefault(); const w=wellById(d.dataset.pbdel); if(!w) return; w.tops=w.tops.filter(t=>t.name!==S.pickTop); (S._topsDirty||(S._topsDirty=new Set())).add(w.id); refreshTops(S.pickTop); });
+document.addEventListener('keydown',e=>{ if(e.metaKey||e.ctrlKey||e.altKey) return; const el=e.target, typing=el.matches?.('input,textarea,select,[contenteditable]'); if(typing||S.mode==='stats'||S.mode==='mud'||document.querySelector('.modal:not([hidden])')) return;
+  if(e.key==='t'||e.key==='T'){ e.preventDefault(); setPicking(!S.picking); return; }
+  if(!S.picking) return;
+  if(e.key==='Escape'){ setPicking(false); return; }
+  if(e.key==='ArrowUp'||e.key==='ArrowDown'){ if(!S.lastPick) return; e.preventDefault(); nudgeLast((e.key==='ArrowUp'?-1:1)*(e.shiftKey?5:0.5)); return; }
+  if(S.mode==='single'&&(e.key==='['||e.key===']')){ e.preventDefault(); stepWell(e.key===']'?1:-1); return; }
+  if(/^[1-9]$/.test(e.key)){ const n=topNames()[+e.key-1]; if(n){ e.preventDefault(); setPicking(true,n); scrollToTop(n); } } });
 
 /* ---------- Sidebar: map, wells, tracks, tops ---------- */
 // A click selects a well (the one the Tops panel edits). The dot adds it to or drops it from the section.
@@ -660,7 +734,7 @@ $('btnShowAll').onclick=()=>{ let n=0; S.tracks.forEach((t,i)=>{ if(S._trackHas?
 function sortWestEast(wells){ const lon=w=>wgs84Of(w)?.[1]; return [...wells].sort((a,b)=>{ const x=lon(a), y=lon(b); return Number.isFinite(x)&&Number.isFinite(y)?x-y:Number.isFinite(x)?-1:Number.isFinite(y)?1:0; }); }
 $('topsWellSel').onchange=e=>{ S.selected=e.target.value; render(); };
 document.addEventListener('change',e=>{ const t=e.target; if(t.dataset.topmd===undefined) return; const w=wellById(S.selected), tp=w?.tops.find(x=>x.name===t.dataset.topmd), v=parseFloat(t.value);
-  if(!tp||!Number.isFinite(v)) return; tp.md=fromDisp(v,w); tp.source='user'; w._grP=null; if(S.interp?.enabled) computeInterp(w); render(); });
+  if(!tp||!Number.isFinite(v)) return; setTopMD(w,tp.name,fromDisp(v,w)); refreshTops(tp.name); });
 document.addEventListener('colorpicked',e=>{ const n=e.target.dataset.topcolor; if(n===undefined) return; S.topColors={...S.topColors,[n]:e.detail}; render(); });
 $('btnTopColorsSave').onclick=()=>{ const zc=zoneColorMap(), all={}; for(const w of S.wells) for(const t of w.tops) all[t.name]=zc.get(t.name);
   $('stNote').textContent=lsSet('weller.topColors',{...lsGet('weller.topColors',{}),...all})?`Top colors saved as your default (${Object.keys(all).length} tops)`:'Could not save (storage blocked)'; };
@@ -731,7 +805,7 @@ document.addEventListener('click',e=>{
   // ◂ ▸ swap with the next track in the same sidebar group, so a move is never hidden behind an empty track.
   if(b.dataset.up!==undefined||b.dataset.dn!==undefined){ const i=+(b.dataset.up??b.dataset.dn), dir=b.dataset.up!==undefined?-1:1, g=S._trackHas||[]; let j=i+dir; while(j>=0&&j<S.tracks.length&&g[j]!==g[i]) j+=dir;
     if(j>=0&&j<S.tracks.length){ [S.tracks[i],S.tracks[j]]=[S.tracks[j],S.tracks[i]]; render(); } }
-  if(b.dataset.deltop){ const w=wellById(S.selected); if(w){ w.tops=w.tops.filter(t=>t.name!==b.dataset.deltop); if(S.interp?.enabled) computeInterp(w); render(); } }
+  if(b.dataset.deltop){ const w=wellById(S.selected); if(w){ w.tops=w.tops.filter(t=>t.name!==b.dataset.deltop); (S._topsDirty||(S._topsDirty=new Set())).add(w.id); refreshTops(b.dataset.deltop); } }
   if(b.dataset.sect){ toggleSection(b.dataset.sect); return; }
   if(b.dataset.dl){ const k=b.dataset.dl, o=k==='md'?'ss':'md'; S.depthLabels={...S.depthLabels,[k]:!S.depthLabels[k]}; if(!S.depthLabels[k]&&!S.depthLabels[o]) S.depthLabels[o]=true; lsSet('weller.depthLabels',S.depthLabels); render(); }
   if(b.dataset.units&&b.dataset.units!==S.units){ S.units=b.dataset.units; lsSet('weller.units',S.units); render(); }
@@ -890,7 +964,7 @@ $('btnTopsExport').onclick=()=>downloadBlob('tops.csv',new Blob([topsCSV()],{typ
 $('btnStatsExport').onclick=()=>downloadBlob('zone-stats.csv',new Blob([statsCSV()],{type:'text/csv'}));
 $('btnPpExport').onclick=()=>downloadBlob('weller-curves-petroplots.csv',new Blob([petroplotsCSV()],{type:'text/csv'}));
 function svgToImage(svgEl){ const clone=svgEl.cloneNode(true); const vars=['--grid','--grid-strong','--ink','--muted','--paper','--sand','--shale','--gas','--pico','--repetto','--puente','--gr','--sp','--cal','--rdeep','--rmed','--rshal','--rhob','--nphi','--dt','--rop','--wob','--tg','--c1','--c2'];
-  const st=document.createElementNS('http://www.w3.org/2000/svg','style'); st.textContent=`.grid{stroke:${cssVar('--grid')};stroke-width:1}.grid.s{stroke:${cssVar('--grid-strong')}}.top{stroke:${cssVar('--ink')};stroke-width:1.2}text{font:10px "IBM Plex Mono",monospace;fill:${cssVar('--muted')}}.depth{fill:${cssVar('--ink')};font-size:11px}.toplbl{font:600 10px "IBM Plex Sans Condensed",sans-serif;fill:${cssVar('--ink')}}.corr{stroke:${cssVar('--ink')};stroke-width:1.2;stroke-dasharray:4 3;fill:none}.fm{opacity:.55}`;
+  const st=document.createElementNS('http://www.w3.org/2000/svg','style'); st.textContent=`.grid{stroke:${cssVar('--grid')};stroke-width:1;fill:none}.grid.s{stroke:${cssVar('--grid-strong')}}.top{stroke:${cssVar('--ink')};stroke-width:1.2}text{font:10px "IBM Plex Mono",monospace;fill:${cssVar('--muted')}}.depth{fill:${cssVar('--ink')};font-size:11px}.toplbl{font:600 10px "IBM Plex Sans Condensed",sans-serif;fill:${cssVar('--ink')}}.corr{stroke:${cssVar('--ink')};stroke-width:1.2;stroke-dasharray:4 3;fill:none}.fm{opacity:.55}`;
   clone.insertBefore(st,clone.firstChild); clone.setAttribute('xmlns','http://www.w3.org/2000/svg');
   let xml=new XMLSerializer().serializeToString(clone); for(const v of vars) xml=xml.split(`var(${v})`).join(cssVar(v));
   return new Promise((res,rej)=>{ const img=new Image(); img.onload=()=>res(img); img.onerror=rej; img.src='data:image/svg+xml;charset=utf-8,'+encodeURIComponent(xml); }); }
@@ -958,7 +1032,7 @@ $('scaleSel').onchange=e=>setRatio(+e.target.value);
 $('zoomIn').onclick=()=>stepScale(1); $('zoomOut').onclick=()=>stepScale(-1);
 $('logScroll').addEventListener('wheel',e=>{ if(!(e.ctrlKey||e.metaKey)) return; e.preventDefault(); const yIn=e.clientY-$('logScroll').getBoundingClientRect().top; zoomTo(S.view.pxPerFt*(e.deltaY<0?1.2:1/1.2),yIn); },{passive:false});
 $('logScroll').addEventListener('scroll',()=>{ if(S.mode!=='stats') S.view.scroll=$('logScroll').scrollTop; },{passive:true});
-$('btnPick').onclick=()=>{ if(!$('topName').value.trim()){ $('topName').focus(); return; } S.picking=!S.picking; $('btnPick').classList.toggle('primary',S.picking); render(); };
+$('btnPick').onclick=()=>{ const v=$('topName').value.trim(); if(!v&&!S.picking){ $('topName').focus(); return; } if(S.picking&&(!v||v===S.pickTop)) return setPicking(false); if(S.mode==='stats'||S.mode==='mud') setMode('single'); setPicking(true,v); scrollToTop(S.pickTop); };
 
 /* ---------- Browser cache of opened LAS text (IndexedDB), so a session resumes without re-picking files ---------- */
 const lasCache={ db:null, mem:new Map(),

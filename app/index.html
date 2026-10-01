@@ -172,12 +172,35 @@ details.emptytr .trackrow{opacity:.7}
 .legend i{display:block;width:9px;height:9px;border:1px solid var(--line)}
 .track svg{display:block;contain:layout paint}
 .track svg text{font:10px "IBM Plex Mono",monospace;fill:var(--muted)}
-.track svg .grid{stroke:var(--grid);stroke-width:1}
+.track svg .grid{stroke:var(--grid);stroke-width:1;fill:none}
 .track svg .grid.s{stroke:var(--grid-strong)}
 .track svg .top{stroke:var(--ink);stroke-width:1.2}
+.track svg .top.on{stroke-width:2.6}
 .track svg .toplbl{font:600 10px "IBM Plex Sans Condensed",sans-serif;fill:var(--ink)}
 .track svg .depth{fill:var(--ink);font-size:11px}
 .track svg.pick{cursor:crosshair}
+.tpbtn{display:inline-flex;align-items:center;gap:5px;font-weight:600}
+.tpbtn i{width:12px;height:0;border-top:2px solid currentColor;display:inline-block}
+.tpbtn[aria-pressed=true]{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+.pickbar{display:flex;flex-direction:column;gap:5px;padding:6px 12px;border-bottom:1px solid var(--line);background:var(--paper);font-size:13px}
+.pbrow{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.pbrow .sp{flex:1}
+.pbl{color:var(--muted);font-size:12px;min-width:2.6em}
+.pbtops,.pbwells{display:flex;gap:5px;flex-wrap:wrap;align-items:center;flex:1;min-width:0}
+.pbrow>.pbl{align-self:flex-start;padding-top:3px}
+.pbtops button{display:inline-flex;align-items:center;gap:5px;padding:2px 8px;border-radius:12px;font-size:12px}
+.pbtops button i{width:9px;height:9px;border-radius:2px;display:inline-block}
+.pbtops button small{color:var(--muted);font:11px "IBM Plex Mono",monospace}
+.pbtops button[aria-pressed=true]{outline:2px solid var(--focus);outline-offset:0;font-weight:600}
+.pbtops kbd{font:10px "IBM Plex Mono",monospace;color:var(--muted)}
+#pbNew{width:9em;font-size:12px;padding:2px 6px}
+.pbw{display:inline-flex;align-items:center;gap:4px;padding:1px 2px 1px 6px;border:1px solid var(--line);border-radius:6px;font-size:12px;cursor:pointer}
+.pbw.miss{border-style:dashed;color:var(--muted)}.pbw.last{border-color:var(--focus)}
+.pbw input{width:6.2em;padding:1px 4px;font:12px "IBM Plex Mono",monospace;text-align:right}
+.pbw button{padding:0 5px;font-size:12px;line-height:18px}
+.pbhint{color:var(--muted);font-size:12px;flex:1 1 20em}
+.pbhint kbd{font:11px "IBM Plex Mono",monospace;border:1px solid var(--line);border-radius:3px;padding:0 3px}
+#cursor .ptag{position:absolute;top:-17px;padding:0 5px;border-radius:3px;background:var(--accent);color:var(--accent-ink);font:600 11px "IBM Plex Sans Condensed",sans-serif;white-space:nowrap}
+#cursor.pk{border-top-style:dashed}
 #overlay{position:absolute;inset:0;pointer-events:none;overflow:visible}
 #overlay .corr{stroke:var(--ink);stroke-width:1.2;stroke-dasharray:4 3;fill:none}
 #overlay .fm{opacity:.55}
@@ -386,6 +409,17 @@ i.sw{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:5p
         <p class="hint">Click a well to select it. The dot adds it to the correlation section; drag ⋮⋮ to reorder. Hover a name for its header.</p>
         <div class="row"><select id="exampleSel" aria-label="Load example data"><option value="">Load example data…</option><option value="niobrara">Denver Basin Niobrara</option><option value="labasin">LA Basin (synthetic)</option></select></div>
       </details>
+      <details open><summary><h2>Tops</h2></summary>
+        <div class="row" style="margin:0 0 6px"><select id="topsWellSel" aria-label="Well to edit" style="flex:1;min-width:0"></select><span class="mini" id="topsUnit"></span></div>
+        <table class="tops" id="topsTable"></table>
+        <div class="row">
+          <input type="text" id="topName" placeholder="Top name" list="topNames">
+          <datalist id="topNames"></datalist>
+          <button class="small" id="btnPick" title="Start picking this top (T)">Pick on log</button>
+        </div>
+        <p class="hint">Faster: <b>Pick tops</b> above the logs (or press T) picks one top across every well in the section. Here: type a name and press Pick, drag a top line, or type its MD. The swatch sets that top's color in every well. A tops CSV (well, top, md) opens with Open.</p>
+        <div class="row"><button class="small" id="btnTopColorsSave" title="Use these top colors in new projects">Save colors as my default</button><button class="small" id="btnTopColorsReset">Reset colors</button></div>
+      </details>
       <details open><summary><h2>Tracks</h2></summary>
         <div class="tools"><label class="mini"><input type="checkbox" id="showEmpty"> show empty</label><button class="small" id="btnShowAll" hidden title="Show every track that has data in the correlation section">show all</button><button class="small" id="btnAddTrack">+ track</button></div>
         <div id="trackList"></div>
@@ -396,23 +430,13 @@ i.sw{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:5p
       <details open><summary><h2>Interpretation</h2></summary>
         <div id="interpForm" class="interp"></div>
       </details>
-      <details open><summary><h2>Tops</h2></summary>
-        <div class="row" style="margin:0 0 6px"><select id="topsWellSel" aria-label="Well to edit" style="flex:1;min-width:0"></select><span class="mini" id="topsUnit"></span></div>
-        <table class="tops" id="topsTable"></table>
-        <div class="row">
-          <input type="text" id="topName" placeholder="Top name" list="topNames">
-          <datalist id="topNames"></datalist>
-          <button class="small" id="btnPick">Pick on log</button>
-        </div>
-        <p class="hint">Type a name, press Pick, click the depth; or drag a top line, or type its MD. The swatch sets that top's color in every well. A tops CSV (well, top, md) opens with Open.</p>
-        <div class="row"><button class="small" id="btnTopColorsSave" title="Use these top colors in new projects">Save colors as my default</button><button class="small" id="btnTopColorsReset">Reset colors</button></div>
-      </details>
     </aside>
     <div class="gutter" id="sideGutter" role="separator" aria-orientation="vertical" aria-label="Resize sidebar" title="Drag to resize the sidebar; double-click to reset"></div>
     <main class="main">
       <div id="logView" class="view">
       <div class="viewbar">
         <span class="well" id="vbWell"></span>
+        <button class="small tpbtn" id="btnTops" aria-pressed="false" title="Pick tops: choose a top, click it in each well, drag to move, type an exact depth (T)"><i aria-hidden="true"></i>Pick tops</button>
         <label id="datumWrap" hidden>Hang on
           <select id="datum">
             <option value="MD">Measured depth</option>
@@ -427,6 +451,11 @@ i.sw{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:5p
         <label title="Vertical scale. 1:240 means one inch on screen is 240 inches (20 ft) of hole: 5 in per 100 ft, the common detail print. 1:600 is 2 in per 100 ft, the common correlation print. Screen sizes assume 96 px per inch. Ctrl or Cmd + scroll zooms freely.">Scale <select id="scaleSel" aria-label="Vertical scale"></select></label>
         <button class="small" id="zoomOut" title="Smaller scale">−</button>
         <button class="small" id="zoomIn" title="Larger scale">+</button></span>
+      </div>
+      <div class="pickbar" id="pickBar" hidden role="toolbar" aria-label="Pick tops">
+        <div class="pbrow"><span class="pbl">Top</span><span class="pbtops" id="pbTops"></span><input type="text" id="pbNew" placeholder="+ New top" list="topNames" aria-label="New top name"></div>
+        <div class="pbrow" id="pbWellsRow"><span class="pbl" id="pbMdLbl">MD</span><span class="pbwells" id="pbWells"></span></div>
+        <div class="pbrow"><span class="pbhint" id="pbHint"></span><span class="sp"></span><button class="small primary" id="pbDone" title="Stop picking (Esc)">Done</button></div>
       </div>
       <div class="logscroll" id="logScroll">
         <div id="logPanel"><svg id="overlay"></svg><div id="cursor"></div></div>
