@@ -43,8 +43,8 @@
     { key: 'field', label: 'Field', kind: 'text', re: /^field( name)?$/ },
     { key: 'county', label: 'County', kind: 'text', re: /^(county|parish|borough)( name)?$/ },
     { key: 'state', label: 'State', kind: 'text', re: /^(state|province)( name)?$/ },
-    { key: 'kbgl', label: 'KB above GL', kind: 'num', re: / (kb ?(gl|minus gl|above gl|to gl)|air gap|rig height|kb height) / },
-    { key: 'datumRef', label: 'Depth datum', kind: 'text', re: / ((depth|elevation|log|reference|vertical|permanent) datum|datum (type|reference|elev\w* type)) / },
+    { key: 'kbgl', label: 'KB above GL', kind: 'num', re: / (kb ?(gl|minus gl|above gl|to gl)|gl ?kb|air gap|rig height|kb height|kelly height) / },
+    { key: 'datumRef', label: 'Depth datum', kind: 'text', re: / ((depth|elevation|log|reference|vertical|permanent) datum|datum (type|reference|vertical|depth|elev\w*)) / },
     { key: 'kb', label: 'KB', kind: 'num', re: / (kb|rkb|kbe|ekb|kelly|rotary table|rt elev\w*) / },
     { key: 'gl', label: 'GL', kind: 'num', re: / (gl|gle|egl|ground|ground level|surface elev\w*) / },
     { key: 'lat', label: 'Latitude', kind: 'deg', re: /^(surface |shl |bh |top hole )?(lat|latitude)( |$)/ },
@@ -129,25 +129,35 @@
     return { name: get('name')[0] || '', alias: get('alias')[0] || '', api: apis[0] || '' };
   }
   // A projected CRS belongs to X/Y; a geographic one (NAD27, NAD83, WGS84) to latitude and longitude.
+  const PRIORITY = /\b(final|truth|verified|approved|corrected|preferred|official|qc|qcd)\b/;
   const projected = s => /(state ?plane|utm|zone|ftus|us ?ft|feet|meters|metre|spcs|lambert|mercator|albers|\/\s*\w)/i.test(s);
 
   // Header rows: one record per row with the recognized fields and the other columns as named attributes.
   function headerRecords(t, cls, source) {
     return t.rows.map((r, k) => {
-      const id = ident(t, cls.cols, r), vals = {}, attrs = {};
+      const id = ident(t, cls.cols, r), cand = {}, attrs = {};
       for (const c of cls.cols) {
         const v = r[c.i]; if (v === '' || v == null) continue;
         if (!c.key) { attrs[c.raw.trim() || `Column ${c.i + 1}`] = v; continue; }
         if (['name', 'api'].includes(c.key)) continue;
-        const f = FIELD[c.key];
-        if (f.kind === 'num') { const x = num(v); if (Number.isFinite(x)) vals[c.key] = { v: x, unit: c.unit }; }
-        else if (f.kind === 'deg') { const x = LAS().parseCoord(v)?.v; if (Number.isFinite(x)) vals[c.key] = { v: x }; }
-        else if (f.kind === 'xy') { const x = num(v); if (Number.isFinite(x)) vals[c.key] = { v: x }; }
-        else if (f.kind === 'date') vals[c.key] = { v: cleanDate(v) };
-        else if (c.key === 'alias') { if (LAS().nameKey(v) !== LAS().nameKey(id.name)) vals.alias = { v }; }
-        else vals[c.key] = { v };
+        const f = FIELD[c.key]; let x;
+        if (f.kind === 'num') { x = num(v); if (c.key === 'kbgl') x = Math.abs(x); }   // "GL-KB" is often written as a positive height
+        else if (f.kind === 'deg') x = LAS().parseCoord(v)?.v;
+        else if (f.kind === 'xy') x = num(v);
+        else if (f.kind === 'date') x = cleanDate(v);
+        else if (c.key === 'alias') { if (LAS().nameKey(v) === LAS().nameKey(id.name)) continue; x = v; }
+        else x = v;
+        if (typeof x === 'number' && !Number.isFinite(x)) continue;
+        (cand[c.key] = cand[c.key] || []).push({ v: x, unit: c.unit, col: c.raw.trim(), prio: PRIORITY.test(c.n) });
       }
-      if (vals.crs) { if (projected(vals.crs.v)) { vals.xyCrs = vals.crs; delete vals.crs; } }
+      // Two columns for one field ("GLE - extracted", "GL - final truth"): a column marked final, verified or
+      // corrected wins; otherwise each distinct value is offered, named by its column.
+      const vals = {};
+      for (const [k, L] of Object.entries(cand)) { const P = L.filter(x => x.prio), use = P.length ? P.slice(0, 1) : L, out = [];
+        for (const x of use) if (!out.some(y => same(FIELD[k].kind, y.v, x.v))) out.push(x);
+        if (out.length === 1 || L.length === 1) out.forEach(x => delete x.col);
+        vals[k] = out; }
+      if (vals.crs) { const geo = vals.crs.filter(x => !projected(x.v)), proj = vals.crs.filter(x => projected(x.v)); delete vals.crs; if (geo.length) vals.crs = geo; if (proj.length) vals.xyCrs = proj; }
       return { ...id, vals, attrs, source, line: k + 2 };
     });
   }
@@ -199,8 +209,8 @@
         rows++; const w = matchWell(wells, r); if (!w) { const n = r.name || r.alias || r.api || '?'; unmatched.set(n, (unmatched.get(n) || 0) + 1); continue; }
         const src = `${short}:${r.line}`;
         if (r.api) add(w, 'api', 'API', 'api', r.api, src);
-        for (const [k, o] of Object.entries(r.vals)) { const f = FIELD[k] || { label: k === 'xyCrs' ? 'X/Y CRS' : k, kind: 'text' };
-          add(w, k, f.label, f.kind === 'date' ? 'text' : f.kind, f.kind === 'num' ? convert(o.v, o.unit, unitKey(w)) : o.v, src); }
+        for (const [k, L] of Object.entries(r.vals)) { const f = FIELD[k] || { label: k === 'xyCrs' ? 'X/Y CRS' : k, kind: 'text' };
+          for (const o of L) add(w, k, f.label, f.kind === 'date' ? 'text' : f.kind, f.kind === 'num' ? convert(o.v, o.unit, unitKey(w)) : o.v, o.col ? `${src} (${o.col})` : src); }
         for (const [k, v] of Object.entries(r.attrs)) add(w, 'attr:' + k, k, 'text', v, src);
       }
     }

@@ -44,10 +44,10 @@ test('a well-header sheet is recognized column by column; unknown columns are ke
   const t = T.readTable(HEADER, 'h.tsv'), r = t.records[0];
   assert.equal(t.kind, 'header');
   assert.equal(r.api, '040373058000');   // the longer of API 10 and API 12
-  assert.equal(r.vals.kb.v, 1313.5); assert.equal(r.vals.gl.v, 1290.1); assert.equal(r.vals.kbgl.v, 23.4);
-  assert.equal(r.vals.lat.v, 34.450897); assert.equal(r.vals.lon.v, -118.597364);
-  assert.equal(r.vals.tdMD.v, 9536); assert.equal(r.vals.tdTVD.v, 9260);
-  assert.equal(r.vals.spud.v, '2022-07-25');
+  assert.equal(r.vals.kb[0].v, 1313.5); assert.equal(r.vals.gl[0].v, 1290.1); assert.equal(r.vals.kbgl[0].v, 23.4);
+  assert.equal(r.vals.lat[0].v, 34.450897); assert.equal(r.vals.lon[0].v, -118.597364);
+  assert.equal(r.vals.tdMD[0].v, 9536); assert.equal(r.vals.tdTVD[0].v, 9260);
+  assert.equal(r.vals.spud[0].v, '2022-07-25');
   assert.ok(r.vals.xyCrs && !r.vals.crs, 'a state-plane CRS belongs to X/Y, not lat/long');
   assert.equal(r.attrs['In Scope'], 'In Scope');
 });
@@ -95,4 +95,19 @@ test('dates: ISO, US, day-month-year and Excel serials', () => {
   assert.equal(T.cleanDate('22-Apr-2021'), '2021-04-22');
   assert.equal(T.cleanDate('44308'), '2021-04-22');
   assert.equal(T.cleanDate('Dec-20'), 'Dec-20');
+});
+
+test('real sheet headers: GL-KB is rig height, vertical datum is not the CRS, the "final truth" GL wins', () => {
+  const H = ['Well Name', 'API 10', 'Short Name', 'Active Wellbore (API 12)', 'Field Name', 'Well Type', 'Well Status', 'In Scope', 'Spud Date', 'GLE (ft) - Claude extracted', 'GL (ft) from blender - Final Truth', 'KB (ft)', 'GL-KB (ft)', 'Datum (Vertical)', 'Conductor Depth (ft)', 'Surface Csg Depth (ft)', 'Surface Csg Size (in)', 'Production Csg Depth (ft)', 'TD (ft MD)', 'Latitude', 'Longitude', 'X', 'Y', 'CRS (Horizontal)', 'Coord Source', 'Wellbore Config (Vert/Dev/Horiz)'];
+  const row = ['WEZU 24 G', '403730579', 'WEZU 24 G', '040373057900', 'Honor Rancho', 'Injection/Withdrawal', 'Out of Service - RTS', 'In Scope', '2022-10-19', '1290.0', '1290.4', '1313.5', '23.5', 'KB elev, ft (Petrel operator datum)', '103', '1148', '13.375', '9333', '9614', '34.450867', '-118.597236', '6381619.63', '1986995.94', 'NAD83 / California State Plane Zone 5 (ftUS) [EPSG:2229]', '', ''];
+  const t = T.readTable(tsv([H, row]), 'h.tsv'), keys = Object.fromEntries(t.cls.cols.map(c => [c.raw, c.key]));
+  assert.equal(keys['GL-KB (ft)'], 'kbgl'); assert.equal(keys['Datum (Vertical)'], 'datumRef'); assert.equal(keys['TD (ft MD)'], 'tdMD');
+  const v = t.records[0].vals;
+  assert.deepEqual(v.gl.map(x => x.v), [1290.4]);
+  assert.equal(v.datumRef[0].v, 'KB elev, ft (Petrel operator datum)'); assert.ok(!v.crs && v.xyCrs);
+  assert.equal(t.records[0].attrs['Production Csg Depth (ft)'], '9333');
+  // Without a "final" column, two GL columns that differ are both offered.
+  const t2 = T.readTable(tsv([['Well', 'GL (ft) A', 'GL (ft) B', 'KB'], ['W1', '100', '101', '120']]), 'g.tsv');
+  const p = T.plan([well('a', 'W1', '')], [t2]);
+  assert.deepEqual(p.conflicts.find(c => c.key === 'gl').options.map(o => o.value), [100, 101]);
 });
