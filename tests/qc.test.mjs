@@ -32,6 +32,16 @@ test('curve checks: coverage, gaps, flat runs, spikes, range and units', () => {
   assert.equal(checkCurve(dep, { data: ramp(400, () => NaN) }, 'GR').score, 0);
 });
 
+test('drilling curves: flat runs and spikes are information, not a failing verdict', () => {
+  const dep = ramp(400, i => 1000 + i * 0.5), rpm = ramp(400, i => i < 50 ? 0 : 26);
+  const r = checkCurve(dep, { data: rpm, unit: '-' }, 'RPM'), flat = r.checks.find(c => c.key === 'flat');
+  assert.equal(flat.level, 'info'); assert.match(flat.text, /^steady at 26 from 1,025 to 1,199\.5$/);
+  assert.equal(r.verdict, 'ok'); assert.ok(!r.checks.some(c => c.key === 'unit'), 'no resistivity unit check on RPM');
+  const gr = checkCurve(dep, { data: ramp(400, () => 75), unit: 'GAPI' }, 'GR');
+  assert.equal(gr.verdict, 'warn'); assert.ok(gr.issues.some(t => t.startsWith('Flat runs')));
+  assert.equal(checkCurve(dep, { data: ramp(400, () => NaN) }, 'GR').verdict, 'bad');
+});
+
 test('GR normalization maps this well P5-P95 onto the reference P5-P95', () => {
   const ref = ramp(1000, i => 20 + (i % 100) * 1.2), src = ref.map(v => v * 1.5 + 10);
   const k = normCoeffs(src, ref); assert.ok(Math.abs(k.a - 1 / 1.5) < 1e-9); assert.ok(Math.abs(k.a * src[37] + k.b - ref[37]) < 1e-9);

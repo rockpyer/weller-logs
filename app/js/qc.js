@@ -35,18 +35,23 @@
     DPHI: /^(V\/V|DEC|FRAC|PU|%|)$/, DT: /^(US\/F|USEC\/F|US\/FT|USEC\/FT|US\/M|USEC\/M)/, PE: /^(B\/E|BARN|B\/EL|)$/, CAL: /^(IN|INCH|INCHES|MM|CM)$/ };
   const UNIT_HINT = { GR: 'API', RD: 'ohm·m', RM: 'ohm·m', RS: 'ohm·m', RHOB: 'g/cc', NPHI: 'v/v', DPHI: 'v/v', DT: 'µs/ft', PE: 'b/e', CAL: 'in' };
 
+  // Formation-evaluation logs: a long constant stretch or a spike means a tool or data problem. Drilling and mud-log
+  // channels (ROP, WOB, RPM, pump pressure, gas, lithology %) hold steady or jump for real reasons, so there the same
+  // findings are shown as information and do not change the verdict.
+  const FE = new Set(['GR', 'SP', 'CAL', 'RD', 'RM', 'RS', 'RHOB', 'NPHI', 'DPHI', 'DRHO', 'DT', 'PE', 'K', 'TH', 'U', 'CGR']);
+
   function medianStep(d) { const s = []; for (let i = 1; i < d.length; i++) { const x = d[i] - d[i - 1]; if (x > 1e-9) s.push(x); } return s.length ? LAS.median(s) : 0; }
 
   // Each check: { key, label, ok, level ('ok'|'warn'|'bad'), text }. fam: family key for range and unit checks.
   function checkCurve(dep, curve, fam, { log = false, spike = {} } = {}) {
-    const d = curve.data, n = d.length, step = medianStep(dep) || 1, out = [];
+    const d = curve.data, n = d.length, step = medianStep(dep) || 1, out = [], fe = FE.has(fam), soft = lvl => fe || lvl === 'ok' ? lvl : 'info';
     let first = -1, last = -1, have = 0;
     for (let i = 0; i < n; i++) if (Number.isFinite(d[i])) { if (first < 0) first = i; last = i; have++; }
     const span = n > 1 ? dep[n - 1] - dep[0] : 0;
     const cov = first < 0 || span <= 0 ? 0 : (dep[last] - dep[first]) / span;
     out.push({ key: 'coverage', label: 'Coverage', level: first < 0 ? 'bad' : cov < 0.25 ? 'warn' : 'ok', value: cov,
       text: first < 0 ? 'no data' : `${Math.round(cov * 100)}% of the well, ${fmt(dep[first])}–${fmt(dep[last])}` });
-    if (first < 0) return { checks: out, score: 0, first, last };
+    if (first < 0) return { checks: out, score: 0, verdict: 'bad', issues: ['no data'], first, last };
     // Gaps: null runs inside the curve's own range longer than 3 samples.
     let gaps = 0, gapLen = 0, run = 0;
     for (let i = first; i <= last; i++) { if (!Number.isFinite(d[i])) run++; else { if (run > 3) { gaps++; gapLen += run * step; } run = 0; } }
@@ -55,11 +60,12 @@
     let flatBest = 0, flatAt = -1, k = first;
     for (let i = first + 1; i <= last + 1; i++) { if (i <= last && d[i] === d[i - 1] && Number.isFinite(d[i])) continue; const len = i - k; if (len > flatBest) { flatBest = len; flatAt = k; } k = i; }
     const flatDepth = flatBest * step, flat = flatBest >= 20 && flatDepth >= 10;
-    out.push({ key: 'flat', label: 'Flat runs', level: flat ? 'warn' : 'ok', value: flatDepth, text: flat ? `constant ${fmt(d[flatAt])} over ${fmt(flatDepth)} from ${fmt(dep[flatAt])}` : 'none' });
+    out.push({ key: 'flat', label: 'Flat runs', level: soft(flat ? 'warn' : 'ok'), value: flatDepth,
+      text: flat ? `${fe ? 'stuck' : 'steady'} at ${fmt(d[flatAt])} from ${fmt(dep[flatAt])} to ${fmt(dep[Math.min(n - 1, flatAt + flatBest - 1)])}` : 'none' });
     // Spikes: count of points despike would replace.
     const sp = despike(d, { log, ...spike }).idx;
     const spFrac = sp.length / Math.max(1, have);
-    out.push({ key: 'spikes', label: 'Spikes', level: spFrac > 0.01 ? 'warn' : 'ok', value: sp.length, idx: sp,
+    out.push({ key: 'spikes', label: 'Spikes', level: soft(spFrac > 0.01 ? 'warn' : 'ok'), value: sp.length, idx: sp,
       text: sp.length ? `${sp.length} (${(spFrac * 100).toFixed(1)}%)${sp.length ? ', first at ' + fmt(dep[sp[0]]) : ''}` : 'none' });
     // Physical range.
     const R = RANGE[fam];
@@ -69,8 +75,10 @@
     // Units.
     const U = UNITS[fam], u = String(curve.unit || '').toUpperCase().replace(/\s/g, '');
     if (U) out.push({ key: 'unit', label: 'Unit', level: U.test(u) ? 'ok' : 'warn', value: curve.unit, text: U.test(u) ? (curve.unit || 'none given') : `"${curve.unit || ''}", expected ${UNIT_HINT[fam]}` });
-    const score = out.filter(c => c.level === 'ok').length / out.length;
-    return { checks: out, score, first, last };
+    // Verdict: the worst finding that counts. 'info' findings are shown but not counted.
+    const counted = out.filter(c => c.level !== 'info'), score = counted.filter(c => c.level === 'ok').length / counted.length;
+    const verdict = counted.some(c => c.level === 'bad') ? 'bad' : counted.some(c => c.level === 'warn') ? 'warn' : 'ok';
+    return { checks: out, score, verdict, issues: counted.filter(c => c.level !== 'ok').map(c => `${c.label}: ${c.text}`), first, last };
   }
   function fmt(v) { return Number.isFinite(v) ? (+v.toFixed(Math.abs(v) < 10 ? 3 : 1)).toLocaleString('en-US') : '—'; }
 
@@ -136,5 +144,5 @@
   }
   function decimals(st) { if (!(st > 0)) return 2; for (let d = 0; d <= 6; d++) if (Math.abs(st * 10 ** d - Math.round(st * 10 ** d)) < 1e-6) return d; return 4; }
 
-  root.WellerQC = { despike, checkCurve, normCoeffs, writeLAS, RANGE };
+  root.WellerQC = { despike, checkCurve, normCoeffs, writeLAS, RANGE, FE };
 })(typeof globalThis !== 'undefined' ? globalThis : this);

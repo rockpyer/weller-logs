@@ -197,7 +197,12 @@ const famKey=cfg=>String(cfg.aliases?.[0]||cfg.label||'').toUpperCase();
 // Among open-hole curves, one covering half again as much depth wins over the alias order (MWD GR to TD vs a short GR).
 const isPct=u=>/^(%|PCT|PERCENT|PERC|PC|PCNT)$/i.test(String(u||'').trim());
 function unitOk(cfg,c){ return !(cfg.pct&&!isPct(c.unit))&&!(cfg.notPct&&isPct(c.unit)); }
-function curveCandidates(well,cfg){ const out=[]; cfg.aliases.forEach((a,k)=>{ const au=a.toUpperCase(); for(const c of well.curves) if(normOf(c)===au&&unitOk(cfg,c)&&!out.some(o=>o.c===c)) out.push({c,k,n:c.sparse?0:c.data.length-(c.nulls||0)}); });
+/* RPM is both an LWD phase resistivity (medium; with RPS and RPD) and rotary speed on drilling and mud logs. It is
+   resistivity only when its unit says ohm·m, or the well has the RPS/RPD pair; otherwise it is rotary speed. */
+const RES_FAMS=new Set(['RD','RM','RS']);
+function rotaryRPM(well,c){ return normOf(c)==='RPM'&&!/OHM|Ω/i.test(c.unit||'')&&!well.curves.some(x=>{ const n=normOf(x); return n==='RPD'||n==='RPS'; }); }
+const resFamCfg=cfg=>RES_FAMS.has(Object.keys(A).find(k=>A[k]===cfg.aliases)||'')||['RDEEP','RMED','RSHAL'].includes(famKey(cfg));
+function curveCandidates(well,cfg){ const out=[]; cfg.aliases.forEach((a,k)=>{ const au=a.toUpperCase(); for(const c of well.curves) if(normOf(c)===au&&unitOk(cfg,c)&&!(au==='RPM'&&resFamCfg(cfg)&&rotaryRPM(well,c))&&!out.some(o=>o.c===c)) out.push({c,k,n:c.sparse?0:c.data.length-(c.nulls||0)}); });
   // A curve chosen by name in the track editor (exact) keeps its place ahead of better-covered alternatives.
   return out.sort((x,y)=>cfg.exact?(x.k-y.k):(!!x.c.cased-!!y.c.cased)||(x.n>1.5*y.n?-1:y.n>1.5*x.n?1:x.k-y.k)).map(o=>o.c); }
 // A well can pin which curve a family uses (well settings), or show all of them ('*').
@@ -614,6 +619,7 @@ function showCursor(e,md,w,resolved){ const dep=depthOf(w); const c=$('cursor'),
   const one=x=>`<span title="${esc(x.c.mnemonic)}">${esc(abbr(x.c.mnemonic))}</span> <b>${fmtVal(x.v,x.cfg)}</b>${x.at!=null?' @'+x.at:''}`, more=vals.slice(STATUS_VALS);
   setHTML($('stVals'),vals.slice(0,STATUS_VALS).map(one).join(' · ')+(more.length?` · <span title="${esc(more.map(x=>`${x.c.mnemonic} ${fmtVal(x.v,x.cfg)}`).join('\n'))}">+${more.length}</span>`:'')); }
 const STATUS_VALS=5;
+const NOTE_MS=8000;
 const abbr=(s,n=8)=>s.length>n?s.slice(0,n-1)+'…':s;
 // Well names can carry an API number or a file name; keep the readable part, at most 18 characters.
 function shortWell(name){ const s=String(name).replace(/^\d{10,14}[_\s-]*/,'').replace(/\.las$/i,'').split(/[_]/)[0].trim()||String(name); return abbr(s,18); }
@@ -643,8 +649,13 @@ function drawCorrelations(cols,y,gaps,zc){
   const short=[none.length&&`no tops in ${none.join(', ')}`,...some.map(([w,s])=>`${w.name} missing ${s.size>2?s.size+' tops':[...s].join(', ')}`),...warn].filter(Boolean);
   const full=[none.length&&`No tops in ${none.join(', ')}: open a tops file or pick them (Tops panel).`,...some.map(([w,s])=>`${w.name} is missing ${[...s].join(', ')}`),...warn].filter(Boolean);
   S._corrWarn=full.join('\n'); const el=$('stNote');
-  if(short.length){ el.textContent='⚠ '+(short.length>2?short.slice(0,2).join(' · ')+` · ${short.length-2} more`:short.join(' · ')); el.title=S._corrWarn; } else el.title='';
+  S._noteBase=short.length?'⚠ '+(short.length>2?short.slice(0,2).join(' · ')+` · ${short.length-2} more`:short.join(' · ')):'';
+  if(short.length){ el.textContent=S._noteBase; el.title=S._corrWarn; } else el.title='';
 }
+/* Status-bar notes ("Saved…", "despiked…", "Track added…") fade back after a few seconds to the standing correlation
+   warning, if any, so a one-off message does not sit there for good. */
+{ let t; const el=$('stNote'), base=()=>S.mode==='corr'?S._noteBase||'':'';
+  new MutationObserver(()=>{ clearTimeout(t); if(el.textContent===base()) return; t=setTimeout(()=>{ el.textContent=base(); el.title=base()?S._corrWarn||'':''; },NOTE_MS); }).observe(el,{childList:true,characterData:true,subtree:true}); }
 /* ---------- Picking tops: choose a top once, then click it in well after well. Pick mode stays on until Done or Esc. ---------- */
 function setTopMD(w,name,md){ const ex=w.tops.find(t=>t.name===name); if(ex){ ex.md=md; ex.source='user'; } else w.tops.push({name,md,source:'user'}); w._grP=null; (S._topsDirty||(S._topsDirty=new Set())).add(w.id); S.lastPick={wid:w.id,name}; }
 function placeTop(w,md){ const name=S.pickTop; if(!name) return; setTopMD(w,name,md); S.selected=w.id;
@@ -1133,7 +1144,7 @@ $('wdLas').onclick=()=>exportLAS(wellEditing);
 /* ---------- Curve QC: coverage across wells, checks per curve, despike, GR normalization ---------- */
 const QC_FAMS=[['GR','GR'],['SP','SP'],['CAL','Caliper'],['RD','Deep res'],['RM','Med res'],['RS','Shal res'],['RHOB','Density'],['NPHI','Neutron'],['PE','PE'],['DT','Sonic'],['DPHI','Den por'],['K','Spectral'],['ROP','ROP'],['TG','Gas']];
 const LOG_FAMS=new Set(['RD','RM','RS','TG','C1','C2','C3','C4','C5']);
-const famOf=c=>{ const m=norm(c.mnemonic); return Object.keys(A).find(k=>A[k].some(a=>a.toUpperCase()===m))||null; };
+const famOf=(c,w)=>{ const m=norm(c.mnemonic); return Object.keys(A).find(k=>A[k].some(a=>a.toUpperCase()===m)&&!(w&&RES_FAMS.has(k)&&rotaryRPM(w,c)))||null; };
 function coverageOf(w,c){ const d=depthOf(w), span=d[d.length-1]-d[0]; if(!c||c.sparse||!(span>0)) return 0; let n=0; for(let i=0;i<d.length;i++) if(Number.isFinite(c.data[i])) n++; return Math.min(1,n/d.length); }
 let qcWell=null;
 const qcSpike=()=>({win:Math.max(5,Math.min(101,Math.round(+$('qcWin').value||11)))|1,z:Math.max(2,+$('qcZ').value||6)});
@@ -1146,11 +1157,11 @@ function drawQC(){ const w=qcWell, fams=QC_FAMS.filter(([k])=>S.wells.some(x=>re
   setHTML($('qcWell'),S.wells.map(x=>`<option value="${x.id}">${esc(x.name)}</option>`).join('')); $('qcWell').value=w.id;
   const dep=depthOf(w), logs=w.curves.slice(1).filter(c=>!c.computed&&!c.sparse&&!/^(TVD|TVDSS|MD|DEPT|DEPTH)$/i.test(norm(c.mnemonic)));
   const cols=['coverage','gaps','flat','spikes','range','unit'], heads=['Coverage','Gaps','Flat runs','Spikes','Range','Unit'];
-  const sc=v=>v>=0.99?'#2E7D32':v>=0.66?'#9a7300':'#c1121f';
-  $('qcTable').innerHTML=`<thead><tr><th>Curve</th><th title="Share of checks passed">Score</th>${heads.map(h=>`<th>${h}</th>`).join('')}<th></th></tr></thead><tbody>`+logs.map(c=>{ const fam=famOf(c), r=WellerQC.checkCurve(dep,c,fam,{log:LOG_FAMS.has(fam),spike:qcSpike()}), by=Object.fromEntries(r.checks.map(x=>[x.key,x]));
+  const V={ok:['OK','#2E7D32'],warn:['Check','#9a7300'],bad:['Problem','#c1121f']};
+  $('qcTable').innerHTML=`<thead><tr><th>Curve</th><th title="Worst finding that counts. Grey findings on drilling and mud-log curves are information only.">Status</th>${heads.map(h=>`<th>${h}</th>`).join('')}<th></th></tr></thead><tbody>`+logs.map(c=>{ const fam=famOf(c,w), r=WellerQC.checkCurve(dep,c,fam,{log:LOG_FAMS.has(fam),spike:qcSpike()}), by=Object.fromEntries(r.checks.map(x=>[x.key,x]));
     const ed=w.edits?.[c.mnemonic], nsp=by.spikes?.value||0;
     const act=ed?.despike?`<button class="small" data-qcdes="${esc(c.mnemonic)}" data-off="1" title="${esc(c.editNote||'')}">Undo despike</button>`:nsp?`<button class="small" data-qcdes="${esc(c.mnemonic)}" title="Replace ${nsp} spikes with the rolling median">Despike ${nsp}</button>`:'';
-    return `<tr><td><b>${esc(c.mnemonic)}</b> <small class="hint">${esc(c.unit||'')}${fam?' · '+fam:''}</small>${c.editNote?`<div class="hint" style="white-space:normal">${esc(c.editNote)}</div>`:''}</td><td><span class="qscore" style="background:${sc(r.score)}">${Math.round(r.score*100)}</span></td>${cols.map(k=>by[k]?`<td class="q ${by[k].level}">${esc(by[k].text)}</td>`:'<td class="q ok">—</td>').join('')}<td>${act}</td></tr>`; }).join('')+'</tbody>';
+    return `<tr><td><b>${esc(c.mnemonic)}</b> <small class="hint">${esc(c.unit||'')}${fam?' · '+fam:''}</small>${c.editNote?`<div class="hint" style="white-space:normal">${esc(c.editNote)}</div>`:''}</td><td><span class="qscore" style="background:${V[r.verdict][1]}" title="${esc(r.issues.join('\n')||'All checks pass')}">${V[r.verdict][0]}</span></td>${cols.map(k=>by[k]?`<td class="q ${by[k].level}">${esc(by[k].text)}</td>`:'<td class="q ok">—</td>').join('')}<td>${act}</td></tr>`; }).join('')+'</tbody>';
   drawQCNorm(); }
 function drawQCNorm(){ const w=qcWell, gr=resolveCurve(w,{aliases:A.GR}); if(!gr||gr.sparse){ $('qcNorm').innerHTML=''; return; }
   const refs=S.wells.filter(x=>x!==w&&resolveCurve(x,{aliases:A.GR})), zones=[...new Set(S.wells.flatMap(x=>zonesOf(x).map(z=>z.name)))].filter(n=>n!=='Whole well'), cur=w.edits?.[gr.mnemonic]?.norm;
@@ -1171,7 +1182,7 @@ $('qcClose').onclick=()=>{ $('qcDlg').hidden=true; };
 $('qcWell').onchange=e=>{ qcWell=wellById(e.target.value); drawQC(); };
 $('qcDlg').addEventListener('click',e=>{ const t=e.target, w=qcWell; if(!w) return;
   const wl=t.closest('[data-qcwell]'); if(wl){ qcWell=wellById(wl.dataset.qcwell); drawQC(); return; }
-  const ds=t.closest('[data-qcdes]'); if(ds){ const m=ds.dataset.qcdes, c=w.curves.find(x=>x.mnemonic===m), fam=c&&famOf(c);
+  const ds=t.closest('[data-qcdes]'); if(ds){ const m=ds.dataset.qcdes, c=w.curves.find(x=>x.mnemonic===m), fam=c&&famOf(c,w);
     setEdit(w,m,'despike',ds.dataset.off?null:{...qcSpike(),log:LOG_FAMS.has(fam)||undefined}); render(); drawQC(); $('stNote').textContent=`${w.name} ${m}: ${ds.dataset.off?'spikes restored':(w.curves.find(c=>c.mnemonic===m)?.editNote||'despiked')}`; return; }
   if(t.id==='qcNormOff'){ const gr=resolveCurve(w,{aliases:A.GR}); setEdit(w,gr.mnemonic,'norm',null); render(); drawQC(); return; }
   if(t.id==='qcNormGo'||t.id==='qcNormAll'){ const ref=wellById($('qcRef').value), zone=$('qcZone').value; if(!ref) return;
@@ -1270,7 +1281,7 @@ function methodsHTML(){ const tr=S.tracks.filter(t=>t.curves?.length&&t.type!=='
     <li>Tolerated the way lasio does: values run together ("-999.25-999.25") are split; comma decimal marks are read as periods when splitting on spaces gives one value per curve; text such as NA, INF or NULL, and the sentinels 9999.25, 999.25 and ±2147483647, are null; header lines without the period after the mnemonic are read. The load summary notes each.</li>
     <li>NULL in ~Well is honored, as lasio does. When it is 0 (some mud-log exports), every true zero (0% lithology, 0 ppm gas) reads as missing; the load summary counts them and offers "Keep zeros as data", which reads only -999.25 and the standard sentinels as null. The choice is saved with the project.</li>
     <li>A file that will not load is named with the reason, the line and a fix. Binary logs (DLIS, LIS, PDF, TIFF) are not read.</li></ul>`]);
-  S_.push(['qc','Curve QC, despiking and normalization',`<ul><li>Checks per curve: coverage of the well's logged interval; gaps (null runs longer than 3 samples inside the curve's range); flat runs (one value over 20+ samples and 10+ ft, a stuck tool or filled interval); spikes; share outside a physical range (GR 0–1500 API, RHOB 1–3.5 g/cc, NPHI −0.15–1, DT 30–300 µs/ft…); unit against the family's usual unit. The score is the share of checks passed.</li>
+  S_.push(['qc','Curve QC, despiking and normalization',`<ul><li>Checks per curve: coverage of the well's logged interval; gaps (null runs longer than 3 samples inside the curve's range); flat runs (one value over 20+ samples and 10+ ft, a stuck tool or filled interval); spikes; on drilling and mud-log curves (ROP, WOB, RPM, pump pressure, gas, lithology) flat runs and spikes are normal and shown grey, as information; share outside a physical range (GR 0–1500 API, RHOB 1–3.5 g/cc, NPHI −0.15–1, DT 30–300 µs/ft…); unit against the family's usual unit. Status is the worst finding that counts: OK, Check (a warning) or Problem (no data, or over 5% outside the physical range). Hover it for the list.</li>
     <li>A spike is a sample more than z robust standard deviations (1.4826 × MAD) from the median of the window around it (default 11 samples, z = 6). Resistivity and gas are judged on log10 values. Despike replaces spikes with that median. Thin real beds (bentonites, coals) can look like spikes: check before despiking GR or density.</li>
     <li>GR normalization maps this well's P5 and P95 onto the reference well's (a two-point linear rescale), over the whole log or one zone. The coefficients are stored with the project.</li>
     <li>Order applied: sensor-offset shift, despike, normalization, always from the values as loaded.</li></ul>`]);
