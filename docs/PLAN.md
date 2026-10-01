@@ -32,7 +32,7 @@ crossplots; petroplots export and figure script; real Denver Basin Niobrara exam
 Also done: LAS 2.0 export with computed curves; off-scale wrap; FGDC-style lithology patterns; curve QC (coverage,
 gaps, flat runs, spikes, range, units), despiking and GR normalization; lasio-style reader tolerance.
 
-Next (chosen from the survey of free tools, September 2026):
+Next (chosen from the survey of free tools, September 2026; see also [BACKLOG.md](BACKLOG.md)):
 1. **Help picking tops.** A live match score while dragging a top (windowed cross-correlation, as in CSDCO
    [Correlator](https://github.com/corewall/correlator)), then suggested "ghost" tops in neighboring wells by dynamic time
    warping on GR ([DTW correlation](https://github.com/luthfigeo/DTW-Stratigraphic-Correlation)), with Accept/Reject.
