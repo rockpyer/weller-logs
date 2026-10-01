@@ -231,6 +231,7 @@ button.link{border:0;background:none;padding:2px 4px;color:var(--muted)}button.l
 .about .cta a{padding:6px 12px;border-radius:4px;text-decoration:none;border:1px solid var(--line);color:var(--ink)}
 .about .cta a.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
 .notesbtn{margin-top:6px}
+#revDlg td.revopts{display:flex;flex-wrap:wrap;gap:4px 16px}#revDlg td.revopts label{white-space:nowrap}#revDlg .revother{width:7em;font-size:12.5px;padding:2px 5px}#revDlg td{vertical-align:top}#revDlg td:first-child{white-space:nowrap}#wdHeader td{padding:2px 6px}
 #askDlg .dlg{width:min(480px,100%)}#askBody{margin:0;line-height:1.45}
 .toast{position:fixed;left:50%;top:42%;transform:translate(-50%,-50%);z-index:2000;pointer-events:none;background:var(--panel);color:var(--ink);border:1px solid var(--line);border-radius:10px;box-shadow:0 8px 30px rgba(0,0,0,.18);padding:14px 22px;font-size:16px;font-weight:600;max-width:min(90vw,520px);text-align:center;transition:opacity .4s}
 .toast.out{opacity:0}
@@ -245,6 +246,7 @@ button.link{border:0;background:none;padding:2px 4px;color:var(--muted)}button.l
 .dchips button[aria-pressed=true]{background:var(--ink);color:var(--panel);border-color:var(--ink)}
 .dchips button:disabled{opacity:.4;cursor:not-allowed}
 .track svg .depth.ss{fill:var(--focus)}
+.colhead .warnchip{color:var(--accent);font-size:11px;border-color:currentColor;background:none;font-weight:600;padding:0 6px;margin-left:4px;vertical-align:2px}
 .colhead .wname{cursor:help}.colhead [data-selwell]{cursor:pointer}
 .column.sel{outline:2px solid var(--focus);outline-offset:-1px}
 ul.list li .grip{color:var(--muted);cursor:grab;font-size:11px;letter-spacing:-2px;flex:none;opacity:.5}
@@ -542,6 +544,7 @@ i.sw{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:5p
     <div class="row"><label>KB elev <input type="number" id="wdKb" step="0.1"></label><label>GL elev <input type="number" id="wdGl" step="0.1"></label><label>Depth unit <select id="wdUnit"><option value="ft">ft</option><option value="m">m</option></select></label></div>
     <div class="row"><label>Latitude <input type="number" id="wdLat" step="0.000001" style="width:9em"></label><label>Longitude <input type="number" id="wdLon" step="0.000001" style="width:9em"></label><label>CRS <input type="text" id="wdCrs" placeholder="NAD27 / NAD83 / State Plane Zone 5"></label></div>
     <p class="hint" id="wdNotes"></p>
+    <div id="wdHeader"></div>
     <div id="wdCurves"></div>
     <div id="wdChoices" class="wdchoices"></div>
     <div class="hint" id="wdHidden"></div>
@@ -562,6 +565,17 @@ i.sw{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:5p
     <label class="hint"><input type="checkbox" id="mwAuto"> Merge LAS files into one well when their API matches the same borehole (first 12 digits; a 10-digit API is the original hole)</label>
     <p class="hint">Nothing changes until Apply. Undo (Cmd/Ctrl+Z) reverses it afterwards.</p>
     <div class="foot"><button id="mwCancel">Cancel</button><button class="primary" id="mwSave">Apply</button></div>
+  </div>
+</div>
+
+<div id="revDlg" class="modal" hidden>
+  <div class="dlg" role="dialog" aria-labelledby="revTitle">
+    <h3 id="revTitle">Review import</h3>
+    <p class="hint" id="revSum"></p>
+    <div class="row"><button class="small" id="revFile">Use the sheet's value for all</button><button class="small" id="revKeep">Keep current values for all</button><span class="hint">Preselected: the value most rows agree on; on a tie, the well's current value.</span></div>
+    <div class="tblwrap"><table><thead><tr><th>Well</th><th>Field</th><th>Value</th></tr></thead><tbody id="revBody"></tbody></table></div>
+    <details id="revMore"><summary></summary><div id="revFills" class="tblwrap"></div></details>
+    <div class="foot"><button id="revCancel">Cancel import</button><button class="primary" id="revApply">Apply</button></div>
   </div>
 </div>
 
@@ -615,6 +629,7 @@ i.sw{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:5p
 <script src="js/las.js"></script>
 <script src="js/qc.js"></script>
 <script src="js/petro.js"></script>
+<script src="js/tables.js"></script>
 <script src="js/points.js"></script>
 <script src="js/map.js"></script>
 <script src="js/stats.js"></script>
