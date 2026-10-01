@@ -504,9 +504,9 @@ i.sw{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:5p
               <details class="more"><summary>Show table</summary><div class="tblwrap"><table class="data" id="stDetail"></table></div></details>
             </section>
             <section class="card">
-              <h3>Crossplot <select id="stType" aria-label="Chart"><option value="nd">Neutron-density</option><option value="pickett">Pickett</option><option value="pe">PE-density</option><option value="custom">Any two curves</option></select>
+              <h3>Crossplot <select id="stType" aria-label="Chart"><option value="nd">Neutron-density</option><option value="pickett">Pickett</option><option value="pe">PE-density</option><option value="custom">Custom X–Y</option></select>
                 <span id="stXY"><select id="stX" aria-label="X curve"></select> vs <select id="stY" aria-label="Y curve"></select></span>
-                <label class="mini">Color <select id="stColor"><option value="zone">Zone</option><option value="gr">GR bands</option><option value="well">Well</option></select></label>
+                <label class="mini">Color <select id="stColor"><option value="zone">Zone</option><option value="gr">GR bands</option><option value="well">Well</option><option value="curve">Curve groups</option></select> <select id="stZ" aria-label="Color curve"></select></label>
                 <label class="mini" id="stCleanWrap"><input type="checkbox" id="stClean"> clean only</label>
                 <span id="stXpRead" class="readout"></span></h3>
               <canvas id="stXp" role="img" aria-label="Crossplot"></canvas>
@@ -527,7 +527,7 @@ i.sw{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:5p
   <footer class="status">
     <span id="stFile"></span>
     <span id="stCursor"></span>
-    <span id="stVals" style="flex:1"></span>
+    <span id="stVals" style="flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis"></span>
     <span id="stNote"></span>
   </footer>
 </div>
