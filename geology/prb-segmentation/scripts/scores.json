@@ -1,0 +1,23 @@
+{
+ "m1_pixel": {
+  "pixel_acc": 0.607,
+  "group_acc": 0.776,
+  "mIoU": 0.286,
+  "coverage": 1.0,
+  "polys": 9880
+ },
+ "m2_superpixel": {
+  "pixel_acc": 0.555,
+  "group_acc": 0.709,
+  "mIoU": 0.224,
+  "coverage": 1.0,
+  "polys": 4952
+ },
+ "m3_linesnap": {
+  "pixel_acc": 0.608,
+  "group_acc": 0.777,
+  "mIoU": 0.286,
+  "coverage": 1.0,
+  "polys": 9884
+ }
+}
