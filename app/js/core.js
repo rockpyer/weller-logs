@@ -226,7 +226,7 @@ function fmtDist(km){ return S.units==='metric'?`${Math.round(km*100)*10} m`:`${
 // Subsea TVD as an elevation: KB (or GL) minus TVD, negative below sea level, the way US well files and Petra show it.
 function ssArr(w){ const e=WellerLAS.datumElevation(w); if(!Number.isFinite(e)) return null; if(!w._ss||w._ssE!==e||w._ss.length!==depthOf(w).length){ w._ss=(tvdOf(w)||depthOf(w)).map(v=>e-v); w._ssE=e; } return w._ss; }
 function ssAt(w,md){ const e=WellerLAS.datumElevation(w); return Number.isFinite(e)?e-mdToTvd(w,md):NaN; }
-function depthText(w,md){ const ss=ssAt(w,md), u=dispU(); return `MD ${fmtD(md,w)} ${u}`+(Number.isFinite(ss)?` · ssTVD ${fmtD(ss,w)} ${u}`:''); }
+function depthText(w,md){ const ss=ssAt(w,md), u=dispU(); return `MD ${fmtD(md,w)} ${u}`+(Number.isFinite(ss)?` · TVDSS ${fmtD(ss,w)} ${u}`:''); }
 function presetWell(cfg){ const w={...WellerSynth.makeWell(cfg),preset:cfg.id}; for(const p of w.points) w.curves.push(makePointCurve(p.mnemonic,p.unit,p.description,p.md,p.data)); delete w.points; return w; }
 function loadPresets(){ S.wells=WellerSynth.PRESET_WELLS.map(presetWell); S.selected=S.wells[0].id; S.panel=['w1','w2','w4']; S.datum='MD'; pointSeriesNames().forEach(placePointSeries); computeAllInterp(); }
 const wellById=id=>S.wells.find(w=>w.id===id);
@@ -282,7 +282,7 @@ function syncPanel(){ S.panel=S.wells.filter(w=>S.panel.includes(w.id)).map(w=>w
 function frameExtent(wells){ let lo=Infinity,hi=-Infinity;
   for(const w of wells){ const a=frameOf(w).arr; for(let i=0;i<a.length;i+=8){ if(a[i]<lo) lo=a[i]; if(a[i]>hi) hi=a[i]; } lo=Math.min(lo,a[0],a[a.length-1]); hi=Math.max(hi,a[0],a[a.length-1]); }
   return Number.isFinite(lo)?[lo,hi]:[0,1000]; }
-/* Depth ticks in display units, found where each well's MD or ssTVD crosses a round number. They are placed through the
+/* Depth ticks in display units, found where each well's MD or TVDSS crosses a round number. They are placed through the
    frame, so they read true in any hang (MD, sea level, flattened) and in deviated wells. */
 function depthTicks(w,F,y,H){
   const d=depthOf(w), k=unitK(w), step=tickStep(S.view.pxPerFt/k), minor=step/5, [i0,i1]=visibleRange(F,S.view.top,S.view.bottom), a=F.arr, ss=ssArr(w);
@@ -345,7 +345,7 @@ function depthTrack(w,F,y,H,ticks,zc){
   const W=12+44*cols.length, u=dispU();
   const div=document.createElement('div'); div.className='track dtrack'; div.style.width=W+'px';
   const chip=(k,lbl,dis)=>`<button type="button" data-dl="${k}" aria-pressed="${!!S.depthLabels[k]&&!dis}"${dis?` disabled title="No KB or GL elevation in this well"`:` title="Show ${k==='md'?(ticks.mdLabel==='GL'?'depth below ground level (TVD minus KB–GL)':'measured depth'):'subsea TVD (KB minus TVD, negative below sea level)'}"`}>${lbl}</button>`;
-  div.innerHTML=`<div class="thead"><div class="tn">Depth</div><div class="dchips">${chip('md',ticks.mdLabel,false)}${chip('ss','ssTVD',!ticks.hasSS)}</div><div class="scale" style="color:var(--muted)"><span></span><span class="c">${u}</span><span></span></div></div>`;
+  div.innerHTML=`<div class="thead"><div class="tn">Depth</div><div class="dchips">${chip('md',ticks.mdLabel,false)}${chip('ss','TVDSS',!ticks.hasSS)}</div><div class="scale" style="color:var(--muted)"><span></span><span class="c">${u}</span><span></span></div></div>`;
   const svg=d3.create('svg').attr('width',W).attr('height',H).attr('class','depthsvg');
   svg.classed('pick',S.picking);
   gridPath(svg,ticks.grid.map(t=>`M${t.major?W-6:W-3},${t.y}H${W}`),'grid s');
@@ -1335,7 +1335,7 @@ function openImportReport(){ const R=lastReport, failed=R.filter(r=>r.status==='
   const failHTML=failed.map(r=>{ const e=r.problems.find(p=>p.level==='error')||r.problems[0]; return `<section class="imp failed"><div class="imph"><span class="chip failed">Not loaded</span><b>${esc(r.file)}</b></div>${e?probHTML(e):''}</section>`; }).join('');
   const wellHTML=wells.map(w=>{ const mine=R.filter(r=>r.wid===w.id), files=mine.map(r=>r.file);
     const how=mine.map(r=>r.problems.find(p=>p.cat==='Merge'&&p.level==='info')).filter(Boolean).map(p=>p.title.replace(/^Merged into [^:]*: /,'')), merged=mine.some(r=>r.status==='merged');
-    const missing=[!Number.isFinite(w.location.lat)&&'location (for the map)',!Number.isFinite(WellerLAS.datumElevation(w))&&'KB or GL elevation (for ssTVD)'].filter(Boolean);
+    const missing=[!Number.isFinite(w.location.lat)&&'location (for the map)',!Number.isFinite(WellerLAS.datumElevation(w))&&'KB or GL elevation (for TVDSS)'].filter(Boolean);
     const warns=mine.flatMap(r=>r.problems.filter(p=>p.level==='warn').map(p=>({...p,file:r.file})));
     const notes=mine.flatMap(r=>r.problems.filter(p=>p.level!=='error').map(p=>({...p,file:r.file})));
     const ch=choicesHTML(w), hid=hiddenHTML(w), nLogs=w.curves.filter(c=>!c.computed&&!c.sparse).length-1;
@@ -1378,7 +1378,7 @@ function methodsHTML(){ const tr=S.tracks.filter(t=>t.curves?.length&&t.type!=='
     <li>Job-dependent scales (casing, tension, shock, temperature) come from each well's data (p2–p98); curves of one unit in a track share a scale.</li></ul>`]);
   S_.push(['map','Curve mapping',`<table><thead><tr><th>Track</th><th>Curve</th><th>What it is</th><th>Mnemonics accepted</th></tr></thead><tbody>${tr.flatMap(t=>t.curves.filter(c=>c.aliases).map((c,i)=>`<tr><td>${i?'':esc(t.name)}</td><td>${esc(c.label)}</td><td>${esc(curveInfo(c))}</td><td class="mn">${esc(c.aliases.slice(0,14).join(' '))}${c.aliases.length>14?' …':''}</td></tr>`)).join('')}</tbody></table>
     <p class="hint">Array resistivity is numbered by depth of investigation in inches (R20…R85, RT10…RT90); the letter after it is a processing or resolution variant, and every variant is offered in the picker. Cuttings percentages map mud-log lithology names (Shale, Chalk, Marlstone…).</p>`]);
-  S_.push(['depth','Depth, datums and horizontal wells',`<ul><li>Data stay in measured depth (MD). TVD comes from an imported survey file, else the survey in ~Other or an Inclinometry set, else from a TVD curve, by minimum curvature. North and east offsets from the same calculation draw the well path on the map; a TVD curve alone has no azimuth, so no path.</li><li>Isopach maps grid true vertical thickness (TVD difference between two tops), posted at the interval's midpoint along the path; structure maps grid subsea depth of a top. The grid is a thin-plate spline with slight smoothing, drawn only within the wells' convex hull plus 15% of their extent (at least 200 m); wells within 15 m share their mean. Azimuths are used as given (true or grid north are not converted). ssTVD = KB (or GL) minus TVD.</li>
+  S_.push(['depth','Depth, datums and horizontal wells',`<ul><li>Data stay in measured depth (MD). TVD comes from an imported survey file, else the survey in ~Other or an Inclinometry set, else from a TVD curve, by minimum curvature. North and east offsets from the same calculation draw the well path on the map; a TVD curve alone has no azimuth, so no path.</li><li>Isopach maps grid true vertical thickness (TVD difference between two tops), posted at the interval's midpoint along the path; structure maps grid subsea depth of a top. The grid is a thin-plate spline with slight smoothing, drawn only within the wells' convex hull plus 15% of their extent (at least 200 m); wells within 15 m share their mean. Azimuths are used as given (true or grid north are not converted). TVDSS = KB (or GL) minus TVD: elevation relative to sea level.</li>
     <li>Correlation hangs on MD, ground level (TVD minus KB–GL, so rigs of different heights line up), sea level (TVDSS) or a flattened top. A top that no well has falls back to MD.</li>
     <li>Horizontal wells in MD stretch the lateral; in TVD the lateral stacks onto a short interval and repeats section where it undulates (toe up or toe down). True stratigraphic thickness (TST) needs the survey and a dip model; it is not computed yet.</li>
     <li>Azimuthal GR (up, down, left, right) shows which way the bit crosses the beds.</li></ul>`]);

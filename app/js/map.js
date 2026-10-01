@@ -150,7 +150,7 @@ function drawGrid(gr) {
   if (!gr.url) { box.hidden = !full || (!gr.pts.length && !gr.missing.length); box.innerHTML = `<b>${esc(gridTitle())}</b><br>${gr.pts.length ? 'Values posted; ' + esc(gr.reason || '') : 'No well has these tops'}`; return; }
   const stops = d3.range(0, 1.0001, 0.1).map(t => gr.color(gr.lo + (gr.hi - gr.lo) * t)), lo = fmtV(gr.lo, gr.step / 10), hi = fmtV(gr.hi, gr.step / 10);
   box.hidden = false;
-  box.innerHTML = `<span class="lgfull"><b>${esc(gridTitle())}</b> <span class="hint">${S.mapGrid.kind === 'iso' ? 'TVT' : 'ssTVD'}, ${u}</span></span>
+  box.innerHTML = `<span class="lgfull"><b>${esc(gridTitle())}</b> <span class="hint">${S.mapGrid.kind === 'iso' ? 'TVT' : 'TVDSS'}, ${u}</span></span>
     <div class="lgbar" style="background:linear-gradient(90deg,${stops.join(',')})"></div><div class="lgends"><span>${lo}</span><span>${hi}</span></div>
     <span class="hint lgshort">${S.mapGrid.kind === 'iso' ? 'Thickness' : 'Structure'}, ${fmtV(gr.step, gr.step)} ${u} contours</span><span class="hint lgfull">${gr.pts.length} wells · ${fmtV(gr.step, gr.step)} ${u} contours</span>`;
 }
@@ -238,7 +238,7 @@ function renderMapInfo(placed, gridOn) {
   const rows = [...gr.pts.map(p => ({ w: p.w, v: fmtV(p.v, (gr.step || 10) / 10) })), ...gr.missing.map(m => ({ w: m.w, v: `<span class="hint">${esc(m.why)}</span>` }))]
     .sort((a, b) => S.wells.indexOf(a.w) - S.wells.indexOf(b.w));
   el.innerHTML = `<h3>${esc(gridTitle())}</h3>
-    <table><thead><tr><th>Well</th><th class="n">${g.kind === 'iso' ? 'TVT' : 'ssTVD'}, ${u}</th></tr></thead><tbody>${rows.map(r => `<tr data-well="${r.w.id}" class="${r.w.id === S.selected ? 'sel' : ''}"><td>${esc(r.w.name)}</td><td class="n">${r.v}</td></tr>`).join('')}</tbody></table>
+    <table><thead><tr><th>Well</th><th class="n">${g.kind === 'iso' ? 'TVT' : 'TVDSS'}, ${u}</th></tr></thead><tbody>${rows.map(r => `<tr data-well="${r.w.id}" class="${r.w.id === S.selected ? 'sel' : ''}"><td>${esc(r.w.name)}</td><td class="n">${r.v}</td></tr>`).join('')}</tbody></table>
     <p class="hint" title="${g.kind === 'iso' ? 'True vertical thickness (TVD from the survey), posted mid-interval along the well path.' : 'Datum elevation minus TVD, posted where the well path crosses the top.'} Thin-plate spline, drawn only within the wells' outline plus a margin.">${gr.url ? `${fmtV(gr.step, gr.step)} ${u} contours · ${g.kind === 'iso' ? 'thicker' : 'deeper'} is darker` : `Not contoured: ${esc(gr.reason || 'no values')}`}</p>`;
 }
 document.getElementById('mapInfo').addEventListener('click', e => { const r = e.target.closest('tr[data-well]'); if (r) clickWell(r.dataset.well); });
