@@ -157,7 +157,7 @@ function restorePoints(w, list) {
 /* ---------- Sidebar section ---------- */
 function renderPointList() {
   const box = $('pointList'); const names = pointSeriesNames(); $('pointCount').textContent = names.length || '';
-  if (!names.length) { setHTML(box, '<p class="hint">Open a CSV with md plus value columns (core, XRD, pressures, shows). Columns: well, md, then one per measurement.</p>'); return; }
+  if (!names.length) { setHTML(box, '<p class="hint">Open a CSV: well, md, then one column per value</p>'); return; }
   setHTML(box, names.map(m => {
     const wells = S.wells.filter(w => w.curves.some(c => c.sparse && c.mnemonic === m));
     const n = d3.sum(wells, w => w.curves.find(c => c.sparse && c.mnemonic === m).md.length);
