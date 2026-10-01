@@ -41,8 +41,10 @@ Methods, equations, defaults and limits: [docs/PETROPHYSICS.md](docs/PETROPHYSIC
   gross, net, net-to-gross, net pay, average porosity and Sw, porosity-feet and hydrocarbon-feet per zone, with true
   vertical thickness in deviated wells. Everything exports as CSV.
 - **Map.** USGS National Map topo or satellite imagery. NAD27 coordinates are shifted to WGS84. Wells with a
-  directional survey are drawn from the wellhead to TD as seen from above. ⤢ opens a large map (Esc returns).
-- **Isopach and structure maps.** Pick *Isopach* and two tops, or *Structure* and one top, above the map. Each well
+  directional survey are drawn from the wellhead to TD as seen from above. The side panel keeps a small map with
+  Map/Satellite in its header and a bare color bar; ⤢ opens the **Map** tab.
+- **Isopach and structure maps** (Map tab). Pick *Isopach* and two tops, or *Structure* and one top. The panel beside
+  the map lists each well's value (click a row to select the well), how the surface was made, and the full legend. Each well
   posts its value: true vertical thickness (TVD from the survey), placed where the well path is halfway through the
   interval, or the top's subsea depth, placed where the path crosses it. A thin-plate spline contours the values at
   a round interval, only inside the wells' convex hull plus a margin; beyond that the map is blank. Wells missing a

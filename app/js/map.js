@@ -124,27 +124,35 @@ function drawGrid(gr) {
   const ink = cssVar('--ink'), u = dispU();
   if (gr.url) {
     L.imageOverlay(gr.url, gr.bounds, { opacity: 0.72, className: 'gridimg', interactive: false }).addTo(MAP.layer);
+    const taken = [...gr.pts.map(p => p.ll), ...gr.missing.map(m => m.ll)].map(ll => MAP.map.latLngToContainerPoint(ll));
     const labeled = new Set(), nLevels = new Set(gr.lines.map(l => l.v)).size;
     for (const l of [...gr.lines].sort((x, y) => y.lls.length - x.lls.length)) {
       L.polyline(l.lls, { color: ink, weight: l.major ? 1.6 : 0.8, opacity: l.major ? 0.85 : 0.55, interactive: false }).addTo(MAP.layer);
-      const want = nLevels <= 12 || l.major;
-      if (want && !labeled.has(l.v) && l.lls.length > 8) { labeled.add(l.v); const m = l.lls[Math.floor(l.lls.length / 2)];
-        L.marker(m, { interactive: false, icon: L.divIcon({ className: 'clabel', html: fmtV(l.v, gr.step), iconSize: null }) }).addTo(MAP.layer); }
+      const want = S.mode === 'map' ? nLevels <= 12 || l.major : l.major && nLevels > 6;
+      // One label per level, at the first spot along the line clear of other labels and of the wells.
+      if (want && !labeled.has(l.v) && l.lls.length > 8) {
+        for (let f = 0.5, k = 0; k < 9; k++, f = 0.5 + (k % 2 ? 1 : -1) * Math.ceil(k / 2) * 0.1) {
+          const m = l.lls[Math.floor(l.lls.length * Math.min(0.95, Math.max(0.05, f)))], q = MAP.map.latLngToContainerPoint(m);
+          if (taken.some(t => Math.abs(t.x - q.x) < 34 && Math.abs(t.y - q.y) < 16)) continue;
+          taken.push(q); labeled.add(l.v);
+          L.marker(m, { interactive: false, icon: L.divIcon({ className: 'clabel', html: fmtV(l.v, gr.step), iconSize: null }) }).addTo(MAP.layer); break; } }
     }
   }
+  const small = S.mode !== 'map';
   for (const p of gr.pts) {
+    if (small) continue;
     L.circleMarker(p.ll, { radius: 3, weight: 1, color: ink, fillColor: ink, fillOpacity: 1, interactive: false }).addTo(MAP.layer);
     L.marker(p.ll, { interactive: false, icon: L.divIcon({ className: 'gval', html: fmtV(p.v, gr.step ? gr.step / 10 : 1), iconSize: null }) }).addTo(MAP.layer);
   }
-  for (const m of gr.missing) L.marker(m.ll, { interactive: false, icon: L.divIcon({ className: 'gval miss', html: m.why, iconSize: null }) }).addTo(MAP.layer);
+  if (!small) for (const m of gr.missing) L.marker(m.ll, { interactive: false, icon: L.divIcon({ className: 'gval miss', html: m.why, iconSize: null }) }).addTo(MAP.layer);
   // Legend: the ramp with its range, the interval and how many wells carry it.
-  const box = $('mapLegend');
-  if (!gr.url) { box.hidden = !gr.pts.length && !gr.missing.length; box.innerHTML = `<b>${esc(gridTitle())}</b><br>${gr.pts.length ? 'Values posted; ' + esc(gr.reason || '') : 'No well has these tops'}`; return; }
+  const box = $('mapLegend'), full = S.mode === 'map'; box.classList.toggle('compact', !full);
+  if (!gr.url) { box.hidden = !full || (!gr.pts.length && !gr.missing.length); box.innerHTML = `<b>${esc(gridTitle())}</b><br>${gr.pts.length ? 'Values posted; ' + esc(gr.reason || '') : 'No well has these tops'}`; return; }
   const stops = d3.range(0, 1.0001, 0.1).map(t => gr.color(gr.lo + (gr.hi - gr.lo) * t)), lo = fmtV(gr.lo, gr.step / 10), hi = fmtV(gr.hi, gr.step / 10);
   box.hidden = false;
-  box.innerHTML = `<b>${esc(gridTitle())}</b> <span class="hint">${S.mapGrid.kind === 'iso' ? 'TVT' : 'ssTVD'}, ${u}</span>
+  box.innerHTML = `<span class="lgfull"><b>${esc(gridTitle())}</b> <span class="hint">${S.mapGrid.kind === 'iso' ? 'TVT' : 'ssTVD'}, ${u}</span></span>
     <div class="lgbar" style="background:linear-gradient(90deg,${stops.join(',')})"></div><div class="lgends"><span>${lo}</span><span>${hi}</span></div>
-    <span class="hint">${gr.pts.length} well${gr.pts.length > 1 ? 's' : ''} · contours every ${fmtV(gr.step, gr.step)} ${u} · gridded only between wells</span>`;
+    <span class="hint lgfull">${gr.pts.length} well${gr.pts.length > 1 ? 's' : ''} · contours every ${fmtV(gr.step, gr.step)} ${u} · gridded only between wells</span>`;
 }
 // Grid controls: kind, top, and base for an isopach (defaults to the next top down).
 function syncGridControls() {
@@ -160,6 +168,8 @@ function syncGridControls() {
 
 function renderMap() {
   if (!window.L) { $('map').textContent = 'Map library did not load.'; return; }
+  const slot = $(S.mode === 'map' ? 'mapTabSlot' : 'mapSlot'), box = $('mapBox');
+  if (box.parentNode !== slot) { slot.appendChild(box); MAP.fitKey = ''; MAP.map?.invalidateSize(); }
   initMap(); MAP.layer.clearLayers();
   const ink = cssVar('--ink'), accent = cssVar('--accent'), focus = cssVar('--focus'), paper = cssVar('--paper');
   const placed = S.wells.map(w => ({ w, ll: wgs84Of(w) })).filter(p => p.ll);
@@ -168,6 +178,7 @@ function renderMap() {
   $('map').classList.toggle('gridOn', gridOn);
   MAP.cur = gridOn ? buildGrid(placed) : null;
   if (MAP.cur) drawGrid(MAP.cur); else $('mapLegend').hidden = true;
+  if (S.mode === 'map') renderMapInfo(placed, gridOn);
   // Well paths seen from above, from the wellhead to TD.
   const paths = placed.filter(p => hasPath(p.w)).map(p => ({ ...p, lls: pathLLs(p.w, p.ll) }));
   for (const { w, lls } of paths) {
@@ -186,7 +197,7 @@ function renderMap() {
     tag(sec[0], 'A'); tag(sec[sec.length - 1], 'A′');
   }
   const key = placed.map(p => p.w.id + p.ll.join()).join('|') + paths.map(p => p.w.id + p.lls.length).join();
-  if (key && key !== MAP.fitKey) { MAP.fitKey = key; MAP.map.fitBounds(L.latLngBounds([...placed.map(p => p.ll), ...paths.flatMap(p => [p.lls[p.lls.length - 1]])]), { paddingTopLeft: [24, 24], paddingBottomRight: [100, 24], maxZoom: 14 }); }
+  if (key && key !== MAP.fitKey) { MAP.fitKey = key; MAP.map.fitBounds(L.latLngBounds([...placed.map(p => p.ll), ...paths.flatMap(p => [p.lls[p.lls.length - 1]])]), { paddingTopLeft: [24, 24], paddingBottomRight: [100, 24], maxZoom: 16 }); }
   // Permanent labels only where they fit: the selected well first, then section wells, then the rest.
   // Wells on a crowded pad keep a hover label instead of stacking unreadable text.
   const order = [...placed].sort((a, b) => (b.w.id === S.selected) - (a.w.id === S.selected) || (S.panel.includes(b.w.id) - S.panel.includes(a.w.id)));
@@ -202,7 +213,7 @@ function renderMap() {
   }
   if (!MAP.zoomHooked) { MAP.zoomHooked = true; MAP.map.on('zoomend', () => renderMap()); MAP.map.on('mousemove', hoverGrid); MAP.map.on('mouseout', () => { if (MAP.hint != null) $('mapHint').textContent = MAP.hint; }); }
   const off = S.wells.length - placed.length;
-  MAP.hint = (gridOn && MAP.cur?.reason && MAP.cur.pts.length ? `Not contoured: ${MAP.cur.reason}. ` : '') + (S.mode === 'corr' ? 'Click a well to add or remove it from A–A′' : 'Click a well to show it.')
+  MAP.hint = (gridOn && MAP.cur?.reason && MAP.cur.pts.length ? `Not contoured: ${MAP.cur.reason}. ` : '') + (S.mode === 'map' ? 'Click a well to select it; hover the map for gridded values.' : S.mode === 'corr' ? 'Click a well to add or remove it from A–A′' : 'Click a well to show it.')
     + (off ? ` ${off} well${off > 1 ? 's have' : ' has'} no location: set it in well settings.` : '');
   $('mapHint').textContent = MAP.hint;
 }
@@ -218,8 +229,19 @@ function hoverGrid(e) {
 document.getElementById('mapGrid').onchange = e => { S.mapGrid = { ...S.mapGrid, kind: e.target.value }; renderMap(); autosave(); };
 document.getElementById('mapTop').onchange = e => { S.mapGrid = { ...S.mapGrid, top: e.target.value }; renderMap(); autosave(); };
 document.getElementById('mapBase').onchange = e => { S.mapGrid = { ...S.mapGrid, base: e.target.value }; renderMap(); autosave(); };
-function setBigMap(on) { $('mapWrap').classList.toggle('big', on); $('mapBig').setAttribute('aria-pressed', on); $('mapBig').textContent = on ? '✕' : '⤢'; setTimeout(() => { MAP.map?.invalidateSize(); MAP.fitKey = ''; renderMap(); }, 0); }
-document.getElementById('mapBig').onclick = () => setBigMap(!$('mapWrap').classList.contains('big'));
-document.addEventListener('keydown', e => { if (e.key === 'Escape' && document.getElementById('mapWrap').classList.contains('big')) setBigMap(false); });
+document.getElementById('mapBig').onclick = e => { e.preventDefault(); setMode('map'); };
+// Map tab side panel: what is mapped, each well's value and where it sits, and how the surface was made.
+function renderMapInfo(placed, gridOn) {
+  const gr = MAP.cur, u = dispU(), g = S.mapGrid || {}, el = $('mapInfo'), paths = placed.filter(p => hasPath(p.w)).length, off = S.wells.length - placed.length;
+  const wellsLine = `${placed.length} well${placed.length === 1 ? '' : 's'} on the map${paths ? `, ${paths} with a directional survey (path drawn to TD)` : ''}${off ? `; ${off} without a location (set it in ⚙)` : ''}.`;
+  if (!gridOn || !gr) { el.innerHTML = `<h3>Wells</h3><p>${wellsLine}</p><p class="hint">Choose <b>Isopach</b> and two tops for true vertical thickness, or <b>Structure</b> and a top for its subsea depth. Each well posts its value and the map is contoured between the wells.</p>`; return; }
+  const rows = [...gr.pts.map(p => ({ w: p.w, v: fmtV(p.v, (gr.step || 10) / 10) + ' ' + u })), ...gr.missing.map(m => ({ w: m.w, v: `<span class="hint">${esc(m.why)}</span>` }))]
+    .sort((a, b) => S.wells.indexOf(a.w) - S.wells.indexOf(b.w));
+  const what = g.kind === 'iso' ? `True vertical thickness from <b>${esc(g.top)}</b> to <b>${esc(g.base)}</b> (TVD from the survey where there is one), posted where the well path is halfway through the interval.` : `Subsea depth of <b>${esc(g.top)}</b> (datum elevation minus TVD, negative below sea level), posted where the well path crosses it.`;
+  el.innerHTML = `<h3>${esc(gridTitle())}</h3><p>${what}</p>
+    <table><thead><tr><th>Well</th><th class="n">${g.kind === 'iso' ? 'TVT' : 'ssTVD'}</th></tr></thead><tbody>${rows.map(r => `<tr data-well="${r.w.id}" class="${r.w.id === S.selected ? 'sel' : ''}"><td>${esc(r.w.name)}</td><td class="n">${r.v}</td></tr>`).join('')}</tbody></table>
+    <p class="hint">${gr.url ? `Thin-plate spline through ${gr.pts.length} wells, contoured every ${fmtV(gr.step, gr.step)} ${u} from ${fmtV(gr.lo, gr.step / 10)} to ${fmtV(gr.hi, gr.step / 10)}. Drawn only within the wells' outline plus a margin; ${g.kind === 'iso' ? 'thicker' : 'deeper'} is darker.` : `Not contoured: ${esc(gr.reason || 'no values')}.`} ${wellsLine}</p>`;
+}
+document.getElementById('mapInfo').addEventListener('click', e => { const r = e.target.closest('tr[data-well]'); if (r) clickWell(r.dataset.well); });
 
 document.addEventListener('click', e => { const b = e.target.closest('[data-basemap]'); if (b) { e.preventDefault(); setBasemap(b.dataset.basemap); autosave(); } });

@@ -297,8 +297,9 @@ function depthTicks(w,F,y,H){
   return { grid:thin(walk(primary,true),3), md:showMD?thin(walk(dq,false),14):[], ss:hasSS?thin(walk(i=>ss[i],false),14):[], showMD, showSS:hasSS, hasSS:!!ss, mdLabel:gl?'GL':'MD' };
 }
 function render(){ syncDatum();
-  const mudMode=S.mode==='mud'; $('mudView').hidden=!mudMode; document.querySelector('.side').hidden=mudMode; $('sideGutter').hidden=mudMode;
-  if(S.picking&&(mudMode||S.mode==='stats')) setPicking(false);
+  const mudMode=S.mode==='mud', mapMode=S.mode==='map'; $('mudView').hidden=!mudMode; $('mapView').hidden=!mapMode; $('sideMap').hidden=mapMode; document.querySelector('.side').hidden=mudMode; $('sideGutter').hidden=mudMode;
+  if(S.picking&&(mudMode||mapMode||S.mode==='stats')) setPicking(false);
+  if(mapMode){ $('statsView').hidden=true; $('logView').hidden=true; syncPanel(); renderSidebar(); autosave(); return; }
   if(mudMode){ $('statsView').hidden=true; $('logView').hidden=true; syncPanel(); window.WellerMud?.render(); autosave(); return; }
   const statsMode=S.mode==='stats'; $('statsView').hidden=!statsMode; $('logView').hidden=statsMode;
   syncPanel();
@@ -601,7 +602,7 @@ function redrawOverlay(){ const ctx=S._ctx; if(!ctx||S.mode!=='corr') return; co
 function refreshTops(name){ const ctx=S._ctx;
   for(const w of S.wells) if(S.interp?.enabled&&S._topsDirty?.has(w.id)){ const was=JSON.stringify(w.tocBaseline||null); try{ computeInterp(w); }catch(e){} if(JSON.stringify(w.tocBaseline||null)!==was) S._needRender=true; }
   S._topsDirty=null; const wells=viewWells();
-  if(!ctx||S.mode==='stats'||S.mode==='mud'||(S.mode==='corr'&&name&&S.datum===name)||ctx.cols.length!==wells.length||ctx.cols.some((c,i)=>c.w!==wells[i])){ S._needRender=false; clearTimeout(S._rt); render(); return; }
+  if(!ctx||S.mode==='stats'||S.mode==='mud'||S.mode==='map'||(S.mode==='corr'&&name&&S.datum===name)||ctx.cols.length!==wells.length||ctx.cols.some((c,i)=>c.w!==wells[i])){ S._needRender=false; clearTimeout(S._rt); render(); return; }
   // A new shallowest top moves the TOC baseline zone: redraw the tops now, rebuild the logs once the picking pauses.
   if(S._needRender){ S._needRender=false; clearTimeout(S._rt); S._rt=setTimeout(()=>{ if(!S.drag) render(); },700); }
   const zc=zoneColorMap(); S._zc=zc;
@@ -696,7 +697,7 @@ $('pbWells').addEventListener('change',e=>{ const id=e.target.dataset.pbmd; if(i
   if(!Number.isFinite(v)){ renderPickBar(); return; } const md=fromDisp(v,w), [a,b]=wellRange(w); if(md<Math.min(a,b)||md>Math.max(a,b)) $('stNote').textContent=`⚠ ${fmtD(md,w,1)} ${dispU()} is outside ${w.name}'s log (${fmtD(Math.min(a,b),w)}–${fmtD(Math.max(a,b),w)})`;
   setTopMD(w,S.pickTop,md); S.selected=w.id; refreshTops(S.pickTop); });
 $('pbWells').addEventListener('click',e=>{ const d=e.target.closest('[data-pbdel]'); if(!d) return; e.preventDefault(); const w=wellById(d.dataset.pbdel); if(!w) return; w.tops=w.tops.filter(t=>t.name!==S.pickTop); (S._topsDirty||(S._topsDirty=new Set())).add(w.id); refreshTops(S.pickTop); });
-document.addEventListener('keydown',e=>{ if(e.metaKey||e.ctrlKey||e.altKey) return; const el=e.target, typing=el.matches?.('input,textarea,select,[contenteditable]'); if(typing||S.mode==='stats'||S.mode==='mud'||document.querySelector('.modal:not([hidden])')) return;
+document.addEventListener('keydown',e=>{ if(e.metaKey||e.ctrlKey||e.altKey) return; const el=e.target, typing=el.matches?.('input,textarea,select,[contenteditable]'); if(typing||S.mode==='stats'||S.mode==='mud'||S.mode==='map'||document.querySelector('.modal:not([hidden])')) return;
   if(e.key==='t'||e.key==='T'){ e.preventDefault(); setPicking(!S.picking); return; }
   if(!S.picking) return;
   if(e.key==='Escape'){ setPicking(false); return; }
@@ -1005,7 +1006,7 @@ async function exportPNG(){ const panel=$('logPanel'); const pr=panel.getBoundin
       const svg=tr.querySelector('svg'); const sr=rel(svg); const img=await svgToImage(svg); ctx.drawImage(img,sr.x,sr.y,sr.w,sr.h); } }
   const ov=$('overlay'); if(ov.childNodes.length){ const img=await svgToImage(ov); ctx.drawImage(img,0,0); }
   return cv; }
-$('btnPng').onclick=async()=>{ if(S.mode==='mud') return window.WellerMud?.exportPNG(); if(S.mode==='stats'){ $('stXp').toBlob(b=>downloadBlob(`crossplot_${S.stats.x}_${S.stats.y}.png`.replace(/[^\w.-]+/g,'_'),b),'image/png'); return; } $('stNote').textContent='Rendering PNG…'; $('cursor').style.display='none';
+$('btnPng').onclick=async()=>{ if(S.mode==='mud') return window.WellerMud?.exportPNG(); if(S.mode==='map'){ $('stNote').textContent='Map PNG export is not available yet; use a screenshot.'; return; } if(S.mode==='stats'){ $('stXp').toBlob(b=>downloadBlob(`crossplot_${S.stats.x}_${S.stats.y}.png`.replace(/[^\w.-]+/g,'_'),b),'image/png'); return; } $('stNote').textContent='Rendering PNG…'; $('cursor').style.display='none';
   try{ const cv=await exportPNG(); cv.toBlob(b=>{ downloadBlob(($('vbWell').textContent||'panel').replace(/[^\w-]+/g,'_')+'.png',b); },'image/png'); }
   catch(err){ $('stNote').textContent='PNG export failed: '+err.message; } };
 
@@ -1015,10 +1016,10 @@ $('logPanel').addEventListener('click',e=>{ const h=e.target.closest('[data-selw
 document.querySelectorAll('[data-mode]').forEach(b=>b.onclick=()=>setMode(b.dataset.mode));
 const viewKey=m=>m==='corr'?'corr':'single';
 // Logs and Correlation keep their own zoom and scroll: leaving a flattened section never strands the Logs tab.
-function setMode(m){ const was=S.mode; if(was!=='stats'&&was!=='mud') S.view.scroll=$('logScroll').scrollTop;
+function setMode(m){ const was=S.mode; if(was!=='stats'&&was!=='mud'&&was!=='map') S.view.scroll=$('logScroll').scrollTop;
   S.mode=m; document.querySelectorAll('[data-mode]').forEach(b=>b.setAttribute('aria-selected',b.dataset.mode===m));
   if(m==='corr'&&S.panel.length===0&&S.selected) S.panel=[S.selected];
-  if(m==='stats'||m==='mud'){ render(); return; }
+  if(m==='stats'||m==='mud'||m==='map'){ render(); return; }
   S.view=S.views[viewKey(m)]||(S.views[viewKey(m)]={pxPerFt:0.35});
   if(!S.view.fitted) return fitView();
   render(); $('logScroll').scrollTop=S.view.scroll||0; }
@@ -1028,7 +1029,7 @@ $('btnFit').onclick=fitView;
 $('showEmpty').onchange=e=>{ S.showEmpty=e.target.checked; render(); };
 /* Fit: the whole log fits the screen height. A section flattened on a top fits the interval around that top and
    scrolls there; the rest of the logs stay a scroll away. */
-function fitView(){ if(S.mode==='stats'||S.mode==='mud') return render(); const wells=viewWells();
+function fitView(){ if(S.mode==='stats'||S.mode==='mud'||S.mode==='map') return render(); const wells=viewWells();
   render(); let [lo,hi]=frameExtent(wells);
   if(S.mode==='corr'&&!DEPTH_DATUMS.includes(S.datum)&&wells.length){ const k=wells[0].depthUnit==='m'?0.3048:1; lo=Math.max(lo,-400*k); hi=Math.min(hi,1200*k); }
   const sc=$('logScroll'), svg=$('logPanel').querySelector('.tracks svg'), hdr=svg?svg.getBoundingClientRect().top-$('logPanel').getBoundingClientRect().top:120;
@@ -1051,7 +1052,7 @@ $('scaleSel').onchange=e=>setRatio(+e.target.value);
 $('zoomIn').onclick=()=>stepScale(1); $('zoomOut').onclick=()=>stepScale(-1);
 $('logScroll').addEventListener('wheel',e=>{ if(!(e.ctrlKey||e.metaKey)) return; e.preventDefault(); const yIn=e.clientY-$('logScroll').getBoundingClientRect().top; zoomTo(S.view.pxPerFt*(e.deltaY<0?1.2:1/1.2),yIn); },{passive:false});
 $('logScroll').addEventListener('scroll',()=>{ if(S.mode!=='stats') S.view.scroll=$('logScroll').scrollTop; },{passive:true});
-$('btnPick').onclick=()=>{ const v=$('topName').value.trim(); if(!v&&!S.picking){ $('topName').focus(); return; } if(S.picking&&(!v||v===S.pickTop)) return setPicking(false); if(S.mode==='stats'||S.mode==='mud') setMode('single'); setPicking(true,v); scrollToTop(S.pickTop); };
+$('btnPick').onclick=()=>{ const v=$('topName').value.trim(); if(!v&&!S.picking){ $('topName').focus(); return; } if(S.picking&&(!v||v===S.pickTop)) return setPicking(false); if(S.mode==='stats'||S.mode==='mud'||S.mode==='map') setMode('single'); setPicking(true,v); scrollToTop(S.pickTop); };
 
 /* ---------- Browser cache of opened LAS text (IndexedDB), so a session resumes without re-picking files ---------- */
 const lasCache={ db:null, mem:new Map(),
