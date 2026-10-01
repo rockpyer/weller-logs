@@ -84,7 +84,9 @@ Ordered by value for effort. Each item should add at most one visible control, o
 
 ### Maps: thickness and structure (Next 2 in PLAN.md)
 
-See section 3.
+See section 3. Done (October 2026): isopach and structure maps with posted values and "no pick" wells, thin-plate
+contours clipped to the hull, a large-map view, well paths from directional surveys, and survey import from CSV,
+text reports and .xlsx.
 
 ### Later
 
@@ -154,8 +156,8 @@ each other.
 
 ### Order
 
-1. Bubble map for structure and thickness, with posted values and "no pick" wells.
+1. ~~Posted values for structure and thickness, with "no pick" wells.~~ Done.
 2. Map icons on Zone stats columns.
-3. Thin-plate grid and contours clipped to the hull.
+3. ~~Thin-plate grid and contours clipped to the hull.~~ Done.
 4. Section line on the map, and the gridded top ghosted in the section.
 5. PLSS overlay; GeoJSON export.
