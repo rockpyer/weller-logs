@@ -191,12 +191,13 @@ function migrateTracks(tr){ const D=defaultTracks(); tr=[...tr];
     if(t.type==='lith') for(const c of t.curves) if(!c.aliases.includes('VSH_SP')) c.aliases.push('VSH_SP');
     if(t.type==='flags'&&!t.curves.some(c=>c.aliases?.includes('FLAG_WO'))){ const i=t.curves.findIndex(c=>c.aliases?.[0]==='FLAG_BH'); t.curves.splice(i<0?t.curves.length:i,0,{label:'Washout',aliases:['FLAG_WO'],color:'#8C7B62'}); } } return tr; }
 const norm=s=>s.toUpperCase().replace(/[:_-]\d+$/,'');
+const normOf=c=>{ if(c._nk!==c.mnemonic){ c._nk=c.mnemonic; c._n=norm(c.mnemonic); } return c._n; };
 // Every curve in the well that a track curve's aliases match, best first: open hole before cased hole, then alias order.
 const famKey=cfg=>String(cfg.aliases?.[0]||cfg.label||'').toUpperCase();
 // Among open-hole curves, one covering half again as much depth wins over the alias order (MWD GR to TD vs a short GR).
 const isPct=u=>/^(%|PCT|PERCENT|PERC|PC|PCNT)$/i.test(String(u||'').trim());
 function unitOk(cfg,c){ return !(cfg.pct&&!isPct(c.unit))&&!(cfg.notPct&&isPct(c.unit)); }
-function curveCandidates(well,cfg){ const out=[]; cfg.aliases.forEach((a,k)=>{ const au=a.toUpperCase(); for(const c of well.curves) if(norm(c.mnemonic)===au&&unitOk(cfg,c)&&!out.some(o=>o.c===c)) out.push({c,k,n:c.sparse?0:c.data.length-(c.nulls||0)}); });
+function curveCandidates(well,cfg){ const out=[]; cfg.aliases.forEach((a,k)=>{ const au=a.toUpperCase(); for(const c of well.curves) if(normOf(c)===au&&unitOk(cfg,c)&&!out.some(o=>o.c===c)) out.push({c,k,n:c.sparse?0:c.data.length-(c.nulls||0)}); });
   // A curve chosen by name in the track editor (exact) keeps its place ahead of better-covered alternatives.
   return out.sort((x,y)=>cfg.exact?(x.k-y.k):(!!x.c.cased-!!y.c.cased)||(x.n>1.5*y.n?-1:y.n>1.5*x.n?1:x.k-y.k)).map(o=>o.c); }
 // A well can pin which curve a family uses (well settings), or show all of them ('*').
@@ -342,12 +343,13 @@ function depthTrack(w,F,y,H,ticks,zc){
   // Zone strip: the same zone colors as the stats tab and the correlation fills.
   for(const z of zonesOf(w)){ if(z.name==='Whole well') continue; const y0=y(F.z(z.top)), y1=y(F.z(z.base)); if(y1<0||y0>H) continue;
     svg.append('rect').attr('x',0).attr('width',7).attr('y',Math.max(0,y0)).attr('height',Math.max(0,Math.min(H,y1)-Math.max(0,y0))).attr('fill',zc.get(z.name)||'transparent').append('title').text(z.name); }
-  for(const t of ticks.grid) svg.append('line').attr('x1',t.major?W-6:W-3).attr('x2',W).attr('y1',t.y).attr('y2',t.y).attr('class','grid s');
+  gridPath(svg,ticks.grid.map(t=>`M${t.major?W-6:W-3},${t.y}H${W}`),'grid s');
   cols.forEach((c,j)=>{ const x=12+44*j+40; for(const t of ticks[c]) svg.append('text').attr('x',x).attr('y',t.y+3.5).attr('text-anchor','end').attr('class','depth'+(c==='ss'?' ss':'')).text((Math.round(t.v)||0).toLocaleString().replace(/^-/,'−')); });
   for(const tp of w.tops){ const yy=y(F.z(tp.md)); if(yy<0||yy>H) continue; svg.append('line').attr('x1',8).attr('x2',W).attr('y1',yy).attr('y2',yy).attr('class','top').attr('data-top',tp.name).style('stroke',zc.get(tp.name)||null); }
   const node=svg.node();
-  node.addEventListener('mousemove',e=>{ if(S.drag) return; const r=node.getBoundingClientRect(); const z=y.invert(e.clientY-r.top); showCursor(e.clientY-$('logPanel').getBoundingClientRect().top,mdAtZ(w,F,z),w,[]); });
-  node.addEventListener('mouseleave',()=>{ $('cursor').style.display='none'; });
+  const onMove=perFrame(e=>{ if(S.drag) return; const r=node.getBoundingClientRect(); const z=y.invert(e.clientY-r.top); showCursor(e.clientY-$('logPanel').getBoundingClientRect().top,mdAtZ(w,F,z),w,[]); });
+  node.addEventListener('mousemove',onMove);
+  node.addEventListener('mouseleave',()=>{ onMove.cancel(); $('cursor').style.display='none'; });
   attachTopDrag(node,w,F,y); div.appendChild(node); return div;
 }
 // Curve colors with at least 3:1 contrast on both the light (#FFFFFF) and dark (#1F262E) track background.
@@ -378,7 +380,10 @@ function quickLith(vsh,pe,P=LITH_DEF){ if(!Number.isFinite(vsh)) return null;
    as CSS backgrounds in legends. */
 const LITH_PAT={Sandstone:'sand',Siltstone:'silt',Shale:'shale',Marl:'marl','Limestone / chalk':'lime',Clay:'clay',Claystone:'clay',Kaolinite:'clay','Fine sand':'sandF','Med sand':'sand','Coarse sand':'sandC',
   Limestone:'lime',Anhydrite:'anhy',Cement:'cement','Silty shale':'siltysh','Shaly sandstone':'shsand',Marlstone:'marl',Chalk:'chalk',Dolomite:'dolo',Bentonite:'bent',Salt:'salt','Sandy siltstone':'silt','Pebble / gravel':'sandC',Chert:'anhy',Porcelanite:'chalk'};
-function patTile(key,ink){ const L=(x1,y1,x2,y2)=>`<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${ink}" stroke-width="0.8"/>`, D=(x,y,r=0.8)=>`<circle cx="${x}" cy="${y}" r="${r}" fill="${ink}"/>`;
+// Tiles and inks are asked for once per lithology run when drawing; keep each one after the first.
+const _tiles=new Map(), _inks=new Map();
+function patTile(key,ink){ const ck=key+'|'+ink; if(!_tiles.has(ck)) _tiles.set(ck,patTileRaw(key,ink)); return _tiles.get(ck); }
+function patTileRaw(key,ink){ const L=(x1,y1,x2,y2)=>`<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${ink}" stroke-width="0.8"/>`, D=(x,y,r=0.8)=>`<circle cx="${x}" cy="${y}" r="${r}" fill="${ink}"/>`;
   const brick=L(0,0.5,16,0.5)+L(0,4.5,16,4.5)+L(0.5,0.5,0.5,4.5)+L(8.5,4.5,8.5,8.5);
   const T={sand:[10,8,D(2.5,2)+D(7.5,6)], sandF:[8,6,D(2,1.5,0.55)+D(6,4.5,0.55)], sandC:[12,10,D(3,2.5,1.2)+D(9,7.5,1.2)],
     silt:[12,8,L(1,2,5,2)+D(8.5,2,0.6)+D(2.5,6,0.6)+L(6,6,10,6)], shale:[12,6,L(0,1.5,5,1.5)+L(6,4.5,11,4.5)], clay:[14,5,L(0,2.5,9,2.5)],
@@ -387,12 +392,23 @@ function patTile(key,ink){ const L=(x1,y1,x2,y2)=>`<line x1="${x1}" y1="${y1}" x
     dolo:[16,8,L(0,0.5,16,0.5)+L(0,4.5,16,4.5)+L(0,0.5,2,4.5)+L(8,4.5,10,8.5)], marl:[16,8,L(0,0.5,16,0.5)+L(0.5,0.5,0.5,4.5)+L(4,6.5,12,6.5)],
     anhy:[8,8,L(0,8,8,0)+L(-1,1,1,-1)+L(7,9,9,7)], salt:[8,8,L(0,0.5,8,0.5)+L(0.5,0,0.5,8)], cement:[8,8,L(0,8,8,0)+L(0,0,8,8)], bent:[12,8,L(1,6,3,2)+L(3,2,5,6)+L(7,2,11,2)] };
   return T[key]||null; }
-const patInk=c=>{ const x=d3.color(fillHex(c)); if(!x) return 'rgba(0,0,0,.5)'; const r=d3.rgb(x); return (.299*r.r+.587*r.g+.114*r.b)<90?'rgba(255,255,255,.6)':'rgba(0,0,0,.5)'; };
+const patInk=c=>{ if(String(c).startsWith('var(')) return patInkRaw(c); if(!_inks.has(c)) _inks.set(c,patInkRaw(c)); return _inks.get(c); };
+const patInkRaw=c=>{ const x=d3.color(fillHex(c)); if(!x) return 'rgba(0,0,0,.5)'; const r=d3.rgb(x); return (.299*r.r+.587*r.g+.114*r.b)<90?'rgba(255,255,255,.6)':'rgba(0,0,0,.5)'; };
 // Fill for one lithology in an SVG: a pattern in its defs (color plus ornament), or the plain color.
 function patFill(svg,name,color,uid){ const key=LITH_PAT[name], tl=key&&patTile(key,patInk(color)); if(!tl) return color;
-  const id=('p_'+uid+'_'+key+'_'+String(color).replace(/\W/g,'')).replace(/[^\w-]/g,''); let defs=svg.select('defs'); if(defs.empty()) defs=svg.insert('defs',':first-child');
-  if(defs.select('#'+id).empty()){ const [pw,ph,body]=tl; defs.append('pattern').attr('id',id).attr('patternUnits','userSpaceOnUse').attr('width',pw).attr('height',ph).html(`<rect width="${pw}" height="${ph}" fill="${color}"/>${body}`); }
+  const id=('p_'+uid+'_'+key+'_'+String(color).replace(/\W/g,'')).replace(/[^\w-]/g,''), made=svg.node()._pats||(svg.node()._pats=new Set());
+  if(!made.has(id)){ made.add(id); let defs=svg.select('defs'); if(defs.empty()) defs=svg.insert('defs',':first-child'); const [pw,ph,body]=tl; defs.append('pattern').attr('id',id).attr('patternUnits','userSpaceOnUse').attr('width',pw).attr('height',ph).html(`<rect width="${pw}" height="${ph}" fill="${color}"/>${body}`); }
   return `url(#${id})`; }
+/* Color-by-value fill as a one-pixel-wide image, one texel per screen row (up to 4096), stretched across the track
+   and clipped to the fill. An SVG gradient needs one <stop> element per row, tens of thousands on a long log. */
+function gradientStrip(cfg,curve,idx,ok,Y,sx,width,H){ const rows=Math.max(1,Math.min(4096,Math.ceil(H))), k=rows/H;
+  const mix=d3.interpolateRgb(fillHex(cfg.fillColor||cfg.color),fillHex(cfg.fillColor2||cfg.color)), lut=d3.range(65).map(q=>d3.rgb(mix(q/64)));
+  const q=new Int16Array(rows).fill(-1); for(const i of idx){ if(!ok(i)) continue; const r=Math.floor(Y(i)*k); if(r<0||r>=rows||q[r]>=0) continue; q[r]=Math.round(Math.max(0,Math.min(1,sx(curve.data[i])/width))*64); }
+  let last=q.find(v=>v>=0); if(last===undefined) last=0; for(let r=0;r<rows;r++){ if(q[r]>=0) last=q[r]; else q[r]=last; }
+  const cv=document.createElement('canvas'); cv.width=1; cv.height=rows; const cx=cv.getContext('2d'), im=cx.createImageData(1,rows);
+  for(let r=0;r<rows;r++){ const c=lut[q[r]]; im.data[r*4]=c.r; im.data[r*4+1]=c.g; im.data[r*4+2]=c.b; im.data[r*4+3]=255; }
+  cx.putImageData(im,0,0); return cv.toDataURL(); }
+const gridPath=(svg,segs,cls)=>{ if(segs.length) svg.append('path').attr('d',segs.join('')).attr('class',cls).attr('fill','none'); };
 // The same pattern as a CSS background, for legend swatches.
 function patCSS(name,color,on=true){ const key=on&&LITH_PAT[name], tl=key&&patTile(key,patInk(color)); if(!tl) return color;
   const [pw,ph,body]=tl; return `${color} url('data:image/svg+xml,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="${pw}" height="${ph}">${body}</svg>`)}')`; }
@@ -403,7 +419,9 @@ function wrapRuns(cfg,data,idx,width){ const tOf=scaleT(cfg), runs=[]; let cur=n
   for(const i of idx){ const t=tOf(data[i]); if(!Number.isFinite(t)||(t>=0&&t<=1)){ cur=null; continue; } const k=Math.floor(t);
     if(!cur||k!==ck){ cur=[]; runs.push(cur); ck=k; } cur.push([(t-k)*width,i]); }
   return runs; }
-function showTip(e,html){ const tip=$('tip'); tip.innerHTML=html; tip.hidden=false;
+// Mouse moves arrive faster than the screen redraws; handle only the latest one in each frame. cancel() drops a pending one.
+const perFrame=f=>{ let ev=null, id=0; const h=e=>{ ev=e; if(!id) id=requestAnimationFrame(()=>{ id=0; f(ev); }); }; h.cancel=()=>{ if(id) cancelAnimationFrame(id); id=0; }; return h; };
+function showTip(e,html){ const tip=$('tip'); setHTML(tip,html); tip.hidden=false;
   const x=e.clientX+14, y=e.clientY+14; tip.style.left=Math.max(8,Math.min(x,innerWidth-tip.offsetWidth-8))+'px'; tip.style.top=Math.max(8,Math.min(y,innerHeight-tip.offsetHeight-8))+'px'; }
 function hideTip(){ $('tip').hidden=true; }
 const legendTip=(title,rows)=>`<div class="tiph">${esc(title)}</div>`+rows.map(([n,c,r])=>`<div class="lr"><i style="background:${c}"></i>${esc(n)} <small>${esc(r||'')}</small></div>`).join('');
@@ -411,13 +429,15 @@ const legendTip=(title,rows)=>`<div class="tiph">${esc(title)}</div>`+rows.map((
    edge drags to any height (S.headH: null = auto, 'full', or px). */
 const HEAD_ROWS=5, HEAD_MIN=24;
 function fitHeads(panel){
+  // All reads first, then all writes: reading layout between writes forces a reflow of the whole section per header.
   const heads=[...panel.querySelectorAll('.thead')]; heads.forEach(h=>{ h.style.height=''; h.classList.remove('clip'); h.querySelectorAll('.hmore,.hgrip').forEach(x=>x.remove()); });
   const nats=heads.map(h=>h.offsetHeight), nat=Math.max(0,...nats);
-  const capOf=(h,i)=>{ const rows=h.querySelectorAll(':scope > .scale'); if(rows.length<=HEAD_ROWS) return nats[i]; const r=rows[HEAD_ROWS-1]; return Math.min(nats[i],r.offsetTop+r.offsetHeight+5); };
+  const rowsB=heads.map(h=>[...h.querySelectorAll(':scope > .scale')].map(r=>r.offsetTop+r.offsetHeight));
+  const capOf=(h,i)=>{ const rb=rowsB[i]; if(rb.length<=HEAD_ROWS) return nats[i]; return Math.min(nats[i],rb[HEAD_ROWS-1]+5); };
   const auto=Math.max(0,...heads.map(capOf)), want=S.headH==='full'?nat:Number.isFinite(S.headH)?S.headH:auto, H=Math.round(Math.max(Math.min(HEAD_MIN,nat),Math.min(nat,want)));
   S._head={nat,auto,H};
   heads.forEach((h,i)=>{ h.style.height=H+'px';
-    if(nats[i]>H+1){ h.classList.add('clip'); const hidden=[...h.querySelectorAll(':scope > .scale')].filter(r=>r.offsetTop+r.offsetHeight>H).length;
+    if(nats[i]>H+1){ h.classList.add('clip'); const hidden=rowsB[i].filter(y=>y>H).length;
       h.insertAdjacentHTML('beforeend',`<button type="button" class="hmore" data-headmore="1" title="Show the whole header. Drag the header's bottom edge to set any height.">▾${hidden?' '+hidden+' more':''}</button>`); }
     else if(nats[i]>auto+1&&S.headH) h.insertAdjacentHTML('beforeend',`<button type="button" class="hmore" data-headless="1" title="Back to the compact header">▴</button>`);
     h.insertAdjacentHTML('beforeend','<div class="hgrip" title="Drag to resize the header. Double-click for the compact size."></div>'); });
@@ -472,16 +492,22 @@ function logTrack(w,t,F,y,H,ticks){
   div.appendChild(head);
   const svg=d3.create('svg').attr('width',width).attr('height',H).classed('pick',S.picking);
   const [top,bot]=[S.view.top,S.view.bottom];
-  for(const tk of ticks.grid) svg.append('line').attr('x1',0).attr('x2',width).attr('y1',tk.y).attr('y2',tk.y).attr('class','grid'+(tk.major?' s':''));
+  // Grid as one path per weight instead of a <line> per tick: a log section has thousands of them.
+  const gMin=[], gMaj=[], vLine=(x,major)=>(major?gMaj:gMin).push(`M${+x.toFixed(2)},0V${H}`);
+  for(const tk of ticks.grid) (tk.major?gMaj:gMin).push(`M0,${tk.y}H${width}`);
   const first=resolved[0]?.cfg||t.curves[0];
-  if(t.type==='lithpct'){ for(let i=1;i<10;i++){ const x=width*i/10; svg.append('line').attr('x1',x).attr('x2',x).attr('y1',0).attr('y2',H).attr('class','grid'+(i%5===0?' s':'')); } }
+  if(t.type==='lithpct'){ for(let i=1;i<10;i++) vLine(width*i/10,i%5===0); }
   else if(first&&!t.type){ if(first.log){ const dec=Math.round(Math.log10(Math.max(first.max,first.min)/Math.min(first.max,first.min))); const sx=scaleFor(first,width); const lo=Math.min(first.min,first.max);
-      for(let d=0;d<=dec;d++){ const base=lo*10**d; for(let m=1;m<10;m++){ const v=base*m; if(v>Math.max(first.min,first.max)*1.0001) break; svg.append('line').attr('x1',sx(v)).attr('x2',sx(v)).attr('y1',0).attr('y2',H).attr('class','grid'+(m===1?' s':'')); } } }
-    else for(let i=0;i<=10;i++){ const x=width*i/10; svg.append('line').attr('x1',x).attr('x2',x).attr('y1',0).attr('y2',H).attr('class','grid'+(i%5===0?' s':'')); } }
+      for(let d=0;d<=dec;d++){ const base=lo*10**d; for(let m=1;m<10;m++){ const v=base*m; if(v>Math.max(first.min,first.max)*1.0001) break; vLine(sx(v),m===1); } } }
+    else for(let i=0;i<=10;i++) vLine(width*i/10,i%5===0); }
+  gridPath(svg,gMin,'grid'); gridPath(svg,gMaj,'grid s');
   const step=dep.length>1?Math.abs(dep[1]-dep[0]):1; const stride=Math.max(1,Math.floor(1/(S.view.pxPerFt*step)/2));
   const [i0,i1]=visibleRange(F,top,bot); const idx=d3.range(i0,i1+1,stride);
   const Y=i=>y(zA[i]);
-  const band=(g,a,b,x,wd,fill,title)=>{ const y0=Y(a), h=Math.max(.6,Y(b)-y0); const r=g.append('rect').attr('x',x).attr('y',y0).attr('width',wd).attr('height',h).attr('fill',fill); if(title) r.append('title').text(title); };
+  // Filled depth bands (lithology, cuttings %, flags) collect into one path per group and fill, drawn by flushBands().
+  const bands=new Map(), band=(g,a,b,x,wd,fill)=>{ const y0=Y(a), h=Math.max(.6,Y(b)-y0); let m=bands.get(g); if(!m) bands.set(g,m=new Map()); let d=m.get(fill); if(!d) m.set(fill,d=[]);
+    d.push(`M${+x.toFixed(2)},${+y0.toFixed(2)}h${+wd.toFixed(2)}v${+h.toFixed(2)}h${-wd.toFixed(2)}z`); };
+  const flushBands=()=>{ for(const [g,m] of bands) for(const [fill,d] of m) g.append('path').attr('d',d.join('')).attr('fill',fill); bands.clear(); };
   if(t.type==='lithpct'){ const have=resolved.filter(r=>r.curve&&!r.curve.sparse); if(have.length){ const g=svg.append('g'); const sx=width/100;
       for(let k=0;k<idx.length;k++){ const i=idx[k], j=idx[k+1]??Math.min(i1,i+stride); let x=0;
         for(const r of have){ const v=r.curve.data[i]; if(!Number.isFinite(v)||v<=0) continue; band(g,i,j,x,v*sx,t.nopat?r.cfg.color:patFill(svg,r.cfg.label,r.cfg.color,t.id+w.id)); x+=v*sx; } } } }
@@ -496,38 +522,39 @@ function logTrack(w,t,F,y,H,ticks){
   else {
     if(t.crossover){ const ra=resolved.find(r=>r.cfg.label===t.crossover[0]), rb=resolved.find(r=>r.cfg.label===t.crossover[1]);
       if(ra?.curve&&rb?.curve&&!ra.curve.sparse&&!rb.curve.sparse){ const sa=scaleFor(ra.cfg,width), sb=scaleFor(rb.cfg,width);
-        const area=d3.area().defined(i=>Number.isFinite(ra.curve.data[i])&&Number.isFinite(rb.curve.data[i])&&sa(ra.curve.data[i])<sb(rb.curve.data[i]))
+        const area=d3.area().digits(1).defined(i=>Number.isFinite(ra.curve.data[i])&&Number.isFinite(rb.curve.data[i])&&sa(ra.curve.data[i])<sb(rb.curve.data[i]))
           .x0(i=>sa(ra.curve.data[i])).x1(i=>sb(rb.curve.data[i])).y(Y);
         svg.append('path').attr('d',area(idx)).attr('fill','var(--gas)').attr('opacity',.45); } }
     for(const {cfg,curve} of resolved){ if(!curve) continue; const sx=scaleFor(cfg,width); if(curve.sparse){ drawPoints(svg,cfg,curve,sx,y,F,top,bot); continue; } const ok=i=>Number.isFinite(curve.data[i])&&!(cfg.log&&curve.data[i]<=0);
-      if(cfg.fill&&cfg.fill!=='none'){ let fillRef=cfg.fillColor||cfg.color;
-        if(cfg.fillStyle==='gradient'){ const gid='g'+t.id+'_'+cfg.label.replace(/\W/g,'')+'_'+w.id, mix=d3.interpolateRgb(fillHex(cfg.fillColor||cfg.color),fillHex(cfg.fillColor2||cfg.color));
-          const gr2=svg.append('defs').append('linearGradient').attr('id',gid).attr('gradientUnits','userSpaceOnUse').attr('x1',0).attr('x2',0).attr('y1',0).attr('y2',H);
-          for(const i of idx){ if(!ok(i)) continue; const yy=Y(i); if(yy<0||yy>H) continue; gr2.append('stop').attr('offset',(yy/H).toFixed(5)).attr('stop-color',mix(sx(curve.data[i])/width)); }
-          fillRef=`url(#${gid})`; }
-        const area=d3.area().defined(ok).x0(cfg.fill==='left'?0:width).x1(i=>sx(curve.data[i])).y(Y); svg.append('path').attr('d',area(idx)).attr('fill',fillRef).attr('opacity',cfg.fillOpacity??.35); }
+      if(cfg.fill&&cfg.fill!=='none'){ const area=d3.area().digits(1).defined(ok).x0(cfg.fill==='left'?0:width).x1(i=>sx(curve.data[i])).y(Y), d=area(idx), op=cfg.fillOpacity??.35;
+        if(cfg.fillStyle==='gradient'){ const gid='g'+t.id+'_'+cfg.label.replace(/\W/g,'')+'_'+w.id;
+          svg.append('defs').append('clipPath').attr('id',gid).append('path').attr('d',d);
+          svg.append('image').attr('href',gradientStrip(cfg,curve,idx,ok,Y,sx,width,H)).attr('width',width).attr('height',H).attr('preserveAspectRatio','none').attr('clip-path',`url(#${gid})`).attr('opacity',op); }
+        else svg.append('path').attr('d',d).attr('fill',cfg.fillColor||cfg.color).attr('opacity',op); }
       const col=visibleColor(cfg.color);
-      if(t.nowrap){ const line=d3.line().defined(ok).x(i=>sx(curve.data[i])).y(Y); svg.append('path').attr('d',line(idx)).attr('fill','none').attr('stroke',col).attr('stroke-width',1.2).attr('stroke-dasharray',cfg.dash||null); continue; }
+      if(t.nowrap){ const line=d3.line().digits(1).defined(ok).x(i=>sx(curve.data[i])).y(Y); svg.append('path').attr('d',line(idx)).attr('fill','none').attr('stroke',col).attr('stroke-width',1.2).attr('stroke-dasharray',cfg.dash||null); continue; }
       // Main trace: in-range samples, plus the first sample past an edge so the line reaches it. The rest wraps.
       const tOf=scaleT(cfg), inR=i=>{ const v=tOf(curve.data[i]); return v>=0&&v<=1; }, keep=idx.map((i,k)=>ok(i)&&(inR(i)||(k>0&&ok(idx[k-1])&&inR(idx[k-1]))||(k<idx.length-1&&ok(idx[k+1])&&inR(idx[k+1]))));
-      const line=d3.line().defined((i,k)=>keep[k]).x(i=>sx(curve.data[i])).y(Y);
+      const line=d3.line().digits(1).defined((i,k)=>keep[k]).x(i=>sx(curve.data[i])).y(Y);
       svg.append('path').attr('d',line(idx)).attr('fill','none').attr('stroke',col).attr('stroke-width',1.2).attr('stroke-dasharray',cfg.dash||null);
-      const runs=wrapRuns(cfg,curve.data,idx,width); if(runs.length){ const wl=d3.line().x(p=>p[0]).y(p=>Y(p[1])), g=svg.append('g').attr('class','wrap');
+      const runs=wrapRuns(cfg,curve.data,idx,width); if(runs.length){ const wl=d3.line().digits(1).x(p=>p[0]).y(p=>Y(p[1])), g=svg.append('g').attr('class','wrap');
         for(const r of runs) g.append('path').attr('d',r.length>1?wl(r):`M${r[0][0]},${Y(r[0][1])}h0.01`).attr('fill','none').attr('stroke',col).attr('stroke-width',1).attr('stroke-dasharray','1 2').attr('stroke-linecap','round').attr('opacity',.8); } }
   }
+  flushBands();
   const firstVis=visibleTracks(w)[0];
   for(const tp of w.tops){ const yy=y(F.z(tp.md)); if(yy<0||yy>H) continue; svg.append('line').attr('x1',0).attr('x2',width).attr('y1',yy).attr('y2',yy).attr('class','top').attr('data-top',tp.name).style('stroke',S._zc?.get(tp.name)||null);
     if(t===firstVis) svg.append('text').attr('x',3).attr('y',yy-3).attr('class','toplbl').attr('data-top',tp.name).text(tp.name); }
   const node=svg.node();
   const flagsOn=resolved.filter(r=>r.curve&&!r.curve.sparse);
-  node.addEventListener('mousemove',e=>{ if(S.drag) return; const r=node.getBoundingClientRect(); const z=y.invert(e.clientY-r.top), md=mdAtZ(w,F,z); showCursor(e.clientY-$('logPanel').getBoundingClientRect().top,md,w,resolved);
+  const onMove=perFrame(e=>{ if(S.drag) return; const r=node.getBoundingClientRect(); const z=y.invert(e.clientY-r.top), md=mdAtZ(w,F,z); showCursor(e.clientY-$('logPanel').getBoundingClientRect().top,md,w,resolved);
     const i=Math.min(dep.length-1,Math.max(0,d3.bisectCenter(dep,md)));
     if(lithCls){ const L=lithCls(i); if(!L.k) return hideTip(); const rule=lithRules(LP,hasPE)[L.k];
       showTip(e,`<div class="lr on"><i style="background:${patCSS(L.k,LP.colors[L.k],!t.nopat)}"></i>${esc(L.k)}</div><div class="tipv">Vsh <b>${L.vsh.toFixed(2)}</b>${Number.isFinite(L.pe)?` · PE <b>${L.pe.toFixed(2)}</b> b/e`:''}</div><div class="tipr">Rule: ${esc(rule)}</div><div class="tipd">${depthText(w,md)}</div>`); }
     else if(t.type==='flags'){ const on=flagsOn.filter(f=>f.curve.data[i]>=(f.cfg.flagAt??0.5));
       showTip(e,(on.length?on.map(f=>`<div class="lr on"><i style="background:${f.cfg.color}"></i>${esc(f.cfg.label)}</div>`).join(''):'<div class="tipv">No flag at this depth</div>')+`<div class="tipd">${depthText(w,md)}</div>`); } });
-  node.addEventListener('mouseleave',()=>{ $('cursor').style.display='none'; hideTip(); });
-  if(!t.type){ head.addEventListener('mousemove',e=>{ if(e.target.closest('button')) return hideTip(); showTip(e,trackTipHTML(w,t,resolved)); }); head.addEventListener('mouseleave',hideTip); }
+  node.addEventListener('mousemove',onMove);
+  node.addEventListener('mouseleave',()=>{ onMove.cancel(); $('cursor').style.display='none'; hideTip(); });
+  if(!t.type){ const onHead=perFrame(e=>{ if(e.target.closest('button')) return hideTip(); showTip(e,trackTipHTML(w,t,resolved)); }); head.addEventListener('mousemove',onHead); head.addEventListener('mouseleave',()=>{ onHead.cancel(); hideTip(); }); }
   const leg=head.querySelector('.legend');
   if(leg&&t.type==='lith'){ leg.addEventListener('mousemove',e=>showTip(e,legendTip(`Computed lithology from ${vSrc==='GR'?gr.mnemonic:vSrc||'GR'}${hasPE?' and PE':' only'}: a quick look from cutoffs, not described cuttings${gr?.cased?'. Cased-hole GR: unreliable':''}`,Object.entries(lithRules(LP,hasPE)).map(([n,r])=>[n,patCSS(n,LP.colors[n],!t.nopat),r])))); leg.addEventListener('mouseleave',hideTip); }
   if(leg&&t.type==='flags'){ leg.addEventListener('mousemove',e=>showTip(e,legendTip('Flags',flagsOn.map(f=>[f.cfg.label,f.cfg.color,(f.curve.description||'').replace(/^[^:]*:\s*/,'')])))); leg.addEventListener('mouseleave',hideTip); }
@@ -550,10 +577,10 @@ function attachTopDrag(node,w,F,y){
     if(Math.abs(D.md-D.tp.md)>=0.5){ D.tp.md=D.md; D.tp.source='user'; w._grP=null; if(S.interp?.enabled) computeInterp(w); } render(); };
   node.addEventListener('pointerup',end); node.addEventListener('pointercancel',end);
 }
-function showCursor(yPx,md,w,resolved){ const dep=depthOf(w); const c=$('cursor'); c.style.display='block'; c.style.top=(yPx)+'px';
+function showCursor(yPx,md,w,resolved){ const dep=depthOf(w); const c=$('cursor'); if(c.style.display!=='block') c.style.display='block'; c.style.transform=`translateY(${yPx}px)`;
   const i=Math.min(dep.length-1,Math.max(0,d3.bisectCenter(dep,md)));
-  $('stCursor').innerHTML=`<b>${esc(w.name)}</b> ${depthText(w,md)}`;
-  $('stVals').innerHTML=resolved.filter(r=>r.curve).map(r=>{ const c=r.curve; if(c.sparse){ const k=nearestPoint(c,md); return k<0?'':`${c.mnemonic} <b>${fmtVal(c.data[k],r.cfg)}</b> @${c.md[k]}`; } return `${c.mnemonic} <b>${fmtVal(c.data[i],r.cfg)}</b>`; }).filter(Boolean).join(' · '); }
+  setHTML($('stCursor'),`<b>${esc(w.name)}</b> ${depthText(w,md)}`);
+  setHTML($('stVals'),resolved.filter(r=>r.curve).map(r=>{ const c=r.curve; if(c.sparse){ const k=nearestPoint(c,md); return k<0?'':`${c.mnemonic} <b>${fmtVal(c.data[k],r.cfg)}</b> @${c.md[k]}`; } return `${c.mnemonic} <b>${fmtVal(c.data[i],r.cfg)}</b>`; }).filter(Boolean).join(' · ')); }
 function drawCorrelations(cols,y,gaps,zc){
   const ov=d3.select('#overlay'), panel=$('logPanel'), panelR=panel.getBoundingClientRect();
   const geo=cols.map(c=>{ const r=c.el.getBoundingClientRect(); const trk=c.el.querySelector('.tracks svg').getBoundingClientRect(); return {l:r.left-panelR.left,r:r.right-panelR.left,y0:trk.top-panelR.top,c}; });
