@@ -492,6 +492,8 @@ function logTrack(w,t,F,y,H,ticks){
   if(t.type==='lith') head.innerHTML+=`<div class="scale" style="color:var(--muted)" title="Computed from ${esc(gr?.mnemonic||vSrc||'GR')} cutoffs, not a mud-log or core description${gr?.cased?'. This gamma ray was logged through casing and reads low; pick an open-hole GR in well settings':''}"><span></span><span class="c">${vSrc?'computed* '+esc(vSrc==='GR'?gr.mnemonic:'SP')+(hasPE?' + PE':''):'needs GR or SP'}${gr?.cased?' · cased':''}</span><span></span></div><div class="legend">${Object.keys(lithRules(LP,hasPE)).map(k=>`<i style="background:${patCSS(k,LP.colors[k],!t.nopat)}"></i>`).join('')}</div>`;
   else if(t.type==='flags') head.innerHTML+=`<div class="legend">${resolved.filter(r=>r.curve).map(r=>`<i style="background:${r.cfg.color}"></i>`).join('')}</div>`;
   else for(const {cfg,curve} of resolved){ if(t.type==='lithpct'&&!curve) continue; const s=document.createElement('div'); s.className='scale'; s.style.color=cfg.color; s.style.opacity=curve?1:.35; s.title=curve?.description||'';
+    if(curve?.events){ s.className='scale evleg'; s.style.color=''; const same=x=>String(x).toLowerCase()===String(t.name).toLowerCase(); s.innerHTML=(same(curve.mnemonic)?'':`<span class="c">${esc(curve.mnemonic)}</span>`)+(curve.classes.length===1&&same(curve.classes[0])?'':`<div class="evkeys">${eventLegendHTML(curve)}</div>`); head.appendChild(s); continue; }
+    if(cfg.events&&!curve){ s.innerHTML=`<span class="c">${esc(cfg.label)} (none)</span>`; head.appendChild(s); continue; }
     s.innerHTML=`<span>${cfg.min}</span><span class="c">${curve?curve.mnemonic:cfg.label+' (none)'}${cfg.unit?' '+cfg.unit:''}${cfg.tag?' · '+cfg.tag:''}</span><span class="r">${cfg.max}</span><span class="bar${curve?.sparse?' pts':cfg.dash?' dash':''}"></span>`; head.appendChild(s); }
   div.appendChild(head);
   const svg=d3.create('svg').attr('width',width).attr('height',H).classed('pick',S.picking);
@@ -615,10 +617,10 @@ function showCursor(e,md,w,resolved){ const dep=depthOf(w); const c=$('cursor'),
   const i=Math.min(dep.length-1,Math.max(0,d3.bisectCenter(dep,md)));
   setHTML($('stCursor'),`<b title="${esc(w.name)}">${esc(shortWell(w.name))}</b> ${depthText(w,md)}`);
   // Only real, non-zero readings, first few in track order; the rest go in the tooltip.
-  const vals=resolved.filter(r=>r.curve).map(r=>{ const c=r.curve; if(c.sparse){ const k=nearestPoint(c,md); return k<0?null:{c,v:c.data[k],cfg:r.cfg,at:c.md[k]}; } return {c,v:c.data[i],cfg:r.cfg}; })
+  const vals=resolved.filter(r=>r.curve).map(r=>{ const c=r.curve; if(c.sparse){ const k=nearestPoint(c,md); return k<0?null:c.events?{c,v:1,txt:c.classes[c.data[k]],cfg:r.cfg,at:c.md[k]}:{c,v:c.data[k],cfg:r.cfg,at:c.md[k]}; } return {c,v:c.data[i],cfg:r.cfg}; })
     .filter(x=>x&&Number.isFinite(x.v)&&x.v!==0);
-  const one=x=>`<span title="${esc(x.c.mnemonic)}">${esc(abbr(x.c.mnemonic))}</span> <b>${fmtVal(x.v,x.cfg)}</b>${x.at!=null?' @'+x.at:''}`, more=vals.slice(STATUS_VALS);
-  setHTML($('stVals'),vals.slice(0,STATUS_VALS).map(one).join(' · ')+(more.length?` · <span title="${esc(more.map(x=>`${x.c.mnemonic} ${fmtVal(x.v,x.cfg)}`).join('\n'))}">+${more.length}</span>`:'')); }
+  const one=x=>`<span title="${esc(x.c.mnemonic)}">${esc(abbr(x.c.mnemonic))}</span> <b>${x.txt!=null?esc(x.txt):fmtVal(x.v,x.cfg)}</b>${x.at!=null?' @'+x.at:''}`, more=vals.slice(STATUS_VALS);
+  setHTML($('stVals'),vals.slice(0,STATUS_VALS).map(one).join(' · ')+(more.length?` · <span title="${esc(more.map(x=>`${x.c.mnemonic} ${x.txt??fmtVal(x.v,x.cfg)}`).join('\n'))}">+${more.length}</span>`:'')); }
 const STATUS_VALS=5;
 const NOTE_MS=8000;
 const abbr=(s,n=8)=>s.length>n?s.slice(0,n-1)+'…':s;
@@ -1073,10 +1075,51 @@ async function readPicked(f){ if(/\.(pdf|tiff?)$/i.test(f.name)) return {name:f.
 // Binary files and log formats (DLIS, PDF, TIFF…) go to the LAS reader, which says what they are instead of failing as CSV.
 function kindOf(f){ if(f.table) return tableKind(f); const t=f.text.trimStart(); if(/\.(lasproj|json)$/i.test(f.name)||t[0]==='{') return 'project';
   if(t[0]==='~'||/\.(las|dlis|lis|tif|tiff|pdf|xlsx?|zip)$/i.test(f.name)||/^#[^\n]*\n\s*~/.test(t)||WellerLAS.sniffBinary(f.text,f.name,f.bytes)) return 'las'; return tableKind(f); }
-const tableKind=f=>{ if(WellerSurvey.isSurvey(f.text)) return 'survey'; const k=tableOf(f).kind; return k==='tops'||k==='header'?'table':k; };
-const TABLE_HELP='Tops: a well name or API column, a top (formation, marker) column and an MD column. Well header: a well name or API column and at least two of KB, GL, latitude, longitude, X, Y, spud, status, type, field, operator or TD. Point data: a well column, an md or depth column, then one column per measurement.';
+// Plain tops and well headers load straight away; anything else asks what it is and which column is which.
+const tableKind=f=>{ if(WellerSurvey.isSurvey(f.text)) return 'survey'; const t=tableOf(f); if(!t.table.columns.length||!t.table.rows.length) return 'unknown'; const g=f._guess||(f._guess=WellerTables.guess(t.table)); return g.sure?'table':'ask'; };
+const TABLE_HELP='A header row, then one row per record. Tops: well or API, top name and MD. Well header: well or API and at least two of KB, GL, latitude, longitude, X, Y, spud, status, type, field, operator or TD. Point data: well or API, a depth, then a label or one column per measurement. Survey: well or API, MD, inclination, azimuth.';
+
+/* ---------- "What's in this file?": the type and which column is which, for a table that is not plainly tops or a header ---------- */
+const KINDS=[['events','Labeled depths','Corrosion, perfs, shows: a label at a depth, or top and base'],['points','Measurements at depth','Core, XRD, pressures: numbers at a depth'],
+  ['tops','Formation tops','One depth per top per well'],['header','Well header','One row per well: KB, GL, location…'],['survey','Directional survey','MD, inclination, azimuth']];
+// Which map fields each type uses, and what they are called there.
+const KIND_FIELDS={events:[['label','Label / class'],['top','Depth (top)'],['base','Base depth (optional)'],['ref','Depths are']],points:[['top','Depth'],['ref','Depth is'],['label','Label (optional)']],
+  tops:[['label','Top name'],['top','Depth'],['ref','Depth is']],header:[],survey:[['top','MD'],['inc','Inclination'],['azi','Azimuth']]};
+const ROLE={well:'Well',api:'API',alias:'Short name',label:'Label',top:'Depth',base:'Base',inc:'Inc',azi:'Azi'};
+let kindResolve=null, K=null;
+function askKind(f){ const t=tableOf(f).table, g=f._guess||WellerTables.guess(t);
+  K={f,t,guessed:g.kind,kind:g.kind==='unknown'?'events':g.kind,map:{...g.map,values:[...(g.map.values||[])]},name:seriesName(f.name)};
+  drawKind(); $('kindDlg').hidden=false; $('kindApply').focus(); return new Promise(res=>{ kindResolve=res; }); }
+function closeKind(v){ $('kindDlg').hidden=true; const r=kindResolve; kindResolve=null; r?.(v); }
+function drawKind(){ const {t,map,kind}=K, cols=t.columns, colOpt=(sel,none='—')=>`<option value="">${none}</option>`+cols.map((c,i)=>`<option value="${i}"${sel===i?' selected':''}>${esc(c)}</option>`).join('');
+  const nice={events:'labeled depths',points:'measurements at depth',tops:'formation tops',header:'a well header',survey:'a directional survey',unknown:'nothing we recognize'}[K.guessed];
+  $('kindSum').textContent=`${K.f.name} · ${t.rows.length} row${t.rows.length===1?'':'s'}, ${cols.length} columns. It looks like ${nice}; pick the type and check the columns before importing.`;
+  $('kindOpts').innerHTML=KINDS.map(([k,l,d])=>`<label><input type="radio" name="kindopt" value="${k}"${k===kind?' checked':''}><span>${l}<small>${d}</small></span></label>`).join('');
+  const sel=(k,l,none)=>`<label>${l}<select data-kmap="${k}">${colOpt(map[k],none)}</select></label>`;
+  const f=KIND_FIELDS[kind].map(([k,l])=>k==='ref'?`<label>${l}<select data-kmap="ref"><option${map.ref==='MD'?' selected':''}>MD</option><option${map.ref==='TVD'?' selected':''}>TVD</option></select></label>`:sel(k,l,/optional/.test(l)?'none':'—')).join('');
+  $('kindMap').innerHTML=sel('well','Well name')+sel('api','API')+sel('alias','Short name','none')+f
+    +(kind==='events'?`<label>Series and track name<input type="text" id="kindName" value="${esc(K.name)}"></label>`:'')
+    +(kind==='points'?`<div class="vals"><span class="hint">Values:</span>${cols.map((c,i)=>`<label class="mini"><input type="checkbox" data-kval="${i}"${map.values.includes(i)?' checked':''}> ${esc(c)}</label>`).join('')}</div>`:'')
+    +(kind==='header'?`<p class="hint" style="grid-column:1/-1">Other columns are read by name: KB, GL, latitude, longitude, X, Y, spud, status, type, field, operator, TD. Unrecognized columns are kept as well attributes.</p>`:'');
+  const role=i=>{ const used=['well','api','alias',...KIND_FIELDS[kind].map(x=>x[0])].filter(k=>k!=='ref'&&map[k]===i); if(kind==='points'&&map.values.includes(i)) used.push('value'); return used.map(k=>k==='value'?'Value':k==='label'&&kind==='tops'?'Top':k==='top'&&kind==='survey'?'MD':ROLE[k]).join(', '); };
+  $('kindPrev').innerHTML=`<thead><tr>${cols.map((c,i)=>`<th class="${role(i)?'role':''}">${esc(c)}<small>${role(i)||'&nbsp;'}</small></th>`).join('')}</tr></thead><tbody>${t.rows.slice(0,5).map(r=>`<tr>${r.map((v,i)=>`<td class="${role(i)?'role':''}">${esc(v)}</td>`).join('')}</tr>`).join('')}</tbody>`;
+  drawKindMatch(); }
+// Live check: how many rows find an open well, and what is missing for the chosen type.
+function kindProblem(){ const {kind,map}=K; if(map.well==null&&map.api==null&&map.alias==null) return 'Pick the column that names the well (well name, API or short name).';
+  for(const [k,l] of KIND_FIELDS[kind]) if(k!=='ref'&&k!=='base'&&!/optional/.test(l)&&map[k]==null) return `Pick the ${l.toLowerCase()} column.`;
+  if(kind==='points'&&!map.values.length) return 'Tick at least one value column.'; return ''; }
+function drawKindMatch(){ const p=kindProblem(); $('kindApply').disabled=!!p; if(p){ $('kindMatch').textContent=p; return; }
+  const ids=new Map(); for(const r of K.t.rows){ const g=i=>i==null?'':String(r[i]??'').trim(); const rec={name:g(K.map.well),alias:g(K.map.alias),api:WellerTables.cleanApi(g(K.map.api))}; const k=rec.api||rec.name||rec.alias; if(k&&!ids.has(k)) ids.set(k,rec); }
+  const hit=[...ids.values()].filter(r=>WellerTables.matchWell(S.wells,r)), miss=[...ids.values()].filter(r=>!WellerTables.matchWell(S.wells,r));
+  $('kindMatch').textContent=`${hit.length} of ${ids.size} well${ids.size===1?'':'s'} in the file ${hit.length===1?'is':'are'} open.`+(miss.length?` No open well for ${miss.slice(0,8).map(r=>r.name||r.alias||r.api).join(', ')}${miss.length>8?'…':''}; those rows are skipped.`:''); }
+$('kindOpts').addEventListener('change',e=>{ if(e.target.name!=='kindopt') return; K.kind=e.target.value; if(K.kind==='points'&&!K.map.values.length) K.map.values=K.t.columns.map((_,i)=>i).filter(i=>![K.map.well,K.map.api,K.map.alias,K.map.top,K.map.base].includes(i)&&K.t.rows.every(r=>r[i]===''||Number.isFinite(+r[i]))); drawKind(); });
+$('kindMap').addEventListener('change',e=>{ const k=e.target.dataset.kmap, v=e.target.dataset.kval; if(k){ K.map[k]=k==='ref'?e.target.value:e.target.value===''?null:+e.target.value; drawKind(); }
+  else if(v!==undefined){ const i=+v; K.map.values=e.target.checked?[...K.map.values,i]:K.map.values.filter(x=>x!==i); drawKind(); } });
+$('kindMap').addEventListener('input',e=>{ if(e.target.id==='kindName') K.name=e.target.value; });
+$('kindSkip').onclick=()=>closeKind(null);
+$('kindApply').onclick=()=>{ if(kindProblem()) return; closeKind({kind:K.kind,map:K.map,t:K.t,name:K.name.trim()||seriesName(K.f.name)}); };
 async function openFiles(files){ const mud=files.filter(f=>f.mud); files=files.filter(f=>!f.mud); if(mud.length) window.WellerMud?.openFiles(mud.map(f=>f.file)); if(!files.length) return;
-  const by={project:[],las:[],table:[],survey:[],points:[],unknown:[]}; for(const f of files) by[kindOf(f)].push(f); const report=[];
+  const by={project:[],las:[],table:[],survey:[],ask:[],unknown:[]}; for(const f of files) by[kindOf(f)].push(f); const report=[];
   const other=(f,fn)=>{ try{ report.push({file:f.name,status:'loaded',note:fn(),problems:[]}); }catch(err){ report.push({file:f.name,status:'failed',problems:[{level:'error',cat:'Parsing',title:err.message}]}); } };
   // LAS picked with an older project (one without the LAS inside) restores its wells instead of loading as new ones.
   if(by.project.length&&by.las.length){ const want=new Set(); for(const f of by.project){ try{ for(const r of JSON.parse(f.text).wells||[]) for(const x of r.files||[r]) if(x.fileName) want.add(x.fileName); }catch(e){} }
@@ -1084,12 +1127,18 @@ async function openFiles(files){ const mud=files.filter(f=>f.mud); files=files.f
   for(const f of by.project){ try{ const miss=await loadProject(JSON.parse(f.text)); if(f.handle) S.fileHandle=f.handle; report.push({file:f.name,status:'loaded',note:'Project loaded',problems:miss?.length?[{level:'warn',cat:'Files',title:`${miss.length} LAS file${miss.length>1?'s are':' is'} not in this project file or this browser: ${miss.join(', ')}`,fix:'Open the project again and select those LAS files with it (Cmd/Ctrl-click). Save afterwards and the project carries them.'}]:[]}); }
     catch(err){ report.push({file:f.name,status:'failed',problems:[{level:'error',cat:err instanceof SyntaxError?'Parsing':'File type',title:err instanceof SyntaxError?'Not valid JSON: '+err.message:err.message,fix:'Open a .lasproj saved by Weller Logs.'}]}); } }
   if(by.las.length) report.push(...addLASFiles(by.las));
-  if(by.table.length){ const tabs=by.table.map(tableOf), p=WellerTables.plan(S.wells,tabs), choices=p.conflicts.length?await reviewImport(p):[];
+  // Tables we are not sure about: ask, one file at a time, after the LAS so their wells are open.
+  const asked=[], later=[]; for(const f of by.ask){ const a=await askKind(f); if(!a){ report.push({file:f.name,status:'failed',problems:[{level:'info',cat:'Import',title:'Skipped; nothing changed'}]}); continue; }
+    if(a.kind==='tops'||a.kind==='header'){ const recs=WellerTables.mapRecords(a.t,a.kind,a.map,f.name); if(a.kind==='tops'&&a.map.ref==='TVD') for(const r of recs){ const w=WellerTables.matchWell(S.wells,r); if(w) r.md=mdFromTvd(w,r.md); } asked.push({kind:a.kind,source:f.name,records:recs}); }
+    else later.push({f,a}); }
+  if(by.table.length||asked.length){ const tabs=[...by.table.map(tableOf),...asked], p=WellerTables.plan(S.wells,tabs), choices=p.conflicts.length?await reviewImport(p):[];
     for(const t of tabs) report.push({file:t.source,status:choices?'loaded':'failed',note:`${t.kind==='tops'?'Tops':'Well header'}: ${t.records.length} row${t.records.length===1?'':'s'}`,problems:choices?[]:[{level:'error',cat:'Import',title:'Import cancelled; nothing changed'}]});
-    if(choices) report.push({file:by.table.length>1?'Merged tables':'Result',status:'loaded',note:planSummary(p,applyPlan(p,choices)),problems:planProblems(p)}); }
+    if(choices) report.push({file:tabs.length>1?'Merged tables':'Result',status:'loaded',note:planSummary(p,applyPlan(p,choices)),problems:planProblems(p)}); }
+  for(const {f,a} of later){ try{ const r=a.kind==='events'?importEvents(a.t,a.map,f.name,a.name):a.kind==='survey'?importSurveyTable(a.t,a.map,f.name):importValuePoints(a.t,a.map,f.name);
+      if(a.kind==='survey') for(const w of S.wells){ w._ss=null; } report.push({file:f.name,status:'loaded',note:r.note,problems:r.problems}); }
+    catch(err){ report.push({file:f.name,status:'failed',problems:[{level:'error',cat:'Import',title:err.message}]}); } }
   if(by.survey.length) report.push(...importSurveys(by.survey));
-  for(const f of by.points) other(f,()=>'Points: '+importPointsCSV(tableOf(f).table.delim===','?f.text:WellerTables.toCSV(tableOf(f).table),f.name));
-  for(const f of by.unknown) report.push({file:f.name,status:'failed',problems:[{level:'error',cat:'File type',title:`Not tops, a well header or point data (columns: ${tableOf(f).table.columns.slice(0,12).join(', ')||'none'})`,fix:TABLE_HELP}]});
+  for(const f of by.unknown) report.push({file:f.name,status:'failed',problems:[{level:'error',cat:'File type',title:`No rows to read (columns: ${tableOf(f).table.columns.slice(0,12).join(', ')||'none'})`,fix:TABLE_HELP}]});
   render(); showImportSummary(report); }
 
 /* ---------- Wells built from several LAS files. w.parts holds the normalized files; a one-file well is its own part. ---------- */
@@ -1363,9 +1412,12 @@ addEventListener('paste',e=>{ if(e.target.closest?.('input,textarea,select,[cont
   if(!/\n/.test(text.trim())||!/[\t,;]/.test(text.split('\n')[0])) return; e.preventDefault(); openFiles([{name:'Pasted cells',text,table:true}]); });
 
 /* ---------- Project save / load / autosave ---------- */
+// A survey imported from a table is not in the LAS, so the project carries it.
+// Projects saved before survey files kept a table survey as ref.survey.
+const dirSurveyOf=ref=>ref.dirSurvey||(ref.survey?.md?.length?{md:ref.survey.md,inc:ref.survey.inc,azi:ref.survey.azi,source:ref.survey.fromTable||'',unit:'',notes:[]}:undefined);
 function projectJSON(){ return { version:3, app:'weller-logs', savedAt:new Date().toISOString(), mode:S.mode, selected:S.selected, panel:S.panel, datum:S.datum, views:S.views, tracks:S.tracks, hiddenPoints:S.hiddenPoints, stats:S.stats, basemap:S.basemap, mapGrid:S.mapGrid?.kind?S.mapGrid:undefined, interp:S.interp, corr:S.corr, topColors:S.topColors,display:{units:S.units,depthLabels:S.depthLabels,showEmpty:S.showEmpty,headH:S.headH},keepZeros:S.keepZeros?.length?S.keepZeros:undefined,
   mudlogs:window.WellerMud?.toJSON(),
-  wells:S.wells.map(w=>({id:w.id,name:w.name,api:w.api,field:w.field,company:w.company,county:w.county,state:w.state,preset:w.preset,demo:w.demo,fileName:w.fileName,pick:w.pick,shifts:w.shifts,edits:w.edits,files:partsOf(w).length>1?partsOf(w).map(p=>({fileName:p.fileName,demo:p.demo})):undefined,location:w.location,elevation:w.elevation,header:w.header,attrs:w.attrs,depthUnit:w.depthUnit,tops:w.tops,dirSurvey:w.dirSurvey,points:pointsJSON(w),curveList:w.curves.filter(c=>!c.sparse).map(c=>c.mnemonic)})) }; }
+  wells:S.wells.map(w=>({id:w.id,name:w.name,api:w.api,field:w.field,company:w.company,county:w.county,state:w.state,preset:w.preset,demo:w.demo,fileName:w.fileName,pick:w.pick,shifts:w.shifts,edits:w.edits,files:partsOf(w).length>1?partsOf(w).map(p=>({fileName:p.fileName,demo:p.demo})):undefined,location:w.location,elevation:w.elevation,header:w.header,attrs:w.attrs,depthUnit:w.depthUnit,tops:w.tops,points:pointsJSON(w),dirSurvey:w.dirSurvey,curveList:w.curves.filter(c=>!c.sparse).map(c=>c.mnemonic)})) }; }
 async function loadProject(p){ if(!p||p.app!=='weller-logs') throw new Error('not a Weller Logs project'); const missing=[];
   // A file may be a well on its own or one part of a merged well; find it wherever it is now.
   const findPart=fn=>{ for(const w of S.wells){ const ps=partsOf(w); if(ps.length===1&&w.fileName===fn) return w; const q=ps.find(q=>q.fileName===fn); if(q) return q; } return null; };
@@ -1379,11 +1431,11 @@ async function loadProject(p){ if(!p||p.app!=='weller-logs') throw new Error('no
     const text=f.demo?await fetchText('data/'+f.demo):await lasCache.get(f.fileName); if(text){ try{ const w=normalizeWell(parseLAS(text,nullOpts(f.fileName)),f.fileName); if(f.demo) w.demo=f.demo; fromCache[f.fileName]=w; }catch(e){} } } }
   const getPart=fn=>findPart(fn)||fromCache[fn];
   const byFiles=fs=>S.wells.find(w=>sourcesOf(w).join('\n')===fs.join('\n'));
-  S.wells=p.wells.map(ref=>{ if(ref.preset){ const cfg=WellerSynth.PRESET_WELLS.find(c=>c.id===ref.preset); const w=presetWell(cfg); w.tops=ref.tops; w.elevation=ref.elevation; w.header=ref.header; w.attrs=ref.attrs; if(ref.edits){ w.edits=ref.edits; applyShifts(w); } if(ref.dirSurvey){ w.dirSurvey=ref.dirSurvey; applyDirSurvey(w); } restorePoints(w,ref.points); return w; }
+  S.wells=p.wells.map(ref=>{ if(ref.preset){ const cfg=WellerSynth.PRESET_WELLS.find(c=>c.id===ref.preset); const w=presetWell(cfg); w.tops=ref.tops; w.elevation=ref.elevation; w.header=ref.header; w.attrs=ref.attrs; if(ref.edits){ w.edits=ref.edits; applyShifts(w); } const ds=dirSurveyOf(ref); if(ds){ w.dirSurvey=ds; applyDirSurvey(w); } restorePoints(w,ref.points); return w; }
     let live;
     if(ref.files){ const fs=ref.files.map(f=>f.fileName); live=byFiles(fs); if(!live){ const parts=fs.map(getPart); if(parts.some(x=>!x)){ missing.push(...fs.filter((f,i)=>!parts[i])); return null; } live=rebuildWell(null,parts); } }
     else live=byFiles([ref.fileName])||getPart(ref.fileName);
-    if(live){ if(ref.demo) live.demo=ref.demo; Object.assign(live,{tops:ref.tops,elevation:ref.elevation,location:ref.location,header:ref.header,attrs:ref.attrs,name:ref.name,api:ref.api,field:ref.field,id:ref.id,pick:ref.pick,shifts:ref.shifts,edits:ref.edits,dirSurvey:ref.dirSurvey,_grP:null}); for(const k of ['company','county','state']) if(ref[k]!==undefined) live[k]=ref[k]; WellerLAS.fillPlace(live); applyDirSurvey(live); applyShifts(live); restorePoints(live,ref.points); return live; } missing.push(ref.fileName||ref.name); return null; }).filter(Boolean);
+    if(live){ if(ref.demo) live.demo=ref.demo; Object.assign(live,{tops:ref.tops,elevation:ref.elevation,location:ref.location,header:ref.header,attrs:ref.attrs,name:ref.name,api:ref.api,field:ref.field,id:ref.id,pick:ref.pick,shifts:ref.shifts,edits:ref.edits,dirSurvey:dirSurveyOf(ref),_grP:null}); for(const k of ['company','county','state']) if(ref[k]!==undefined) live[k]=ref[k]; WellerLAS.fillPlace(live); applyDirSurvey(live); applyShifts(live); restorePoints(live,ref.points); return live; } missing.push(ref.fileName||ref.name); return null; }).filter(Boolean);
   S.tracks=migrateTracks(p.tracks); S.views=p.views||newViews(); S.view=S.views[viewKey(S.mode)]||S.views.single; S.datum=p.datum||'MD'; S.topColors=p.topColors||S.topColors; S.hiddenPoints=p.hiddenPoints||[]; S.stats={...statsDefaults(),...(p.stats||{})}; S.interp={...interpDefaults(),...(p.interp||{})}; S.corr={...S.corr,...(p.corr||{})}; S.mapGrid=p.mapGrid||{kind:''}; if(!p.tracks.some(t=>t.id==='t8')) S.tracks=[...S.tracks,...defaultTracks().filter(t=>['t8','t9','t10','t11','t12'].includes(t.id))]; setBasemap(p.basemap||'map'); if((p.version||1)<2) pointSeriesNames().forEach(placePointSeries); S.panel=(p.panel||[]).filter(id=>wellById(id));
   // Older projects kept section order separately: move those wells into that order within the list.
   if((p.version||1)<3){ const pos=S.wells.map((w,i)=>S.panel.includes(w.id)?i:-1).filter(i=>i>=0); S.panel.forEach((id,k)=>{ S.wells[pos[k]]=wellById(id); }); } S.selected=wellById(p.selected)?p.selected:(S.wells[0]?.id||null);
@@ -1490,7 +1542,7 @@ document.addEventListener('click',e=>{ if(e.target.closest('[data-close]')){ e.t
   if(e.target.closest('#btnNotes,#btnAbout,#mudScroll,#mudPop')) return;
   document.querySelectorAll('.pop:not([hidden])').forEach(p=>{ if(!p.contains(e.target)) p.hidden=true; }); });
 document.addEventListener('keydown',e=>{ if(e.key!=='Escape') return; document.querySelectorAll('.pop:not([hidden])').forEach(p=>p.hidden=true);
-  const open=[...document.querySelectorAll('.modal:not([hidden])')].filter(m=>m.id!=='resume'); const top=open[open.length-1]; if(top){ e.preventDefault(); if(top.id==='revDlg') closeReview(null); else top.hidden=true; } });
+  const open=[...document.querySelectorAll('.modal:not([hidden])')].filter(m=>m.id!=='resume'); const top=open[open.length-1]; if(top){ e.preventDefault(); if(top.id==='revDlg') closeReview(null); else if(top.id==='kindDlg') closeKind(null); else top.hidden=true; } });
 function setTheme(t){ if(t==='dark') document.documentElement.dataset.theme='dark'; else delete document.documentElement.dataset.theme; try{ localStorage.setItem('weller.theme',t); }catch(e){} }
 $('btnTheme').onclick=()=>{ setTheme(document.documentElement.dataset.theme==='dark'?'light':'dark'); render(); };
 /* Sidebar width: drag the gutter, double-click to reset. Long well names get room without a wider default. */

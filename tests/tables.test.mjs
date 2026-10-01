@@ -111,3 +111,46 @@ test('real sheet headers: GL-KB is rig height, vertical datum is not the CRS, th
   const p = T.plan([well('a', 'W1', '')], [t2]);
   assert.deepEqual(p.conflicts.find(c => c.key === 'gl').options.map(o => o.value), [100, 101]);
 });
+
+// Casing corrosion points as exported (synthetic rows, real layout): Point_Label is the class, MD_Top_ft / MD_Base_ft
+// the depths, a 10-digit API, and inspection details that ride along as notes.
+const CORR = ['Well_Name,API10,Short_Name,Casing_String,Point_Label,MD_Top_ft,MD_Base_ft,Inspection_Date,Inspection_Type,Tool_Vendor',
+  ...[37, 78, 254].map(d => `TEST 5,0403700001,TEST 5,Surface,SURF CORR,${d}.0,${d}.0,2025-02-21,EM (through-tubing),Vendor A`),
+  ...[757.2, 824.2, 825.2, 831.7, 831.7].map(d => `TEST 5,0403700001,TEST 5,Production,PROD CORR,${d},${d},2021-08-23,Casing Inspection Log,`),
+  'TEST C-1,0403700002,TEST C1,Production,PROD CORR,303.7,310.0,2021-08-06,Casing Inspection Log,',
+  'TEST C-1,0403700002,TEST C1,Surface,SURF CORR,397.0,397.0,not given,EM (through-tubing),Vendor B'].join('\n') + '\n';
+
+test('labeled depths are not tops or values: asks, with label, top, base and well columns mapped', () => {
+  const t = T.readDelimited(CORR), g = T.guess(t);
+  assert.equal(g.kind, 'events'); assert.equal(g.sure, false);
+  const col = i => t.columns[i];
+  assert.equal(col(g.map.label), 'Point_Label'); assert.equal(col(g.map.top), 'MD_Top_ft'); assert.equal(col(g.map.base), 'MD_Base_ft');
+  assert.equal(col(g.map.well), 'Well_Name'); assert.equal(col(g.map.api), 'API10'); assert.equal(g.map.ref, 'MD');
+  assert.deepEqual(g.map.values, []);
+  const r = T.mapRecords(t, 'events', g.map, 'c.csv');
+  assert.equal(r.length, 10); assert.equal(r[0].label, 'SURF CORR'); assert.equal(r[0].top, 37); assert.equal(r[8].base, 310);
+  assert.match(r[0].note, /Inspection_Type: EM/);
+});
+
+test('a 10-digit API matches the well with a 12- or 14-digit API', () => {
+  const wells = [well('a', 'Wezu5 LAS', '04037076010000'), well('b', 'WEZU C1', '040370761800')];
+  assert.equal(T.matchWell(wells, { api: '0403707601' }).id, 'a');
+  assert.equal(T.matchWell(wells, { name: 'WEZU C-1', api: '' }).id, 'b');
+});
+
+test('guess: tops stay automatic, values are points, MD/INC/AZI is a survey, a repeated label is events', () => {
+  assert.equal(T.guess(T.readDelimited(TOPS)).kind, 'tops'); assert.equal(T.guess(T.readDelimited(TOPS)).sure, true);
+  assert.equal(T.guess(T.readDelimited(HEADER)).kind, 'header');
+  const core = T.guess(T.readDelimited('well,md_ft,core_phi (v/v),core_k (mD)\nA,1000,0.1,2\nA,1001,0.12,3\n'));
+  assert.equal(core.kind, 'points'); assert.deepEqual(core.map.values, [2, 3]);
+  const sv = T.readDelimited('Well,MD,Inc,Azi\nA,0,0,0\nA,1000,10,45\nA,2000,30,50\n'), gs = T.guess(sv);
+  assert.equal(gs.kind, 'survey'); assert.equal(T.mapRecords(sv, 'survey', gs.map, 's')[2].inc, 30);
+  const perfs = T.guess(T.readDelimited('well,top,md\nA,PERF,100\nA,PERF,110\nA,PERF,120\nA,PERF,130\n'));
+  assert.equal(perfs.kind, 'events'); assert.equal(perfs.sure, false);
+});
+
+test('header forced on a table: well identity from the chosen columns', () => {
+  const t = T.readDelimited('Lease,API10,KB (ft),GL (ft)\nWEZU 5,0403707601,1300,1280\n');
+  const r = T.mapRecords(t, 'header', { well: 0, api: 1 }, 'h.csv');
+  assert.equal(r[0].name, 'WEZU 5'); assert.equal(r[0].vals.kb[0].v, 1300);
+});

@@ -28,7 +28,7 @@ function zoneColorMap() {
 function statCurves() {
   const seen = new Set(), out = [];
   for (const t of S.tracks) { if (t.type) continue;   // lithology, cuttings and flag tracks are not averaged
-    for (const c of t.curves) { if (seen.has(c.label)) continue; seen.add(c.label); out.push(c); } }
+    for (const c of t.curves) { if (seen.has(c.label) || c.events) continue; seen.add(c.label); out.push(c); } }   // labeled depths have no value to average
   return out;
 }
 

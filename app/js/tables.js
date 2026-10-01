@@ -250,6 +250,75 @@
     (w.header = w.header || {})[key] = value;
   }
 
+  /* ---------- What is this table? A guess plus a column map the person can correct ---------- */
+  // Kinds: tops, header, events (labeled depths: corrosion, perforations, shows; one depth or a top and base),
+  // points (depth plus numeric measurements: core, XRD, pressures), survey (MD, inclination, azimuth).
+  // sure: false means the import asks "What's in this file?" before loading anything.
+  const DATEY = /\b(date|time|year|day)\b/;
+  function guess(t) {
+    const cls = classify(t), cols = cls.cols, n = t.rows.length;
+    const vals = i => t.rows.map(r => r[i]).filter(v => v !== '' && v != null);
+    const numeric = i => { const v = vals(i); return v.length > 0 && v.filter(x => Number.isFinite(num(x)) && /^[-+]?[\d.,]+(e[-+]?\d+)?$/i.test(x.replace(/\s/g, ''))).length / v.length > 0.8; };
+    const find = (re, ok = () => true) => cols.find(c => re.test(c.n) && ok(c));
+    const idCol = k => cols.find(c => c.key === k);
+    const well = idCol('name'), api = idCol('api'), alias = idCol('alias');
+    const used = new Set([well, api, alias].filter(Boolean));
+    const depthy = c => numeric(c.i) && !used.has(c);
+    const inc = find(/^(inc|incl|inclination|dev|deviation|hole angle)( deg\w*)?$/, depthy), azi = find(/^(az|azi|azm|azim|azimuth)( deg\w*| true| grid)?$/, depthy);
+    const isBase = c => / (base|bottom|btm|bot|end|to) /.test(' ' + c.n + ' ');
+    const depthCols = cols.filter(c => depthy(c) && c !== inc && c !== azi && / (md|tvd|tvdss|depth|dept|measured|top|base|bottom|btm|from|to) /.test(' ' + c.n + ' ') && !/ (elev\w*|kb|gl|td) /.test(' ' + c.n + ' '));
+    const top = depthCols.find(c => !isBase(c) && / md /.test(' ' + c.n + ' ')) || depthCols.find(c => !isBase(c)) || null;
+    const base = depthCols.find(c => c !== top && isBase(c) && (!top || / tvd /.test(' ' + top.n + ' ') === / tvd /.test(' ' + c.n + ' '))) || null;
+    const ref = top && / tvd(ss)? /.test(' ' + top.n + ' ') && !/ md /.test(' ' + top.n + ' ') ? 'TVD' : 'MD';
+    if (top) used.add(top); if (base) used.add(base);
+    // The class column: text with few distinct values, preferably named like one ("Point_Label", "Event", "Type").
+    const textCols = cols.filter(c => !used.has(c) && !numeric(c.i) && !DATEY.test(c.n) && vals(c.i).length);
+    const distinct = c => new Set(vals(c.i)).size;
+    const labelRe = /\b(label|class|category|code|event|feature|point|kind|type|description|desc|marker|top|formation|name|show|remark)\b/;
+    const fewish = c => distinct(c) <= Math.max(2, Math.min(40, n / 2));
+    const label = textCols.find(c => labelRe.test(c.n) && fewish(c)) || textCols.find(fewish) || textCols[0] || null;
+    const values = cols.filter(c => !used.has(c) && c !== inc && c !== azi && numeric(c.i) && !DATEY.test(c.n) && c.key !== 'api').map(c => c.i);
+    const map = { well: well?.i ?? null, api: api?.i ?? null, alias: alias?.i ?? null, label: label?.i ?? null, top: top?.i ?? null, base: base?.i ?? null, ref, inc: inc?.i ?? null, azi: azi?.i ?? null, values };
+    // A tops sheet repeats each top once per well. A label repeated many times in one well is events, not tops.
+    const repeats = () => { if (map.label == null) return 0; const k = new Map(); for (const r of t.rows) { const key = (r[map.well] ?? r[map.api] ?? '') + '\u0000' + r[map.label]; k.set(key, (k.get(key) || 0) + 1); } return d3median([...k.values()]); };
+    let kind, sure = false;
+    if (cls.kind === 'tops') { map.label = cls.name.i; map.top = cls.md.i; map.ref = 'MD'; kind = repeats() > 2 ? 'events' : 'tops'; sure = kind === 'tops'; }
+    else if (cls.kind === 'header') { kind = 'header'; sure = true; }
+    else if (inc && azi && top) kind = 'survey';
+    else if (top && map.label != null && (!values.length || base)) kind = 'events';
+    else if (top && values.length) kind = 'points';
+    else if (top) kind = 'events';
+    else kind = 'unknown';
+    return { kind, sure, map, cls, columns: t.columns };
+  }
+  const d3median = a => { if (!a.length) return 0; const s = [...a].sort((x, y) => x - y), m = s.length >> 1; return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2; };
+
+  // Records for a kind and a column map (from guess(), possibly corrected by the person).
+  // Well identity comes from the map, so a column the header rules missed can still name the well.
+  function mapRecords(t, kind, map, source) {
+    const cell = (r, i) => i == null || i < 0 ? '' : String(r[i] ?? '').trim();
+    const id = r => ({ name: cell(r, map.well), alias: cell(r, map.alias), api: cleanApi(cell(r, map.api)) });
+    const skip = new Set([map.well, map.api, map.alias, map.label, map.top, map.base, map.inc, map.azi, ...(map.values || [])].filter(i => i != null));
+    if (kind === 'header') {
+      const cols = classifyColumns(t.columns).map(c => ({ ...c, key: ['name', 'api', 'alias'].includes(c.key) ? null : c.key }));
+      for (const k of ['well', 'api', 'alias']) if (map[k] != null && cols[map[k]]) cols[map[k]].key = k === 'well' ? 'name' : k;
+      return headerRecords(t, { cols }, source);
+    }
+    const out = [];
+    t.rows.forEach((r, k) => {
+      const line = k + 2, top = num(cell(r, map.top));
+      if (!Number.isFinite(top)) return;
+      if (kind === 'tops') { const name = cell(r, map.label); if (name) out.push({ ...id(r), top: name, md: top, unit: unitOf(t.columns[map.top] || ''), source, line }); return; }
+      if (kind === 'survey') { const inc = num(cell(r, map.inc)), azi = num(cell(r, map.azi)); if (Number.isFinite(inc) && Number.isFinite(azi)) out.push({ ...id(r), md: top, inc, azi, line }); return; }
+      const base = num(cell(r, map.base));
+      const note = t.columns.map((c, i) => skip.has(i) || !cell(r, i) ? '' : `${c}: ${cell(r, i)}`).filter(Boolean).join(' · ');
+      const rec = { ...id(r), top, base: Number.isFinite(base) ? base : top, label: cell(r, map.label), note, line };
+      if (kind === 'points') rec.values = Object.fromEntries((map.values || []).map(i => [t.columns[i], num(cell(r, i))]));
+      out.push(rec);
+    });
+    return out;
+  }
+
   // Read a table's text and turn it into records. kind 'points' and 'unknown' carry the table for the caller.
   function readTable(text, source) {
     const t = readDelimited(text), cls = classify(t);
@@ -307,5 +376,5 @@
     return out;
   }
 
-  root.WellerTables = { readDelimited, toCSV, classifyColumns, classify, readTable, isTable, plan, applyValue, matchWell, cleanApi, cleanDate, same, fmt, readXlsx, unzip, HEADER_FIELDS };
+  root.WellerTables = { readDelimited, toCSV, classifyColumns, classify, guess, mapRecords, readTable, isTable, plan, applyValue, matchWell, cleanApi, cleanDate, same, fmt, readXlsx, unzip, HEADER_FIELDS };
 })(typeof globalThis !== 'undefined' ? globalThis : this);

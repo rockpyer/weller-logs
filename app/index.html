@@ -181,6 +181,18 @@ details.emptytr .trackrow{opacity:.7}
 .scale .bar{grid-column:1/4;height:0;border-top:2px solid currentColor;margin-top:1px}
 .scale .bar.dash{border-top-style:dashed}
 .legend{display:flex;gap:2px;margin-top:3px;flex-wrap:wrap}
+.evleg{display:block}.evkeys{display:flex;flex-wrap:wrap;gap:2px 8px;justify-content:center;font-size:10px;color:var(--ink)}
+.evk{display:inline-flex;align-items:center;gap:3px;white-space:nowrap}.evk i{display:block;width:8px;height:8px;border-radius:50%}
+.kindopts{display:flex;flex-wrap:wrap;gap:6px}
+.kindopts label{display:flex;gap:6px;align-items:flex-start;border:1px solid var(--line);border-radius:6px;padding:6px 10px;cursor:pointer;flex:1 1 170px;font-size:13px}
+.kindopts label:has(input:checked){border-color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent)}
+.kindopts small{display:block;color:var(--muted);font-size:11px}
+.kindmap{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:8px 12px}
+.kindmap label{display:flex;flex-direction:column;gap:2px;font-size:12px;color:var(--muted)}
+.kindmap select,.kindmap input[type=text]{font-size:13px;width:100%}
+.kindmap .vals{grid-column:1/-1;display:flex;flex-wrap:wrap;gap:4px 12px;color:var(--ink)}
+#kindPrev th small{display:block;color:var(--accent);font-weight:600}
+#kindPrev td.role,#kindPrev th.role{background:var(--ground)}
 .legend i{display:block;width:9px;height:9px;border:1px solid var(--line)}
 .track svg{display:block;contain:layout paint}
 .track svg text{font:10px "IBM Plex Mono",monospace;fill:var(--muted)}
@@ -628,6 +640,18 @@ i.sw{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:5p
     <div class="tblwrap"><table><thead><tr><th>Well</th><th>Field</th><th>Value</th></tr></thead><tbody id="revBody"></tbody></table></div>
     <details id="revMore"><summary></summary><div id="revFills" class="tblwrap"></div></details>
     <div class="foot"><button id="revCancel">Cancel import</button><button class="primary" id="revApply">Apply</button></div>
+  </div>
+</div>
+
+<div id="kindDlg" class="modal" hidden>
+  <div class="dlg" role="dialog" aria-labelledby="kindTitle">
+    <h3 id="kindTitle">What's in this file?</h3>
+    <p class="hint" id="kindSum"></p>
+    <div class="kindopts" id="kindOpts" role="radiogroup" aria-label="Data type"></div>
+    <div class="kindmap" id="kindMap"></div>
+    <div class="tblwrap"><table class="data" id="kindPrev"></table></div>
+    <p class="hint" id="kindMatch" aria-live="polite"></p>
+    <div class="foot"><button id="kindSkip">Skip this file</button><button class="primary" id="kindApply">Import</button></div>
   </div>
 </div>
 
