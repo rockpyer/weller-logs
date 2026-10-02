@@ -31,7 +31,7 @@ Methods, equations, defaults and limits: [docs/PETROPHYSICS.md](docs/PETROPHYSIC
   reservoir and net pay from cutoffs. Every parameter is in the Interpretation panel and saved with the project.
 - **Correlation.** The dot beside each well (or a click on the map) adds it to the section; the section follows the Wells
   list order, which you drag to change and which starts west to east. Hang on MD, ground level (TVD below GL), sea level (TVDSS) or flatten on any top.
-  The depth track always labels real MD and subsea TVD (KB minus TVD, negative below sea level), whatever the hang.
+  The depth track always labels real MD and TVDSS (TVD minus KB, positive down), whatever the hang.
   Deviated and horizontal wells use TVD from the directional survey in the LAS file. Zones are filled in the same
   colors as the stats tab. Gaps can be equal or scaled to wellhead distance, which is labeled. The app warns when
   tops cross between wells or are missing from one.
@@ -113,7 +113,7 @@ Methods, equations, defaults and limits: [docs/PETROPHYSICS.md](docs/PETROPHYSIC
   parse errors with the offending line (column count, text or comma decimals in the data), or no usable data
   (empty `~A`, all nulls, time-indexed), each with a fix and a minimal LAS 2.0 template.
 - **Mudlogs (beta).** A separate tab lines up to 8 PDF or TIFF mudlogs side by side, hung in MD, in subsea
-  (elevation − MD, vertical hole assumed) or flattened on a pick. Where the PDF has text (vector output, or a scan
+  (MD − KB, positive down, vertical hole assumed) or flattened on a pick. Where the PDF has text (vector output, or a scan
   already run through OCR), the depth column is found and fitted page by page, stray numbers outvoted, and header and
   legend pages are hidden. Scans without text take two clicks on ruled depth lines (the click snaps to the line); later
   pages continue at that scale, and one more click on any page fixes its offset. Well name, API, operator, field,

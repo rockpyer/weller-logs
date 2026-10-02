@@ -213,7 +213,7 @@ function draw(){ if(S.mode!=='mud'||$('mudView').hidden) return; frameNo++; cons
   ctx.restore();
   // Cursor.
   if(M.cursor&&M.cursor.y>HEAD){ const z=zOfY(M.cursor.y); ctx.save(); ctx.strokeStyle=css('--focus')||'#36c'; ctx.globalAlpha=.7; ctx.beginPath(); ctx.moveTo(0,M.cursor.y); ctx.lineTo(w,M.cursor.y); ctx.stroke(); ctx.globalAlpha=1;
-    ctx.font='11px "IBM Plex Mono",monospace'; logs.forEach((m,k)=>{ const md=mdOfZ(m,z); if(!Number.isFinite(md)) return; const t=`MD ${Math.round(md).toLocaleString()}`+(Number.isFinite(elevOf(m))?` · SS ${Math.round(elevOf(m)-md).toLocaleString()}`:''); const tw=ctx.measureText(t).width+8, x=pos[k]+4;
+    ctx.font='11px "IBM Plex Mono",monospace'; logs.forEach((m,k)=>{ const md=mdOfZ(m,z); if(!Number.isFinite(md)) return; const t=`MD ${Math.round(md).toLocaleString()}`+(Number.isFinite(elevOf(m))?` · SS ${Math.round(md-elevOf(m)).toLocaleString()}`:''); const tw=ctx.measureText(t).width+8, x=pos[k]+4;
       ctx.fillStyle=css('--panel'); ctx.fillRect(x,M.cursor.y-17,tw,15); ctx.fillStyle=ink; ctx.fillText(t,x+4,M.cursor.y-6); }); ctx.restore(); }
   // Header band.
   ctx.fillStyle=css('--panel'); ctx.fillRect(0,0,w,HEAD); ctx.strokeStyle=line; ctx.beginPath(); ctx.moveTo(0,HEAD+.5); ctx.lineTo(w,HEAD+.5); ctx.stroke();
@@ -234,8 +234,8 @@ function drawTrack(ctx,m,x,h,dpr,c){
   // Ruler: MD, or subsea when hung on sea level.
   if(ready){ const step=[1,2,5,10,20,25,50,100,200,250,500,1000,2000,5000].find(s=>s*M.pxPerFt>=36)||10000; ctx.fillStyle=c.muted; ctx.strokeStyle=c.muted; ctx.font='10px "IBM Plex Mono",monospace'; ctx.textAlign='right';
     const md0=mdOfZ(m,z0), md1=mdOfZ(m,z1), ss=M.hang==='SS', e=elevOf(m);
-    const v0=ss?e-md1:md0, v1=ss?e-md0:md1;
-    const rg=mdRange(m)||[-Infinity,Infinity]; for(let v=Math.ceil(v0/step)*step;v<=v1;v+=step){ const md=ss?e-v:v; if(md<rg[0]-step/2||md>rg[1]+step/2) continue; const y=yOfZ(zOf(m,md)); ctx.beginPath(); ctx.moveTo(x-5,y+.5); ctx.lineTo(x,y+.5); ctx.stroke(); ctx.fillText((Math.round(v)||0).toLocaleString().replace(/^-/,'−'),x-7,y+3); }
+    const v0=ss?md0-e:md0, v1=ss?md1-e:md1;
+    const rg=mdRange(m)||[-Infinity,Infinity]; for(let v=Math.ceil(v0/step)*step;v<=v1;v+=step){ const md=ss?v+e:v; if(md<rg[0]-step/2||md>rg[1]+step/2) continue; const y=yOfZ(zOf(m,md)); ctx.beginPath(); ctx.moveTo(x-5,y+.5); ctx.lineTo(x,y+.5); ctx.stroke(); ctx.fillText((Math.round(v)||0).toLocaleString().replace(/^-/,'−'),x-7,y+3); }
     ctx.textAlign='left'; }
   // Picks.
   if(ready) for(const t of picksOf(m)){ const y=yOfZ(zOf(m,t.md)); if(y<HEAD-2||y>h+2) continue; const col=topColor(t.name); ctx.strokeStyle=col; ctx.lineWidth=2; ctx.beginPath(); ctx.moveTo(x,y); ctx.lineTo(x+W,y); ctx.stroke(); ctx.lineWidth=1;
