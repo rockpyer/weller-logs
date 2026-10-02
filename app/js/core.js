@@ -1096,7 +1096,7 @@ function drawKind(){ const {t,map,kind}=K, cols=t.columns, colOpt=(sel,none='—
   $('kindSum').textContent=`${K.f.name} · ${t.rows.length} row${t.rows.length===1?'':'s'}, ${cols.length} columns. It looks like ${nice}; pick the type and check the columns before importing.`;
   $('kindOpts').innerHTML=KINDS.map(([k,l,d])=>`<label><input type="radio" name="kindopt" value="${k}"${k===kind?' checked':''}><span>${l}<small>${d}</small></span></label>`).join('');
   const sel=(k,l,none)=>`<label>${l}<select data-kmap="${k}">${colOpt(map[k],none)}</select></label>`;
-  const f=KIND_FIELDS[kind].map(([k,l])=>k==='ref'?`<label>${l}<select data-kmap="ref"><option${map.ref==='MD'?' selected':''}>MD</option><option${map.ref==='TVD'?' selected':''}>TVD</option></select></label>`:sel(k,l,/optional/.test(l)?'none':'—')).join('');
+  const f=KIND_FIELDS[kind].map(([k,l])=>k==='ref'?`<label>${l}<select data-kmap="ref"><option${map.ref==='MD'?' selected':''}>MD</option><option${map.ref==='TVD'?' selected':''}>TVD</option><option value="TVDSS"${map.ref==='TVDSS'?' selected':''}>TVDSS (TVD − KB)</option></select></label>`:sel(k,l,/optional/.test(l)?'none':'—')).join('');
   $('kindMap').innerHTML=sel('well','Well name')+sel('api','API')+sel('alias','Short name','none')+f
     +(kind==='events'?`<label>Series and track name<input type="text" id="kindName" value="${esc(K.name)}"></label>`:'')
     +(kind==='points'?`<div class="vals"><span class="hint">Values:</span>${cols.map((c,i)=>`<label class="mini"><input type="checkbox" data-kval="${i}"${map.values.includes(i)?' checked':''}> ${esc(c)}</label>`).join('')}</div>`:'')
@@ -1129,7 +1129,10 @@ async function openFiles(files){ const mud=files.filter(f=>f.mud); files=files.f
   if(by.las.length) report.push(...addLASFiles(by.las));
   // Tables we are not sure about: ask, one file at a time, after the LAS so their wells are open.
   const asked=[], later=[]; for(const f of by.ask){ const a=await askKind(f); if(!a){ report.push({file:f.name,status:'failed',problems:[{level:'info',cat:'Import',title:'Skipped; nothing changed'}]}); continue; }
-    if(a.kind==='tops'||a.kind==='header'){ const recs=WellerTables.mapRecords(a.t,a.kind,a.map,f.name); if(a.kind==='tops'&&a.map.ref==='TVD') for(const r of recs){ const w=WellerTables.matchWell(S.wells,r); if(w) r.md=mdFromTvd(w,r.md); } asked.push({kind:a.kind,source:f.name,records:recs}); }
+    if(a.kind==='tops'||a.kind==='header'){ const recs=WellerTables.mapRecords(a.t,a.kind,a.map,f.name); const skip=new Map(); let records=recs;
+      if(a.kind==='tops'&&(a.map.ref==='TVD'||a.map.ref==='TVDSS')) records=recs.filter(r=>{ const w=WellerTables.matchWell(S.wells,r); if(!w) return true; const u=WellerTables.unitKey(w), md=mdFromRef(w,WellerTables.convert(r.md,r.unit,u),a.map.ref); if(Number.isFinite(r.md)&&!Number.isFinite(md)){ skip.set(w.name,(skip.get(w.name)||0)+1); return false; } r.md=md; r.unit=u; return true; });
+      if(skip.size) report.push({file:f.name,status:'loaded',note:'Some TVDSS tops skipped',problems:[{level:'warn',cat:'Depth',title:`TVDSS rows skipped, no KB or GL elevation: ${[...skip].map(([n,k])=>`${n} (${k} row${k===1?'':'s'})`).join(', ')}`,fix:'Add the KB (or GL) elevation in Wells → Manage wells, then import again.'}]});
+      asked.push({kind:a.kind,source:f.name,records}); }
     else later.push({f,a}); }
   if(by.table.length||asked.length){ const tabs=[...by.table.map(tableOf),...asked], p=WellerTables.plan(S.wells,tabs), choices=p.conflicts.length?await reviewImport(p):[];
     for(const t of tabs) report.push({file:t.source,status:choices?'loaded':'failed',note:`${t.kind==='tops'?'Tops':'Well header'}: ${t.records.length} row${t.records.length===1?'':'s'}`,problems:choices?[]:[{level:'error',cat:'Import',title:'Import cancelled; nothing changed'}]});
