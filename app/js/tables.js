@@ -266,10 +266,12 @@
     const depthy = c => numeric(c.i) && !used.has(c);
     const inc = find(/^(inc|incl|inclination|dev|deviation|hole angle)( deg\w*)?$/, depthy), azi = find(/^(az|azi|azm|azim|azimuth)( deg\w*| true| grid)?$/, depthy);
     const isBase = c => / (base|bottom|btm|bot|end|to) /.test(' ' + c.n + ' ');
-    const depthCols = cols.filter(c => depthy(c) && c !== inc && c !== azi && / (md|tvd|tvdss|depth|dept|measured|top|base|bottom|btm|from|to) /.test(' ' + c.n + ' ') && !/ (elev\w*|kb|gl|td) /.test(' ' + c.n + ' '));
+    const depthCols = cols.filter(c => depthy(c) && c !== inc && c !== azi && / (md|tvd|tvdss|sstvd|subsea|ss|depth|dept|measured|top|base|bottom|btm|from|to) /.test(' ' + c.n + ' ') && !/ (elev\w*|kb|gl|td) /.test(' ' + c.n + ' '));
     const top = depthCols.find(c => !isBase(c) && / md /.test(' ' + c.n + ' ')) || depthCols.find(c => !isBase(c)) || null;
-    const base = depthCols.find(c => c !== top && isBase(c) && (!top || / tvd /.test(' ' + top.n + ' ') === / tvd /.test(' ' + c.n + ' '))) || null;
-    const ref = top && / tvd(ss)? /.test(' ' + top.n + ' ') && !/ md /.test(' ' + top.n + ' ') ? 'TVD' : 'MD';
+    // TVDSS (TVD minus KB, positive down) before TVD: "TVD SS" names both.
+    const refOf = c => / md /.test(' ' + c.n + ' ') ? 'MD' : / (tvdss|tvd ss|sstvd|ss tvd|subsea|sub sea|ss) /.test(' ' + c.n + ' ') ? 'TVDSS' : / tvd /.test(' ' + c.n + ' ') ? 'TVD' : 'MD';
+    const base = depthCols.find(c => c !== top && isBase(c) && (!top || refOf(top) === refOf(c))) || null;
+    const ref = top ? refOf(top) : 'MD';
     if (top) used.add(top); if (base) used.add(base);
     // The class column: text with few distinct values, preferably named like one ("Point_Label", "Event", "Type").
     const textCols = cols.filter(c => !used.has(c) && !numeric(c.i) && !DATEY.test(c.n) && vals(c.i).length);
@@ -376,5 +378,5 @@
     return out;
   }
 
-  root.WellerTables = { readDelimited, toCSV, classifyColumns, classify, guess, mapRecords, readTable, isTable, plan, applyValue, matchWell, cleanApi, cleanDate, same, fmt, readXlsx, unzip, HEADER_FIELDS };
+  root.WellerTables = { convert, unitKey, readDelimited, toCSV, classifyColumns, classify, guess, mapRecords, readTable, isTable, plan, applyValue, matchWell, cleanApi, cleanDate, same, fmt, readXlsx, unzip, HEADER_FIELDS };
 })(typeof globalThis !== 'undefined' ? globalThis : this);

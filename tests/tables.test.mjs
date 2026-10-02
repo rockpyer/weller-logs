@@ -154,3 +154,9 @@ test('header forced on a table: well identity from the chosen columns', () => {
   const r = T.mapRecords(t, 'header', { well: 0, api: 1 }, 'h.csv');
   assert.equal(r[0].name, 'WEZU 5'); assert.equal(r[0].vals.kb[0].v, 1300);
 });
+
+test('a TVDSS depth column guesses TVDSS, not TVD; plain TVD stays TVD', () => {
+  const ref = h => T.guess(T.readDelimited(`Well_Name,Point_Label,${h}\nA-1,SHOW,5000\nA-1,SHOW,5100\nA-1,GAS,5200\nB-2,SHOW,4800\n`)).map.ref;
+  assert.equal(ref('TVDSS_ft'), 'TVDSS'); assert.equal(ref('TVD SS'), 'TVDSS'); assert.equal(ref('Subsea'), 'TVDSS'); assert.equal(ref('SSTVD'), 'TVDSS');
+  assert.equal(ref('TVD_ft'), 'TVD'); assert.equal(ref('MD_ft'), 'MD');
+});

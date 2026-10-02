@@ -34,22 +34,34 @@ function mdFromTvd(w, tvd) {
   const c = Math.cos(s.inc[n - 1] * Math.PI / 180); return s.md[n - 1] + (tvd - s.tvd[n - 1]) / Math.max(c, 0.05);
 }
 
+// A depth in the given reference (MD, TVD, or TVDSS = TVD minus KB or GL, positive down) as MD; NaN for TVDSS without an elevation.
+function mdFromRef(w, v, ref) {
+  if (ref === 'MD' || !Number.isFinite(v)) return v;
+  if (ref === 'TVDSS') { const e = WellerLAS.datumElevation(w); if (!Number.isFinite(e)) return NaN; v += e; }
+  return mdFromTvd(w, v);
+}
+
 // Rows grouped by open well (API first, then well or short name); rows with no open well are counted by name.
 function groupRows(recs, ref) {
-  const byWell = new Map(), missing = new Map(); let tvdNoSurvey = 0;
+  const byWell = new Map(), missing = new Map(); let tvdNoSurvey = 0; const noElev = new Map();
   for (const r of recs) {
     const w = WellerTables.matchWell(S.wells, r);
     if (!w) { const k = r.name || r.alias || r.api || '?'; missing.set(k, (missing.get(k) || 0) + 1); continue; }
-    if (ref === 'TVD') { if (!w.survey) tvdNoSurvey++; r.top = mdFromTvd(w, r.top); r.base = r.base == null ? r.top : mdFromTvd(w, r.base); }
+    if (ref === 'TVD' || ref === 'TVDSS') {
+      if (ref === 'TVDSS' && !Number.isFinite(WellerLAS.datumElevation(w))) { noElev.set(w.name, (noElev.get(w.name) || 0) + 1); continue; }
+      if (!w.survey) tvdNoSurvey++; r.top = mdFromRef(w, r.top, ref); r.base = r.base == null ? r.top : mdFromRef(w, r.base, ref);
+    }
     if (!byWell.has(w)) byWell.set(w, []); byWell.get(w).push(r);
   }
-  return { byWell, missing: [...missing].map(([name, n]) => ({ name, n })), tvdNoSurvey };
+  return { byWell, missing: [...missing].map(([name, n]) => ({ name, n })), tvdNoSurvey, noElev: [...noElev].map(([name, n]) => ({ name, n })) };
 }
 const plural = (n, s) => `${n} ${s}${n === 1 ? '' : 's'}`;
 function importProblems(g) {
   return [...(g.missing.length ? [{ level: 'warn', cat: 'Match', title: `No open well for ${g.missing.map(u => `${u.name} (${plural(u.n, 'row')})`).join(', ')}`,
     fix: 'Open the LAS for those wells first, or rename the well (Wells → Manage wells) to match. Rows match by API (first 10 digits), then well or short name, ignoring case and punctuation.' }] : []),
-    ...(g.tvdNoSurvey ? [{ level: 'warn', cat: 'Depth', title: `${plural(g.tvdNoSurvey, 'TVD depth')} in wells without a survey were taken as MD (vertical hole)` }] : [])];
+    ...(g.tvdNoSurvey ? [{ level: 'warn', cat: 'Depth', title: `${plural(g.tvdNoSurvey, 'TVD depth')} in wells without a survey were taken as MD (vertical hole)` }] : []),
+    ...(g.noElev?.length ? [{ level: 'warn', cat: 'Depth', title: `TVDSS rows skipped, no KB or GL elevation: ${g.noElev.map(u => `${u.name} (${plural(u.n, 'row')})`).join(', ')}`,
+      fix: 'Add the KB (or GL) elevation in Wells → Manage wells, then import again.' }] : [])];
 }
 
 // Measurements at depth (core, XRD, pressures): one series per numeric column.
