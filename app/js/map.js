@@ -64,7 +64,7 @@ function pathLLs(w, ll) {
 
 /* ---------- Isopach and structure maps from tops ----------
    Isopach: true vertical thickness from one top to another (TVD from the survey where there is one), posted where the
-   well path is halfway through the interval. Structure: subsea depth of a top (datum elevation minus TVD), posted where
+   well path is halfway through the interval. Structure: TVDSS of a top (TVD minus datum elevation, positive down), posted where
    the path crosses it. Values are in display units. A thin-plate spline grids them inside the wells' hull plus a margin. */
 const RAMP = ['#cde2fb', '#9ec5f4', '#6da7ec', '#3987e5', '#256abf', '#184f95', '#0d366b'];
 function gridValues(placed) {
@@ -95,8 +95,8 @@ function buildGrid(placed) {
     if (!G.reason) {
       const lo = Math.min(G.min, ...pts.map(p => p.v)), hi = Math.max(G.max, ...pts.map(p => p.v));
       const step = WellerGrid.niceStep(lo, hi, 10), levels = d3.range(Math.ceil(lo / step) * step, hi + step * 1e-6, step);
-      // Isopach: thick is dark. Structure: deep (more negative) is dark.
-      const dom = RAMP.map((_, i) => lo + (hi - lo) * i / (RAMP.length - 1)), color = d3.scaleLinear().domain(g.kind === 'iso' ? dom : [...dom].reverse()).range(RAMP).interpolate(d3.interpolateLab).clamp(true);
+      // Isopach: thick is dark. Structure: deep (larger TVDSS) is dark.
+      const dom = RAMP.map((_, i) => lo + (hi - lo) * i / (RAMP.length - 1)), color = d3.scaleLinear().domain(dom).range(RAMP).interpolate(d3.interpolateLab).clamp(true);
       const cv = document.createElement('canvas'); cv.width = G.nx; cv.height = G.ny;
       const ctx = cv.getContext('2d'), img = ctx.createImageData(G.nx, G.ny);
       // Alpha fades over one cell at the edge of the gridded area, so the boundary is smooth rather than stepped.
@@ -239,7 +239,7 @@ function renderMapInfo(placed, gridOn) {
     .sort((a, b) => S.wells.indexOf(a.w) - S.wells.indexOf(b.w));
   el.innerHTML = `<h3>${esc(gridTitle())}</h3>
     <table><thead><tr><th>Well</th><th class="n">${g.kind === 'iso' ? 'TVT' : 'TVDSS'}, ${u}</th></tr></thead><tbody>${rows.map(r => `<tr data-well="${r.w.id}" class="${r.w.id === S.selected ? 'sel' : ''}"><td>${esc(r.w.name)}</td><td class="n">${r.v}</td></tr>`).join('')}</tbody></table>
-    <p class="hint" title="${g.kind === 'iso' ? 'True vertical thickness (TVD from the survey), posted mid-interval along the well path.' : 'Datum elevation minus TVD, posted where the well path crosses the top.'} Thin-plate spline, drawn only within the wells' outline plus a margin.">${gr.url ? `${fmtV(gr.step, gr.step)} ${u} contours · ${g.kind === 'iso' ? 'thicker' : 'deeper'} is darker` : `Not contoured: ${esc(gr.reason || 'no values')}`}</p>`;
+    <p class="hint" title="${g.kind === 'iso' ? 'True vertical thickness (TVD from the survey), posted mid-interval along the well path.' : 'TVDSS: TVD minus KB (or GL), positive down, posted where the well path crosses the top.'} Thin-plate spline, drawn only within the wells' outline plus a margin.">${gr.url ? `${fmtV(gr.step, gr.step)} ${u} contours · ${g.kind === 'iso' ? 'thicker' : 'deeper'} is darker` : `Not contoured: ${esc(gr.reason || 'no values')}`}</p>`;
 }
 document.getElementById('mapInfo').addEventListener('click', e => { const r = e.target.closest('tr[data-well]'); if (r) clickWell(r.dataset.well); });
 
