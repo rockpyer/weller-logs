@@ -127,13 +127,13 @@
     L.push('~CURVE INFORMATION');
     hl('DEPT', du, '', 'MEASURED DEPTH');
     for (const { c, m: mm } of cols) {
-      const extra = [c.computed && 'computed by Well(er) Logs', c.note, c.editNote, c.shifted && `shifted ${c.shifted} ${w.depthUnit || 'ft'}`].filter(Boolean).join('; ');
+      const extra = [c.computed && 'computed by Weller Logs', c.note, c.editNote, c.shifted && `shifted ${c.shifted} ${w.depthUnit || 'ft'}`].filter(Boolean).join('; ');
       hl(mm, unitOf(c.unit), '', val([c.description, extra && `(${extra})`].filter(Boolean).join(' ')) || mm);
     }
     // Survey and notes in ~Other: the reader takes MD INC AZI TVD back as the directional survey.
     const other = [];
     if (w.survey?.md?.length > 1) { const s = w.survey; other.push(' MD INC AZI TVD'); for (let i = 0; i < s.md.length; i++) other.push(` ${num(s.md[i])} ${num(s.inc[i])} ${num(s.azi[i])} ${num(s.tvd[i])}`); }
-    other.push(`# Exported by Well(er) Logs ${date.toISOString().slice(0, 10)}${w.sources?.length || w.fileName ? ' from ' + ascii((w.sources || [w.fileName]).filter(Boolean).join(', ')) : ''}`);
+    other.push(`# Exported by Weller Logs ${date.toISOString().slice(0, 10)}${w.sources?.length || w.fileName ? ' from ' + ascii((w.sources || [w.fileName]).filter(Boolean).join(', ')) : ''}`);
     for (const t of notes) other.push('# ' + ascii(t));
     L.push('~OTHER INFORMATION', ...other);
     L.push('~A  DEPT ' + cols.map(x => x.m).join(' '));

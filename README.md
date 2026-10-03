@@ -1,6 +1,6 @@
 <img src="app/icon.svg" width="56" alt="">
 
-# Well(er) Logs
+# Weller Logs
 
 Web-based well-log viewer and correlation tool. It opens LAS files (wireline and mud logs), draws tracks on
 standard scales, runs a transparent quick-look petrophysical interpretation, correlates tops across wells in MD, ground level,
@@ -110,7 +110,7 @@ Methods, equations, defaults and limits: [app/methods.md](app/methods.md), shown
   P5–P95 onto a reference well's, over the whole log or one zone. Edits are saved with the project and undo with Cmd+Z.
 - **LAS export.** Export LAS writes the selected well as LAS 2.0: logged curves as shown (shifts, despiking and
   normalization applied), computed curves, tops as `TOP_` parameters, the directional survey and the interpretation
-  parameters in `~Other`. It reads back into Well(er) Logs and lasio.
+  parameters in `~Other`. It reads back into Weller Logs and lasio.
 - **Curve help.** Hover a track header for each curve's color, what it measures, the file it came from and what else
   in the well could stand in. About → *Methods, curve mapping and assumptions* lists every rule and the mnemonics each
   track accepts.
