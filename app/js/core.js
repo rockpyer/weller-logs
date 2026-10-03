@@ -1535,7 +1535,11 @@ let interpJob=0;
 async function interpLater(wells){ const job=++interpJob, set=S.wells;
   const order=[...wells].sort((a,b)=>S.panel.includes(b.id)-S.panel.includes(a.id));
   for(const w of order){ await nextTask(); if(job!==interpJob||S.wells!==set) return; try{ computeInterp(w); }catch(e){ console.error(e); } }
-  // The section redraw writes its tops warning to the status bar; keep the note already showing (the example's).
+  // Redraw the logs only if they now show a computed curve (a track that had no data, or Lith on a non-linear Vshale);
+  // otherwise only the sidebar changes. The section redraw writes its tops warning to the status bar, so keep the
+  // note already showing (the example's).
+  const logs=S.mode==='single'||S.mode==='corr', uses=w=>visibleTracks(w).some(t=>(t.type==='lith'&&S.interp.vshMethod!=='linear')||t.curves.some(c=>resolveCurve(w,c)?.computed));
+  if(logs&&!viewWells().some(uses)) return renderSidebar();
   const note=$('stNote').innerHTML; render(); $('stNote').innerHTML=note; }
 // In-page confirm: window.confirm() is blocked in embedded previews and returns false without showing anything.
 function ask({title,body,ok='OK',option}){ return new Promise(res=>{ $('askTitle').textContent=title; $('askBody').textContent=body||''; $('askOk').textContent=ok;
