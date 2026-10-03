@@ -1603,9 +1603,20 @@ async function exportBundle(){ $('stNote').textContent='Packing the project bund
 
 /* ---------- About, popouts and theme ---------- */
 function placePop(pop,anchor){ pop.hidden=false; const r=anchor.getBoundingClientRect(); pop.style.top=(r.bottom+8)+'px'; pop.style.left=Math.max(16,Math.min(r.right-pop.offsetWidth,innerWidth-pop.offsetWidth-16))+'px'; }
+// Phones lay the page out ~980px wide (no viewport meta: the workflow needs a desktop screen). phoneZoom() is the
+// factor that scales a phone-only panel back to the phone's real width, or 0 on a computer or tablet.
+function phoneZoom(){ const z=innerWidth/screen.width; return matchMedia('(pointer:coarse)').matches&&screen.width<700&&z>1.2?z:0; }
 $('btnAbout').onclick=e=>{ e.stopPropagation(); const p=$('aboutPop'); p.hidden=!p.hidden; if(p.hidden) return;
-  const z=innerWidth/screen.width, phone=matchMedia('(pointer:coarse)').matches&&screen.width<700&&z>1.2;
-  p.classList.toggle('sheet',phone); p.style.setProperty('--z',phone?z.toFixed(3):1); p.querySelector('.x').focus(); };
+  const z=phoneZoom(); p.classList.toggle('sheet',!!z); p.style.setProperty('--z',z?z.toFixed(3):1); p.querySelector('.x').focus(); };
+// On a phone, say once that this is a desktop tool, and offer to send the link to a computer.
+(()=>{ const z=phoneZoom(), n=$('deskNote'); let seen=false; try{ seen=!!localStorage.getItem('weller.deskNote'); }catch(e){}
+  if(!z||seen) return; n.style.setProperty('--z',z.toFixed(3)); n.hidden=false;
+  const done=()=>{ n.hidden=true; try{ localStorage.setItem('weller.deskNote','1'); }catch(e){} };
+  $('deskOk').onclick=done;
+  $('deskSend').onclick=()=>{ const url='https://logs.ryweller.com/', title='Weller Logs';
+    if(navigator.share) navigator.share({title,text:'Open on a computer:',url}).then(done,()=>{});
+    else location.href='mailto:?subject='+encodeURIComponent(title)+'&body='+encodeURIComponent('Open on a computer: '+url); };
+})();
 document.addEventListener('click',e=>{ if(e.target.closest('[data-close]')){ e.target.closest('.pop').hidden=true; return; }
   if(e.target.closest('#btnNotes,#btnAbout,#btnExport,#btnViews,#mudScroll,#mudPop,#colorPop,[data-cedit]')) return;
   document.querySelectorAll('.pop:not([hidden])').forEach(p=>{ if(!p.contains(e.target)) p.hidden=true; }); });
