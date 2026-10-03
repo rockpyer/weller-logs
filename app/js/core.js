@@ -1008,9 +1008,9 @@ async function exportPNG(){ const panel=$('logPanel'); const pr=panel.getBoundin
       const svg=tr.querySelector('svg'); const sr=rel(svg); const img=await svgToImage(svg); ctx.drawImage(img,sr.x,sr.y,sr.w,sr.h); } }
   const ov=$('overlay'); if(ov.childNodes.length){ const img=await svgToImage(ov); ctx.drawImage(img,0,0); }
   return cv; }
-$('btnPng').onclick=async()=>{ if(S.mode==='mud') return window.WellerMud?.exportPNG(); if(S.mode==='map'){ $('stNote').textContent='Map PNG export is not available yet; use a screenshot.'; return; } if(S.mode==='stats'){ $('stXp').toBlob(b=>downloadBlob(`crossplot_${S.stats.x}_${S.stats.y}.png`.replace(/[^\w.-]+/g,'_'),b),'image/png'); return; } $('stNote').textContent='Rendering PNG…'; $('cursor').style.display='none';
+async function exportView(){ if(S.mode==='mud') return window.WellerMud?.exportPNG(); if(S.mode==='map'){ $('stNote').textContent='Map PNG export is not available yet; use a screenshot.'; return; } if(S.mode==='stats'){ $('stXp').toBlob(b=>downloadBlob(`crossplot_${S.stats.x}_${S.stats.y}.png`.replace(/[^\w.-]+/g,'_'),b),'image/png'); return; } $('stNote').textContent='Rendering PNG…'; $('cursor').style.display='none';
   try{ const cv=await exportPNG(); cv.toBlob(b=>{ downloadBlob(($('vbWell').textContent||'panel').replace(/[^\w-]+/g,'_')+'.png',b); },'image/png'); }
-  catch(err){ $('stNote').textContent='PNG export failed: '+err.message; } };
+  catch(err){ $('stNote').textContent='PNG export failed: '+err.message; } }
 
 /* ---------- View controls ---------- */
 $('wellList').addEventListener('click',e=>{ const li=e.target.closest('li[data-well]'); if(li&&!e.target.closest('button')) clickWell(li.dataset.well); });
@@ -1065,8 +1065,13 @@ const lasCache={ db:null, mem:new Map(),
 
 /* ---------- Files: one Open for LAS, projects, tops CSV and point-data CSV; drag and drop anywhere ---------- */
 // No type filter: macOS maps .lasproj to no known type and greys it out under a JSON filter. kindOf() sorts files by content.
-$('btnOpen').onclick=async()=>{ if(window.showOpenFilePicker){ try{ const hs=await showOpenFilePicker({multiple:true}); const files=[]; for(const h of hs){ const r=await readPicked(await h.getFile()); if(Array.isArray(r)) files.push(...r); else files.push({...r,handle:h}); } openFiles(files); }catch(e){} } else $('fileIn').click(); };
-$('fileIn').onchange=async e=>{ const files=[]; for(const f of e.target.files) files.push(...[await readPicked(f)].flat()); openFiles(files); e.target.value=''; };
+// Resolves to the picked files, or null when the picker is cancelled.
+let pickResolve=null;
+async function pickFiles(){ if(window.showOpenFilePicker){ try{ const hs=await showOpenFilePicker({multiple:true}); const files=[]; for(const h of hs){ const r=await readPicked(await h.getFile()); if(Array.isArray(r)) files.push(...r); else files.push({...r,handle:h}); } return files; }catch(e){ return null; } }
+  pickResolve?.(null); return new Promise(res=>{ pickResolve=res; $('fileIn').click(); }); }
+$('btnOpen').onclick=async()=>{ const files=await pickFiles(); if(files) openFiles(files); };
+$('fileIn').onchange=async e=>{ const files=[]; for(const f of e.target.files) files.push(...[await readPicked(f)].flat()); e.target.value=''; const r=pickResolve; pickResolve=null; r?.(files); };
+$('fileIn').addEventListener('cancel',()=>{ const r=pickResolve; pickResolve=null; r?.(null); });
 // PDF and TIFF mudlogs are opened as files, never read as text (a scan can be tens of MB).
 async function readPicked(f){ if(/\.(pdf|tiff?)$/i.test(f.name)) return {name:f.name,file:f,mud:true};
   // Excel workbooks: each sheet is read as a table (tops, well header or point data).
@@ -1188,11 +1193,11 @@ function splitWell(w){ const parts=partsOf(w); if(parts.length<2) return [w]; co
 function interpNote(){ const I=S.interp; if(!I?.enabled) return [];
   return [`Interpretation (computed curves): Vsh ${I.vshMethod}; porosity ${I.porMethod}, matrix ${I.matrix}; Sw ${I.swMethod} on ${I.swPhi} porosity, a=${I.a} m=${I.m} n=${I.n}, Rw ${I.rw} ohm.m at ${I.rwTemp} F; net cutoffs Vsh<${I.cut.vsh} PHI>${I.cut.phi} Sw<${I.cut.sw}`,
     'Methods: https://github.com/rockpyer/weller-logs/blob/main/docs/PETROPHYSICS.md']; }
-function exportLAS(w){ if(!w){ $('stNote').textContent='Select a well to export'; return; }
+function lasText(w){
   const bl=grBaselines(w), notes=[...interpNote()]; if(S.interp?.enabled&&Number.isFinite(bl.clean)) notes.push(`GR baselines clean ${bl.clean} API, shale ${bl.shale} API`);
-  const text=WellerQC.writeLAS(w,{computed:true,notes});
-  downloadBlob(`${w.name.replace(/[^\w.-]+/g,'_')}.las`,new Blob([text],{type:'text/plain'})); }
-$('btnLas').onclick=()=>exportLAS(wellById(S.selected));
+  return WellerQC.writeLAS(w,{computed:true,notes}); }
+const lasName=w=>`${w.name.replace(/[^\w.-]+/g,'_')}.las`;
+function exportLAS(w){ if(!w){ $('stNote').textContent='Select a well to export'; return; } downloadBlob(lasName(w),new Blob([lasText(w)],{type:'text/plain'})); }
 $('wdLas').onclick=()=>exportLAS(wellEditing);
 
 /* ---------- Directional surveys from their own files (CSV, text reports, .xlsx, pasted cells) ----------
@@ -1474,13 +1479,13 @@ async function saveProject(as){ $('stNote').textContent='Packing the project…'
       const w=await S.fileHandle.createWritable(); await w.write(text); await w.close(); done(S.fileHandle.name); }catch(e){ if(e.name!=='AbortError') $('stNote').textContent='Save failed: '+e.message; } return; }
   downloadBlob(projName(),new Blob([text],{type:'application/json'})); done(projName()); }
 $('btnSave').onclick=()=>saveProject(false);
-document.addEventListener('keydown',e=>{ if(!(e.metaKey||e.ctrlKey)) return; const k=e.key.toLowerCase(); if(k==='o'){ e.preventDefault(); $('btnOpen').click(); } else if(k==='s'){ e.preventDefault(); saveProject(e.shiftKey); } else if(k==='e'){ e.preventDefault(); $('btnPng').click(); } });
+document.addEventListener('keydown',e=>{ if(!(e.metaKey||e.ctrlKey)) return; const k=e.key.toLowerCase(); if(k==='o'){ e.preventDefault(); $('btnOpen').click(); } else if(k==='s'){ e.preventDefault(); saveProject(e.shiftKey); } else if(k==='e'){ e.preventDefault(); exportView(); } });
 
 /* ---------- Examples: real Denver Basin Niobrara logs, or the synthetic LA Basin set ---------- */
 const NIOBRARA_FILES=['2120933C.las','2121045D.las','2121046D.las','2121038B.las','2121035D.las','2121034E.las','2121022A.las','400709586.las'];
 async function fetchText(url){ try{ const r=await fetch(url); return r.ok?await r.text():null; }catch(e){ return null; } }
 let undoProject=null;
-async function loadExample(name){
+async function loadExample(name,quiet){
   undoProject=S.wells.length?projectJSON():null;
   if(name==='labasin'){ S.tracks=loadTrackDefaults(); S.views=newViews(); loadPresets(); S.wells=sortWestEast(S.wells); S.mode='single'; setMode('single'); exampleNote('Synthetic LA Basin wells loaded'); toast('Example data project loaded: LA Basin (synthetic)'); return true; }
   $('stNote').textContent='Loading Denver Basin Niobrara logs…';
@@ -1500,7 +1505,7 @@ async function loadExample(name){
   S.wells=[...vert,horiz].filter(Boolean);
   S.panel=[vert[0],vert[1],vert[3],vert[5],vert[6],horiz].filter(Boolean).map(w=>w.id); S.selected=(vert[3]||S.wells[0]).id;
   S.datum='Niobrara'; S.stats={...statsDefaults(),curve:'PHI',x:'NPHI',y:'RHOB',type:'nd'}; S.mode='corr'; setMode('corr');
-  toast('Example data project loaded: Denver Basin Niobrara');
+  if(!quiet) toast('Example data project loaded: Denver Basin Niobrara');
   exampleNote('Denver Basin Niobrara: 7 Laramie County, WY verticals (WOGCC) and 1 Weld County, CO horizontal. Tops are rule-based picks.'+(notes.length?' · '+notes.join(' · '):''));
   return true; }
 // In-page confirm: window.confirm() is blocked in embedded previews and returns false without showing anything.
@@ -1513,8 +1518,8 @@ function toast(msg){ const t=$('toast'); t.textContent=msg; t.hidden=false; t.cl
 function exampleNote(msg){ $('stNote').innerHTML=esc(msg)+(undoProject?' <button class="small" id="btnUndoEx">Undo</button>':''); }
 document.addEventListener('click',async e=>{ if(e.target.id==='btnUndoEx'&&undoProject){ const p=undoProject; undoProject=null; await loadProject(p); } });
 // New project: nothing open, default tracks and parameters. Display preferences (units, theme) stay.
-async function newProject(){ const mud=window.WellerMud?._M.logs.length||0, n=S.wells.length;
-  const r=await ask({title:'Start a new project?',ok:'New project',
+async function newProject(quiet){ const mud=window.WellerMud?._M.logs.length||0, n=S.wells.length;
+  const r=quiet?{opt:false}:await ask({title:'Start a new project?',ok:'New project',
     body:(n||mud?`Closes ${n} well${n===1?'':'s'}${mud?` and ${mud} mudlog${mud===1?'':'s'} with their stored images`:''}, with their tops, points and picks. Save first to keep them. `:'')+'Undo does not bring them back.',
     option:'Also reset settings: tracks, interpretation parameters, units, depth labels, header height and map'});
   if(!r) return;
@@ -1525,27 +1530,72 @@ async function newProject(){ const mud=window.WellerMud?._M.logs.length||0, n=S.
     document.querySelectorAll('[data-units]').forEach(b=>b.setAttribute('aria-pressed',b.dataset.units===S.units)); }
   S.tracks=loadTrackDefaults(); try{ localStorage.removeItem('weller.session'); }catch(e){}
   setMode('single'); window.WellerMud?.render?.(); HIST.undo=[]; HIST.redo=[]; HIST.last=editSnapshot();
-  $('stNote').textContent='New project: open LAS files, a project, or PDF/TIFF mudlogs'; toast(r.opt?'New project, settings reset':'New project'); }
-$('btnNew').onclick=newProject;
+  $('stNote').textContent='New project: open LAS files, a project, or PDF/TIFF mudlogs'; if(!quiet) toast(r.opt?'New project, settings reset':'New project'); }
+$('btnNew').onclick=()=>newProject();
 $('exampleSel').onchange=async e=>{ const v=e.target.value; e.target.value=''; if(v) await loadExample(v); };
 
-/* ---------- Boot: resume-last-session prompt ---------- */
+/* ---------- Boot: welcome dialog. The example loads behind it, so "Explore" is instant. ---------- */
 S.stats=statsDefaults();
 let saved=null; try{ saved=JSON.parse(localStorage.getItem('weller.session')||'null'); }catch(e){}
-if(saved&&saved.savedAt){ $('resumeWhen').textContent=new Date(saved.savedAt).toLocaleString(); $('resume').hidden=false; }
-$('btnResume').onclick=async()=>{ $('resume').hidden=true; try{ await loadProject(saved); }catch(e){ $('stNote').textContent='Saved session could not be restored: '+e.message; } };
-$('btnFresh').onclick=()=>{ $('resume').hidden=true; };
 if('serviceWorker' in navigator&&/^https?:/.test(location.protocol)&&!/claude\.ai|claudeusercontent/.test(location.host)) navigator.serviceWorker.register('sw.js').catch(()=>{});
-(async()=>{ if(!(await loadExample('niobrara'))){ loadPresets(); fitView(); } undoProject=null; HIST.undo=[]; HIST.redo=[]; HIST.last=editSnapshot(); })();
+const booted=(async()=>{ if(!(await loadExample('niobrara',true))){ loadPresets(); fitView(); } undoProject=null; HIST.undo=[]; HIST.redo=[]; HIST.last=editSnapshot(); })();
+{ const has=!!(saved&&saved.savedAt&&saved.wells?.length);
+  if(has){ const n=saved.wells.length, d=new Date(saved.savedAt);
+    $('wcResumeWhen').textContent=`${n} well${n===1?'':'s'} · autosaved ${d.toLocaleString([],{dateStyle:'medium',timeStyle:'short'})}`; $('wcResume').hidden=false; }
+  const lead=has?$('wcResume'):$('wcExample'); lead.classList.add('primary');
+  const close=()=>{ $('welcomeDlg').hidden=true; };
+  $('wcResume').onclick=async()=>{ close(); await booted; try{ await loadProject(saved); HIST.undo=[]; HIST.redo=[]; HIST.last=editSnapshot(); }catch(e){ $('stNote').textContent='Saved session could not be restored: '+e.message; } };
+  $('wcExample').onclick=close;
+  $('wcNew').onclick=async()=>{ close(); await booted; await newProject(true); };
+  // Pick first, then clear the example, so cancelling the picker leaves the example in place.
+  $('wcOpen').onclick=async()=>{ const files=await pickFiles(); if(!files) return; close(); await booted; await newProject(true); openFiles(files); };
+  $('welcomeDlg').addEventListener('click',e=>{ if(e.target.id==='welcomeDlg') close(); });
+  $('welcomeDlg').hidden=false; lead.focus(); }
+
+/* ---------- Export menu ---------- */
+const csvBlob=t=>new Blob([t],{type:'text/csv'});
+const zipBlob=files=>new Blob([WellerZip.zip(files)],{type:'application/zip'});
+const safeName=n=>String(n||'project').replace(/[^\w.-]+/g,'_');
+const canvasBlob=cv=>new Promise(res=>cv.toBlob(res,'image/png'));
+function syncExportMenu(){ const w=wellById(S.selected), n=S.wells.length, tops=S.wells.some(w=>w.tops?.length), m=$('exportMenu');
+  const set=(k,on)=>{ m.querySelector(`[data-export="${k}"]`).disabled=!on; };
+  set('png',S.mode!=='map'&&(n>0||S.mode==='mud')); set('las',!!w); set('lasall',n>0); set('tops',tops); set('stats',n>0&&tops); set('bundle',n>0);
+  $('exPngHint').textContent=S.mode==='map'?'Not available on the Map tab yet':{single:'The log on screen',corr:'The section on screen',stats:'The crossplot',mud:'The mudlog'}[S.mode]+' · Cmd+E';
+  $('exLasHint').textContent=w?`${w.name}: curves as shown, computed curves, tops, survey`:'Select a well first'; }
+$('btnExport').onclick=e=>{ e.stopPropagation(); const p=$('exportMenu'); if(!p.hidden){ p.hidden=true; $('btnExport').setAttribute('aria-expanded','false'); return; }
+  syncExportMenu(); placePop(p,e.currentTarget); $('btnExport').setAttribute('aria-expanded','true'); p.querySelector('button:not(:disabled)')?.focus(); };
+$('exportMenu').addEventListener('keydown',e=>{ if(e.key!=='ArrowDown'&&e.key!=='ArrowUp') return; e.preventDefault();
+  const b=[...$('exportMenu').querySelectorAll('button:not(:disabled)')], i=b.indexOf(document.activeElement); b[(i+(e.key==='ArrowDown'?1:-1)+b.length)%b.length]?.focus(); });
+$('exportMenu').addEventListener('click',async e=>{ const b=e.target.closest('[data-export]'); if(!b||b.disabled) return; $('exportMenu').hidden=true; $('btnExport').setAttribute('aria-expanded','false');
+  const k=b.dataset.export;
+  if(k==='png') return exportView();
+  if(k==='las') return exportLAS(wellById(S.selected));
+  if(k==='tops') return downloadBlob('tops.csv',csvBlob(topsCSV()));
+  if(k==='stats') return downloadBlob('zone-stats.csv',csvBlob(statsCSV()));
+  if(k==='lasall'){ const names=WellerZip.uniqueNames(S.wells.map(lasName)); return downloadBlob('wells-las.zip',zipBlob(S.wells.map((w,i)=>({name:names[i],data:lasText(w)})))); }
+  if(k==='bundle') return exportBundle(); });
+/* Everything in one .zip: the project (opens in Weller Logs with its data), every well as LAS, tops and zone stats
+   as CSV, and a PNG of the correlation section (or the log, with one well). */
+async function exportBundle(){ $('stNote').textContent='Packing the project bundle…';
+  const base=safeName(projName().replace(/\.lasproj$/,'')), files=[], {text,miss}=await projectFile();
+  files.push({name:base+'.lasproj',data:text});
+  const names=WellerZip.uniqueNames(S.wells.map(lasName)); S.wells.forEach((w,i)=>files.push({name:'las/'+names[i],data:lasText(w)}));
+  if(S.wells.some(w=>w.tops?.length)){ files.push({name:'tops.csv',data:topsCSV()}); files.push({name:'zone-stats.csv',data:statsCSV()}); }
+  const was=S.mode, png=S.panel.length>1?'corr':'single';
+  try{ if(was!==png) setMode(png); $('cursor').style.display='none'; await new Promise(r=>requestAnimationFrame(()=>r()));
+    const b=await canvasBlob(await exportPNG()); if(b) files.push({name:(png==='corr'?'section':'log')+'.png',data:new Uint8Array(await b.arrayBuffer())}); }
+  catch(err){} finally{ if(S.mode!==was) setMode(was); }
+  await downloadBlob(base+'-bundle.zip',zipBlob(files));
+  $('stNote').textContent=`Bundle: ${files.length} files`+(miss.length?` · not in this browser, re-open to include: ${miss.join(', ')}`:''); }
 
 /* ---------- About, popouts and theme ---------- */
 function placePop(pop,anchor){ pop.hidden=false; const r=anchor.getBoundingClientRect(); pop.style.top=(r.bottom+8)+'px'; pop.style.left=Math.max(16,Math.min(r.right-pop.offsetWidth,innerWidth-pop.offsetWidth-16))+'px'; }
 $('btnAbout').onclick=e=>{ e.stopPropagation(); const p=$('aboutPop'); p.hidden?placePop(p,e.currentTarget):(p.hidden=true); };
 document.addEventListener('click',e=>{ if(e.target.closest('[data-close]')){ e.target.closest('.pop').hidden=true; return; }
-  if(e.target.closest('#btnNotes,#btnAbout,#mudScroll,#mudPop')) return;
+  if(e.target.closest('#btnNotes,#btnAbout,#btnExport,#mudScroll,#mudPop')) return;
   document.querySelectorAll('.pop:not([hidden])').forEach(p=>{ if(!p.contains(e.target)) p.hidden=true; }); });
 document.addEventListener('keydown',e=>{ if(e.key!=='Escape') return; document.querySelectorAll('.pop:not([hidden])').forEach(p=>p.hidden=true);
-  const open=[...document.querySelectorAll('.modal:not([hidden])')].filter(m=>m.id!=='resume'); const top=open[open.length-1]; if(top){ e.preventDefault(); if(top.id==='revDlg') closeReview(null); else if(top.id==='kindDlg') closeKind(null); else top.hidden=true; } });
+  const open=[...document.querySelectorAll('.modal:not([hidden])')]; const top=open[open.length-1]; if(top){ e.preventDefault(); if(top.id==='revDlg') closeReview(null); else if(top.id==='kindDlg') closeKind(null); else top.hidden=true; } });
 function setTheme(t){ if(t==='dark') document.documentElement.dataset.theme='dark'; else delete document.documentElement.dataset.theme; try{ localStorage.setItem('weller.theme',t); }catch(e){} }
 $('btnTheme').onclick=()=>{ setTheme(document.documentElement.dataset.theme==='dark'?'light':'dark'); render(); };
 /* Sidebar width: drag the gutter, double-click to reset. Long well names get room without a wider default. */
