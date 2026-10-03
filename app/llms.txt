@@ -1,4 +1,4 @@
-# Well(er) Logs
+# Weller Logs
 
 > A free well-log viewer for quick correlation and zone petrophysics, in the browser. Built by Ryan Weller
 > (https://ryweller.com). Your files stay on your machine: everything runs client-side and nothing is uploaded.

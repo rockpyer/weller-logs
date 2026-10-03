@@ -1,4 +1,4 @@
-/* Well(er) Logs: Mudlogs tab (beta). PDF and TIFF mudlogs as image strips hung in measured depth, with depth
+/* Weller Logs: Mudlogs tab (beta). PDF and TIFF mudlogs as image strips hung in measured depth, with depth
    calibration, formation picks shared with LAS wells, and an optional LAS curve drawn over the strip.
    Images are cut into bands at import and kept in IndexedDB; the view draws only the bands on screen, from a
    quarter-resolution copy when zoomed out, so a long log costs about as much as a short one.

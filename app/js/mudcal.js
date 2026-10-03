@@ -1,4 +1,4 @@
-/* Well(er) Logs: mudlog image calibration and header reading. Pure functions, no DOM, so node tests can run them.
+/* Weller Logs: mudlog image calibration and header reading. Pure functions, no DOM, so node tests can run them.
    Page coordinates are image pixels with y down. Text items are {s, x, y, w, h}, with x,y the top-left corner. */
 (function(root){
 'use strict';

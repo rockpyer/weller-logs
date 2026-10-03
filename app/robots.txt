@@ -1,4 +1,4 @@
-# Well(er) Logs, https://logs.ryweller.com
+# Weller Logs, https://logs.ryweller.com
 # A free, browser-based well-log viewer by Ryan Weller: open LAS files, hang correlation cross sections, pick tops,
 # and run zone petrophysics (Vshale, porosity, Sw, net pay). Files are processed locally in the browser; nothing is
 # uploaded. Plain-language summary for language models: /llms.txt. Methods: /methods.html.
