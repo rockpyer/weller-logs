@@ -232,5 +232,6 @@ docs/                plan and petrophysics methods
 
 ## License
 
-Apache License 2.0 (`LICENSE`, `NOTICE`). The software and its results are provided as is, with no warranty and no
-liability; see sections 7 and 8 of the license.
+Proprietary, all rights reserved (`LICENSE`, `NOTICE`); © 2026 Ryan Weller. The software and its results are provided
+as is, with no warranty and no liability. `app/robots.txt` and `app/llms.txt` describe the tool to crawlers and opt the
+source out of AI training and reproduction.

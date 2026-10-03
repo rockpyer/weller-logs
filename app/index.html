@@ -334,10 +334,26 @@ button.link{border:0;background:none;padding:2px 4px;color:var(--muted)}button.l
 .pop p{margin:0 0 8px}.pop ul{margin:0 0 8px;padding-left:18px}.pop li{margin:2px 0}
 .pop a{color:var(--focus)}
 .pop .x{border:0;background:none;padding:0 4px;font-size:16px;color:var(--muted)}
-.about{width:min(440px,calc(100vw - 32px))}
-.about .cta{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
-.about .cta a{padding:6px 12px;border-radius:4px;text-decoration:none;border:1px solid var(--line);color:var(--ink)}
-.about .cta a.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+.about{left:50%!important;top:50%!important;transform:translate(-50%,-50%);width:min(600px,calc(100vw - 32px));max-height:calc(100dvh - 48px);overflow:auto;padding:22px 26px 16px;font-size:14px;line-height:1.5;box-shadow:0 0 0 100vmax rgba(10,14,18,.38),0 18px 48px rgba(0,0,0,.3)}
+.about h4{font-size:20px;margin-bottom:4px}
+.about .lede{font-size:15px;margin-bottom:14px}
+.about .asks{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:0 0 14px}
+.about .asks a{display:block;padding:10px 12px;border:1px solid var(--line);border-radius:6px;color:var(--ink);text-decoration:none;background:var(--paper)}
+.about .asks a:hover{border-color:var(--accent)}
+.about .asks b{display:block;font:600 14px "IBM Plex Sans Condensed",sans-serif;margin-bottom:2px}
+.about .asks span{display:block;font-size:12.5px;color:var(--muted);line-height:1.35}
+.about .asks a.hire{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}.about .asks a.hire span{color:inherit;opacity:.88}
+.about .meta{display:flex;flex-wrap:wrap;gap:4px 14px;align-items:baseline;border-top:1px solid var(--line);padding-top:10px}
+.about details{font-size:11.5px;color:var(--muted)}.about details summary{cursor:pointer}.about details ul{margin:4px 0 0;padding-left:16px}
+.about .fine{flex-basis:100%;margin:6px 0 0;font-size:11px;color:var(--muted)}
+/* Phones: a bottom sheet. The page has no viewport meta, so phones lay it out ~980px wide; .sheet (set in core.js) zooms
+   the sheet back to the phone's real width with --z. Narrow desktop windows get the same sheet from the media query. */
+.about.sheet{zoom:var(--z,1);-webkit-text-size-adjust:none;text-size-adjust:none;left:0!important;top:auto!important;bottom:0;transform:none;width:calc(100vw / var(--z,1));max-height:calc(88dvh / var(--z,1));border-radius:12px 12px 0 0;padding:18px 16px calc(14px + env(safe-area-inset-bottom))}
+.about.sheet .asks{grid-template-columns:1fr;gap:6px}
+@media (max-width:600px){
+  .about{left:0!important;top:auto!important;bottom:0;transform:none;width:100vw;max-height:88dvh;border-radius:12px 12px 0 0;padding:18px 16px calc(14px + env(safe-area-inset-bottom))}
+  .about .asks{grid-template-columns:1fr;gap:6px}
+}
 .notesbtn{margin-top:6px}
 #revDlg td.revopts{display:flex;flex-wrap:wrap;gap:4px 16px}#revDlg td.revopts label{white-space:nowrap}#revDlg .revother{width:7em;font-size:12.5px;padding:2px 5px}#revDlg td{vertical-align:top}#revDlg td:first-child{white-space:nowrap}#wdHeader td{padding:2px 6px}
 #askDlg .dlg{width:min(480px,100%)}#askBody{margin:0;line-height:1.45}
@@ -462,17 +478,22 @@ i.sw{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:5p
   </header>
   <div id="aboutPop" class="pop about" role="dialog" aria-labelledby="aboutH" hidden>
     <h4 id="aboutH">About Well(er) Logs <button class="x" data-close aria-label="Close">×</button></h4>
-    <p>Built by <a href="https://ryweller.com" target="_blank" rel="noopener">Ryan Weller</a>. A free, open well-log viewer for quick correlation and zone petrophysics in the browser. I built it because opening a LAS file and hanging a cross section shouldn't need a license server. Your files stay on your machine.</p>
-    <p><b>Built with</b></p>
-    <ul>
-      <li>D3 and Leaflet; USGS National Map basemaps</li>
-      <li>Curve conventions from <a href="https://github.com/andymcdgeo/petroplots" target="_blank" rel="noopener">petroplots</a></li>
-      <li>Example logs: WOGCC public records via <a href="https://github.com/jessepisel/5minutesofpython" target="_blank" rel="noopener">5minutesofpython</a>; Rw from <a href="https://doi.org/10.5066/P14CRSQQ" target="_blank" rel="noopener">USGS produced-water data</a></li>
-    </ul>
+    <p class="lede">A free well-log viewer for quick correlation and zone petrophysics in the browser, built by <a href="https://ryweller.com" target="_blank" rel="noopener">Ryan Weller</a>. Opening a LAS file and hanging a cross section shouldn't need a license server. Your files stay on your machine.</p>
+    <p>I'd like to hear from you:</p>
+    <div class="asks">
+      <a href="https://www.linkedin.com/in/ryweller/" target="_blank" rel="noopener"><b>Feedback &amp; requests</b><span>A bug, a missing curve or a workflow you want next.</span></a>
+      <a href="https://ryweller.com/services" target="_blank" rel="noopener"><b>A demo</b><span>A walkthrough for you or your team, on your own data.</span></a>
+      <a class="hire" href="https://ryweller.com/services" target="_blank" rel="noopener"><b>Hire me to build</b><span>Custom subsurface tools, AI workflows and analysis for your team.</span></a>
+    </div>
     <p><button class="small" id="btnMethods">Methods, curve mapping and assumptions</button></p>
-    <p class="hint">Provided as is, with no warranty and no liability (Apache License 2.0). Results are screening estimates from the data you load, not professional advice: check them before you rely on them.</p>
-    <p>Want a custom AI workflow, tool or subsurface analysis for your team? I build these.</p>
-    <div class="cta"><a class="primary" href="https://ryweller.com/services" target="_blank" rel="noopener">Work with me</a><a href="https://www.linkedin.com/in/ryweller/" target="_blank" rel="noopener">Message on LinkedIn</a></div>
+    <div class="meta">
+      <details><summary>Built with</summary><ul>
+        <li>D3 and Leaflet; USGS National Map basemaps</li>
+        <li>Curve conventions from <a href="https://github.com/andymcdgeo/petroplots" target="_blank" rel="noopener">petroplots</a></li>
+        <li>Example logs: WOGCC public records via <a href="https://github.com/jessepisel/5minutesofpython" target="_blank" rel="noopener">5minutesofpython</a>; Rw from <a href="https://doi.org/10.5066/P14CRSQQ" target="_blank" rel="noopener">USGS produced-water data</a></li>
+      </ul></details>
+      <p class="fine">© 2026 Ryan Weller. All rights reserved. Provided as is, without warranty. Results are screening estimates, not professional advice.</p>
+    </div>
   </div>
   <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
   <div id="notesPop" class="pop" role="dialog" aria-label="Interpretation notes" hidden></div>
