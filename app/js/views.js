@@ -74,5 +74,19 @@
     return { scale, w: Math.round(width * scale), h: Math.round(h * scale), dataH, reduced: scale < res - 1e-9, printIn: { w: width / 96, h: h / 96 } };
   }
 
-  root.WellerViews = { LINE_STYLES, LINE_WIDTHS, DEFAULT_WIDTH, styleOf, dashFor, measure, captureView, applyView, describeView, exportSize };
+  /* Pages for a print-ready export: split the depth window [z0, z1] into pages of pageH screen px (96 per inch), each
+     with headerH px of headers on top and footH px of footer below. pxPerUnit is screen px per depth unit at the export
+     scale. A short last page keeps its own height; pages abut, with no overlap. */
+  function pageRanges(z0, z1, { pxPerUnit, pageH, headerH = 0, footH = 0 }) {
+    const lo = Math.min(z0, z1), hi = Math.max(z0, z1), per = (pageH - headerH - footH) / pxPerUnit;
+    if (!(per > 0) || !(hi > lo)) return [];
+    const n = Math.ceil((hi - lo) / per - 1e-9), out = [];
+    for (let k = 0; k < n; k++) out.push([lo + k * per, Math.min(hi, lo + (k + 1) * per)]);
+    return out;
+  }
+  // Paper sizes in inches, portrait.
+  const PAGES = { letter: { label: 'Letter 8.5 × 11 in', w: 8.5, h: 11 }, legal: { label: 'Legal 8.5 × 14 in', w: 8.5, h: 14 }, tabloid: { label: 'Tabloid 11 × 17 in', w: 11, h: 17 },
+    a4: { label: 'A4 210 × 297 mm', w: 8.27, h: 11.69 }, a3: { label: 'A3 297 × 420 mm', w: 11.69, h: 16.54 } };
+
+  root.WellerViews = { LINE_STYLES, LINE_WIDTHS, DEFAULT_WIDTH, styleOf, dashFor, measure, captureView, applyView, describeView, exportSize, pageRanges, PAGES };
 })(typeof window !== 'undefined' ? window : globalThis);

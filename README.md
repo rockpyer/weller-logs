@@ -229,3 +229,8 @@ tools/               petroplots figure script
 scripts/             data preparation and top picking
 docs/                plan and petrophysics methods
 ```
+
+## License
+
+Apache License 2.0 (`LICENSE`, `NOTICE`). The software and its results are provided as is, with no warranty and no
+liability; see sections 7 and 8 of the license.
