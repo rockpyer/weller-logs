@@ -15,7 +15,8 @@ WOGCC public records) and a Weld County, Colorado Niobrara horizontal, flattened
 [app/data/niobrara/README.md](app/data/niobrara/README.md) for provenance.
 
 Methods, equations, defaults and limits: [app/methods.md](app/methods.md), shown in the app at
-[logs.ryweller.com/methods.html](https://logs.ryweller.com/methods.html).
+[logs.ryweller.com/methods.html](https://logs.ryweller.com/methods.html). After editing `methods.md`, run
+`node scripts/build-methods.mjs` to re-render the page (a test fails if it is stale).
 
 ## What it does
 

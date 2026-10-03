@@ -87,8 +87,6 @@ function importValuePoints(t, map, fileName) {
   const n = [...g.byWell.values()].reduce((a, r) => a + r.length, 0);
   return { note: `Point data: ${plural(n, 'sample')}, ${added.length} series (${added.join(', ')}) in ${plural(g.byWell.size, 'well')}` + (notes.length ? '; ' + notes.join('; ') : ''), problems: importProblems(g) };
 }
-// Kept for the CSV path that needs no questions (and old callers).
-function importPointsCSV(text, fileName) { const t = WellerTables.readDelimited(text), gs = WellerTables.guess(t); const r = importValuePoints(t, gs.map, fileName); return r.note.replace(/^Point data: /, '') + (r.problems.length ? '; ' + r.problems.map(p => p.title).join('; ') : ''); }
 
 /* Labeled depths (events): corrosion points, perforations, shows, casing damage. One series per import, drawn in
    one track with a lane and color per class; Split puts each class in its own series and track. data[k] is the

@@ -264,7 +264,6 @@ function effCfg(w,cfg){
 
 /* ---------- Rendering ---------- */
 function visibleTracks(w){ return S.tracks.filter(t=>(S.mode==='single'||t.panel)&&(S.showEmpty||t.curves.some(c=>resolveCurve(w,c)))); }
-function fmtDepth(v){ return Math.round(v).toLocaleString(); }
 function tickStep(pxPerUnit){ for(const i of [1,2,5,10,20,25,50,100,200,250,500,1000,2000]) if(i*pxPerUnit>=44) return i; return 5000; }
 const trackW=t=>Math.round((t.width||190)*(S.mode==='corr'?(S.corr?.scale??0.75):1));
 const sectionWells=()=>S.wells.filter(w=>S.panel.includes(w.id));
@@ -1340,7 +1339,6 @@ function addLASFiles(files){ const report=[], touched=[], fresh=new Set(), auto=
 
 /* ---------- Import report: per file, what loaded, what merged, and why anything failed ---------- */
 let lastReport=[];
-const STATUS={loaded:'Loaded',merged:'Merged',reloaded:'Reloaded',failed:'Not loaded'};
 function showImportSummary(report,auto=true){ lastReport=report; if(!report.length) return;
   const fail=report.filter(r=>r.status==='failed').length, wells=new Set(report.map(r=>r.wid).filter(Boolean)).size;
   $('stNote').innerHTML=esc(`${report.length} file${report.length>1?'s':''}`+(wells?` → ${wells} well${wells>1?'s':''}`:'')+(fail?`, ${fail} not loaded`:''))+' <button class="small" id="btnImpDetails">Summary</button>';

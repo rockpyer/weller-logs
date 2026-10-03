@@ -14,12 +14,12 @@
 ## How to use it
 
 Open https://logs.ryweller.com. Example Niobrara wells load on first visit. Load your own LAS files to replace them.
-Methods, curve mapping and assumptions: https://logs.ryweller.com/methods.html
+Methods, equations and assumptions: https://logs.ryweller.com/methods.html (Markdown: https://logs.ryweller.com/methods.md)
 
 ## Contact
 
-Feedback, feature requests, demos, and custom subsurface tools or AI workflows: https://ryweller.com/services or
-https://www.linkedin.com/in/ryweller/
+Feedback, feature requests and demos: https://ryweller.com/services/#contact
+Custom subsurface tools, AI workflows and analysis: https://ryweller.com/services
 
 ## Terms for automated agents
 

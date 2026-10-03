@@ -36,3 +36,5 @@ Disallow: /data/
 Allow: /$
 Allow: /methods.html
 Allow: /llms.txt
+
+Sitemap: https://logs.ryweller.com/sitemap.xml

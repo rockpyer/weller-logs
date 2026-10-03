@@ -1,6 +1,6 @@
 // Offline cache for the app shell. Bump VERSION on every release so clients refresh.
-const VERSION = 'weller-v28';
-const SHELL = ['./', './index.html', './synth.js', './js/apicodes.js', './js/las.js', './js/qc.js', './js/petro.js', './js/tables.js', './js/survey.js', './js/grid.js', './js/points.js', './js/map.js', './js/stats.js', './js/interp.js', './js/zip.js', './js/views.js', './js/core.js', './js/tools.js', './js/mudcal.js', './js/mudlog.js', './js/mudworker.js', './vendor/d3.min.js', './vendor/leaflet.js', './manifest.webmanifest', './icon.svg', './icon-192.png', './icon-512.png'];
+const VERSION = 'weller-v29';
+const SHELL = ['./', './index.html', './synth.js', './js/apicodes.js', './js/las.js', './js/qc.js', './js/petro.js', './js/tables.js', './js/survey.js', './js/grid.js', './js/points.js', './js/map.js', './js/stats.js', './js/interp.js', './js/zip.js', './js/views.js', './js/core.js', './js/tools.js', './js/mudcal.js', './js/mudlog.js', './js/mudworker.js', './vendor/d3.min.js', './vendor/leaflet.js', './methods.html', './manifest.webmanifest', './icon.svg', './icon-192.png', './icon-512.png'];
 self.addEventListener('install', e => { e.waitUntil(caches.open(VERSION).then(c => c.addAll(SHELL)).then(() => self.skipWaiting())); });
 self.addEventListener('activate', e => { e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => k !== VERSION).map(k => caches.delete(k)))).then(() => self.clients.claim())); });
 // Files that never change at their URL (versioned CDN libraries, vendor copies, example data) come from the cache
