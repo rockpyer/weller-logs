@@ -1,0 +1,18 @@
+# After each deploy of main, tell IndexNow engines (Bing, and through it DuckDuckGo, Yahoo, Ecosia and Copilot;
+# also Yandex, Seznam, Naver, Yep) which pages changed. The key file app/26a12f0bd83592cc19e1192e74b0fbae.txt proves the site is ours.
+name: IndexNow
+on:
+  push:
+    branches: [main]
+    paths: ['app/**']
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Wait for Cloudflare to deploy, then submit the sitemap URLs
+        run: |
+          sleep 120
+          curl -fsS -m 30 -X POST https://api.indexnow.org/indexnow \
+            -H 'Content-Type: application/json; charset=utf-8' \
+            -d '{"host":"logs.ryweller.com","key":"26a12f0bd83592cc19e1192e74b0fbae","keyLocation":"https://logs.ryweller.com/26a12f0bd83592cc19e1192e74b0fbae.txt","urlList":["https://logs.ryweller.com/","https://logs.ryweller.com/methods"]}' \
+            -w 'IndexNow HTTP %{http_code}\n'

@@ -1,7 +1,6 @@
 /* Deterministic interpretation: Vshale, porosity, Sw, TOC and net flags, added to each well as computed curves.
    Equations live in petro.js (unit-tested). This file chooses inputs, applies parameters and writes the curves. */
 
-const INTERP_CURVES = ['VSH_GR', 'VSH_SP', 'PHID', 'PHIT_ND', 'PHIT', 'PHIE', 'PHI_SW', 'SW', 'BVW', 'TOC_DLR', 'FLAG_BH', 'FLAG_WO', 'NET_RES', 'NET_PAY'];
 const DRHO_ALIASES = ['DRHO', 'HDRA', 'ZCOR', 'DCOR', 'CORR', 'DRH'];
 // NMR total porosity (CMR, MRIL and generic names).
 const NMR_PHI = ['TCMR', 'MPHS', 'PHIT_NMR', 'MPHI', 'CMRP', 'TPOR', 'MRP', 'NMR_PHIT', 'MSIG'];

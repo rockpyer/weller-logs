@@ -1,7 +1,7 @@
 {
-  "name": "Well(er) Logs",
-  "short_name": "Well(er) Logs",
-  "description": "Well log viewer with correlation panels",
+  "name": "Weller Logs",
+  "short_name": "Weller Logs",
+  "description": "Free well log viewer: LAS files, correlation cross sections, tops and quick-look petrophysics in the browser",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",

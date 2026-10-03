@@ -1,4 +1,4 @@
-/* Well(er) Logs: state, LAS parsing, log rendering, files, project. */
+/* Weller Logs: state, LAS parsing, log rendering, files, project. */
 const {parseLAS,normalizeWell}=WellerLAS;   // app/js/las.js
 
 /* ---------- Curve aliases and default track presets ---------- */
@@ -163,10 +163,10 @@ const CURVE_INFO={
   THAV:'Casing wall thickness from the ultrasonic tool: loss means corrosion or wear.', THMN:'Minimum wall thickness.', DIAV:'Casing inner diameter.', DIMX:'Maximum inner diameter.', OVLI:'Casing ovality: deformation.',
   TEMP:'Borehole temperature.', MUDT:'Mud temperature, often from the rig (in or out). Unit and source vary; check the header.',
   SHK_LAT_MAX:'Lateral shock (g) from the MWD tool.', SHK_AXL_MAX:'Axial shock (g).', STKSLP:'Stick-slip: torsional vibration.', SHKRSK:'Shock risk level.',
-  VSH_GR:'Computed by Well(er) Logs: shale volume from GR.', PHI_SW:'Computed by Well(er) Logs: porosity used for Sw.', BVW:'Computed by Well(er) Logs: bulk volume water.', PHIE:'Computed by Well(er) Logs: effective porosity.',
+  VSH_GR:'Computed by Weller Logs: shale volume from GR.', PHI_SW:'Computed by Weller Logs: porosity used for Sw.', BVW:'Computed by Weller Logs: bulk volume water.', PHIE:'Computed by Weller Logs: effective porosity.',
   OIL:'Oil stain or show rating from the mud logger (0-100 scale in Petrolog files).', FLR:'Fluorescence of cuttings under UV (percent of sample).', CUT:'Cut rating: solvent-released hydrocarbon (visible or fluorescent).', POPS:'Pops rating: gas bubbles bursting from cuttings.',
   CGSU:'Cuttings gas: gas released from crushed cuttings.', H2S:'Hydrogen sulfide at the shakers. A safety reading as well as a formation indicator.', CO2:'Carbon dioxide in the mud gas.',
-  SW:'Computed by Well(er) Logs: water saturation.', TOC_DLR:'Computed by Well(er) Logs: TOC from delta log R.' };
+  SW:'Computed by Weller Logs: water saturation.', TOC_DLR:'Computed by Weller Logs: TOC from delta log R.' };
 const curveInfo=cfg=>CURVE_INFO[famKey(cfg)]||CURVE_INFO[String(cfg.label||'').toUpperCase()]||'';
 // Saved track sets and projects keep their styling but pick up new built-in tracks, curves and vendor aliases.
 const ADDED_TRACKS=['t13','t14','t15','t16','t17','t18','t19','t20','t21','t22','t23'], ADDED_CURVES=['t1','t3','t5','t7','t12'];
@@ -264,7 +264,6 @@ function effCfg(w,cfg){
 
 /* ---------- Rendering ---------- */
 function visibleTracks(w){ return S.tracks.filter(t=>(S.mode==='single'||t.panel)&&(S.showEmpty||t.curves.some(c=>resolveCurve(w,c)))); }
-function fmtDepth(v){ return Math.round(v).toLocaleString(); }
 function tickStep(pxPerUnit){ for(const i of [1,2,5,10,20,25,50,100,200,250,500,1000,2000]) if(i*pxPerUnit>=44) return i; return 5000; }
 const trackW=t=>Math.round((t.width||190)*(S.mode==='corr'?(S.corr?.scale??0.75):1));
 const sectionWells=()=>S.wells.filter(w=>S.panel.includes(w.id));
@@ -1146,7 +1145,7 @@ async function openFiles(files){ const mud=files.filter(f=>f.mud); files=files.f
   if(by.project.length&&by.las.length){ const want=new Set(); for(const f of by.project){ try{ for(const r of JSON.parse(f.text).wells||[]) for(const x of r.files||[r]) if(x.fileName) want.add(x.fileName); }catch(e){} }
     for(const f of by.las) if(want.has(f.name)) await lasCache.put(f.name,f.text); by.las=by.las.filter(f=>!want.has(f.name)); }
   for(const f of by.project){ try{ const miss=await loadProject(JSON.parse(f.text)); if(f.handle) S.fileHandle=f.handle; report.push({file:f.name,status:'loaded',note:'Project loaded',problems:miss?.length?[{level:'warn',cat:'Files',title:`${miss.length} LAS file${miss.length>1?'s are':' is'} not in this project file or this browser: ${miss.join(', ')}`,fix:'Open the project again and select those LAS files with it (Cmd/Ctrl-click). Save afterwards and the project carries them.'}]:[]}); }
-    catch(err){ report.push({file:f.name,status:'failed',problems:[{level:'error',cat:err instanceof SyntaxError?'Parsing':'File type',title:err instanceof SyntaxError?'Not valid JSON: '+err.message:err.message,fix:'Open a .lasproj saved by Well(er) Logs.'}]}); } }
+    catch(err){ report.push({file:f.name,status:'failed',problems:[{level:'error',cat:err instanceof SyntaxError?'Parsing':'File type',title:err instanceof SyntaxError?'Not valid JSON: '+err.message:err.message,fix:'Open a .lasproj saved by Weller Logs.'}]}); } }
   if(by.las.length) report.push(...addLASFiles(by.las));
   // Tables we are not sure about: ask, one file at a time, after the LAS so their wells are open.
   const asked=[], later=[]; for(const f of by.ask){ const a=await askKind(f); if(!a){ report.push({file:f.name,status:'failed',problems:[{level:'info',cat:'Import',title:'Skipped; nothing changed'}]}); continue; }
@@ -1208,7 +1207,7 @@ function splitWell(w){ const parts=partsOf(w); if(parts.length<2) return [w]; co
 /* ---------- LAS 2.0 export of one well: curves as shown, computed curves, tops and survey ---------- */
 function interpNote(){ const I=S.interp; if(!I?.enabled) return [];
   return [`Interpretation (computed curves): Vsh ${I.vshMethod}; porosity ${I.porMethod}, matrix ${I.matrix}; Sw ${I.swMethod} on ${I.swPhi} porosity, a=${I.a} m=${I.m} n=${I.n}, Rw ${I.rw} ohm.m at ${I.rwTemp} F; net cutoffs Vsh<${I.cut.vsh} PHI>${I.cut.phi} Sw<${I.cut.sw}`,
-    'Methods: https://logs.ryweller.com/methods.html']; }
+    'Methods: https://logs.ryweller.com/methods']; }
 function lasText(w){
   const bl=grBaselines(w), notes=[...interpNote()]; if(S.interp?.enabled&&Number.isFinite(bl.clean)) notes.push(`GR baselines clean ${bl.clean} API, shale ${bl.shale} API`);
   return WellerQC.writeLAS(w,{computed:true,notes}); }
@@ -1340,7 +1339,6 @@ function addLASFiles(files){ const report=[], touched=[], fresh=new Set(), auto=
 
 /* ---------- Import report: per file, what loaded, what merged, and why anything failed ---------- */
 let lastReport=[];
-const STATUS={loaded:'Loaded',merged:'Merged',reloaded:'Reloaded',failed:'Not loaded'};
 function showImportSummary(report,auto=true){ lastReport=report; if(!report.length) return;
   const fail=report.filter(r=>r.status==='failed').length, wells=new Set(report.map(r=>r.wid).filter(Boolean)).size;
   $('stNote').innerHTML=esc(`${report.length} file${report.length>1?'s':''}`+(wells?` → ${wells} well${wells>1?'s':''}`:'')+(fail?`, ${fail} not loaded`:''))+' <button class="small" id="btnImpDetails">Summary</button>';
@@ -1389,7 +1387,7 @@ function methodsHTML(){ const tr=S.tracks.filter(t=>t.curves?.length&&t.type!=='
     <li>GR normalization maps this well's P5 and P95 onto the reference well's (a two-point linear rescale), over the whole log or one zone. The coefficients are stored with the project.</li>
     <li>Order applied: sensor-offset shift, despike, normalization, always from the values as loaded.</li></ul>`]);
   S_.push(['export','LAS export',`<ul><li>LAS 2.0, one line per depth, null −999.25, ASCII. STEP is the sample step, or 0 when sampling is irregular.</li>
-    <li>Curves as shown (with shifts, despiking and normalization), then computed curves marked "computed by Well(er) Logs". A repeated mnemonic (GR:2) is written GR_2.</li>
+    <li>Curves as shown (with shifts, despiking and normalization), then computed curves marked "computed by Weller Logs". A repeated mnemonic (GR:2) is written GR_2.</li>
     <li>Tops go in ~Parameter as TOP_NAME (MD); the directional survey (MD INC AZI TVD) and the interpretation parameters go in ~Other.</li></ul>`]);
   S_.push(['display','Display',`<ul><li>Off-scale values wrap: past the right edge the curve continues, dotted, from the left edge (one scale width over), and past the left edge from the right. Log scales wrap by decades of the scale. Each track's ⚙ turns it off.</li>
     <li>Lithology ornaments follow the FGDC 600 series as redrawn by petroplots: dots (sand; size by grain), dashes (shale, clay), dot-dash (silt), brick (limestone), slanted brick (dolomite), brick with dashes (marl), hatching (anhydrite), squares (salt).</li></ul>`]);
@@ -1442,7 +1440,7 @@ const dirSurveyOf=ref=>ref.dirSurvey||(ref.survey?.md?.length?{md:ref.survey.md,
 function projectJSON(){ return { version:3, app:'weller-logs', savedAt:new Date().toISOString(), mode:S.mode, selected:S.selected, panel:S.panel, datum:S.datum, views:S.views, tracks:S.tracks, hiddenPoints:S.hiddenPoints, stats:S.stats, basemap:S.basemap, mapGrid:S.mapGrid?.kind?S.mapGrid:undefined, interp:S.interp, corr:S.corr, topColors:S.topColors,display:{units:S.units,depthLabels:S.depthLabels,showEmpty:S.showEmpty,headH:S.headH},keepZeros:S.keepZeros?.length?S.keepZeros:undefined,savedViews:S.savedViews?.length?S.savedViews:undefined,
   mudlogs:window.WellerMud?.toJSON(),
   wells:S.wells.map(w=>({id:w.id,name:w.name,api:w.api,field:w.field,company:w.company,county:w.county,state:w.state,preset:w.preset,demo:w.demo,fileName:w.fileName,pick:w.pick,shifts:w.shifts,edits:w.edits,files:partsOf(w).length>1?partsOf(w).map(p=>({fileName:p.fileName,demo:p.demo})):undefined,location:w.location,elevation:w.elevation,header:w.header,attrs:w.attrs,depthUnit:w.depthUnit,tops:w.tops,points:pointsJSON(w),dirSurvey:w.dirSurvey,curveList:w.curves.filter(c=>!c.sparse).map(c=>c.mnemonic)})) }; }
-async function loadProject(p){ if(!p||p.app!=='weller-logs') throw new Error('not a Well(er) Logs project'); const missing=[];
+async function loadProject(p){ if(!p||p.app!=='weller-logs') throw new Error('not a Weller Logs project'); const missing=[];
   // A file may be a well on its own or one part of a merged well; find it wherever it is now.
   const findPart=fn=>{ for(const w of S.wells){ const ps=partsOf(w); if(ps.length===1&&w.fileName===fn) return w; const q=ps.find(q=>q.fileName===fn); if(q) return q; } return null; };
   S.keepZeros=p.keepZeros||[]; S.savedViews=Array.isArray(p.savedViews)?p.savedViews:[]; S.activeView=null;
@@ -1491,7 +1489,7 @@ async function projectFile(){ const p=projectJSON(), las={}, miss=[];
   p.data={las,mudlogs:await window.WellerMud?.exportData()}; return {text:JSON.stringify(p),miss}; }
 async function saveProject(as){ $('stNote').textContent='Packing the project…'; const {text,miss}=await projectFile();
   const done=name=>{ $('stNote').textContent=`Saved ${name} (${(text.length/1048576).toFixed(1)} MB, data included)`+(miss.length?` · not in this browser, re-open to include: ${miss.join(', ')}`:''); };
-  if(window.showSaveFilePicker){ try{ if(as||!S.fileHandle) S.fileHandle=await showSaveFilePicker({suggestedName:projName(),types:[{description:'Well(er) Logs project',accept:{'application/json':['.lasproj']}}]});
+  if(window.showSaveFilePicker){ try{ if(as||!S.fileHandle) S.fileHandle=await showSaveFilePicker({suggestedName:projName(),types:[{description:'Weller Logs project',accept:{'application/json':['.lasproj']}}]});
       const w=await S.fileHandle.createWritable(); await w.write(text); await w.close(); done(S.fileHandle.name); }catch(e){ if(e.name!=='AbortError') $('stNote').textContent='Save failed: '+e.message; } return; }
   downloadBlob(projName(),new Blob([text],{type:'application/json'})); done(projName()); }
 $('btnSave').onclick=()=>saveProject(false);
@@ -1553,7 +1551,11 @@ $('exampleSel').onchange=async e=>{ const v=e.target.value; e.target.value=''; i
 S.stats=statsDefaults();
 let saved=null; try{ saved=JSON.parse(localStorage.getItem('weller.session')||'null'); }catch(e){}
 if('serviceWorker' in navigator&&/^https?:/.test(location.protocol)&&!/claude\.ai|claudeusercontent/.test(location.host)) navigator.serviceWorker.register('sw.js').catch(()=>{});
-const booted=(async()=>{ if(!(await loadExample('niobrara',true))) fitView(); undoProject=null; HIST.undo=[]; HIST.redo=[]; HIST.last=editSnapshot(); })();
+// The workspace stays hidden ("booting", set in index.html) until this first render, and until the fonts it uses
+// have loaded (at most a second more), so it shows once instead of shifting as panels and fonts fill in.
+const reveal=()=>document.documentElement.classList.remove('booting');
+const booted=(async()=>{ try{ if(!(await loadExample('niobrara',true))) fitView(); undoProject=null; HIST.undo=[]; HIST.redo=[]; HIST.last=editSnapshot(); }
+  finally{ await Promise.race([document.fonts?.ready,new Promise(r=>setTimeout(r,1000))]); reveal(); } })();
 { const has=!!(saved&&saved.savedAt&&saved.wells?.length);
   if(has){ const n=saved.wells.length, d=new Date(saved.savedAt);
     $('wcResumeWhen').textContent=`${n} well${n===1?'':'s'} · saved ${d.toLocaleString([],{dateStyle:'medium',timeStyle:'short'})}`; } else $('wcResume').disabled=true;
@@ -1589,7 +1591,7 @@ $('exportMenu').addEventListener('click',async e=>{ const b=e.target.closest('[d
   if(k==='stats') return downloadBlob('zone-stats.csv',csvBlob(statsCSV()));
   if(k==='lasall'){ const names=WellerZip.uniqueNames(S.wells.map(lasName)); return downloadBlob('wells-las.zip',zipBlob(S.wells.map((w,i)=>({name:names[i],data:lasText(w)})))); }
   if(k==='bundle') return exportBundle(); });
-/* Everything in one .zip: the project (opens in Well(er) Logs with its data), every well as LAS, tops and zone stats
+/* Everything in one .zip: the project (opens in Weller Logs with its data), every well as LAS, tops and zone stats
    as CSV, and a PNG of the correlation section (or the log, with one well). */
 async function exportBundle(){ $('stNote').textContent='Packing the project bundle…';
   const base=safeName(projName().replace(/\.lasproj$/,'')), files=[], {text,miss}=await projectFile();
@@ -1605,7 +1607,20 @@ async function exportBundle(){ $('stNote').textContent='Packing the project bund
 
 /* ---------- About, popouts and theme ---------- */
 function placePop(pop,anchor){ pop.hidden=false; const r=anchor.getBoundingClientRect(); pop.style.top=(r.bottom+8)+'px'; pop.style.left=Math.max(16,Math.min(r.right-pop.offsetWidth,innerWidth-pop.offsetWidth-16))+'px'; }
-$('btnAbout').onclick=e=>{ e.stopPropagation(); const p=$('aboutPop'); p.hidden?placePop(p,e.currentTarget):(p.hidden=true); };
+// Phones lay the page out ~980px wide (no viewport meta: the workflow needs a desktop screen). phoneZoom() is the
+// factor that scales a phone-only panel back to the phone's real width, or 0 on a computer or tablet.
+function phoneZoom(){ const z=innerWidth/screen.width; return matchMedia('(pointer:coarse)').matches&&screen.width<700&&z>1.2?z:0; }
+$('btnAbout').onclick=e=>{ e.stopPropagation(); const p=$('aboutPop'); p.hidden=!p.hidden; if(p.hidden) return;
+  const z=phoneZoom(); p.classList.toggle('sheet',!!z); p.style.setProperty('--z',z?z.toFixed(3):1); p.querySelector('.x').focus(); };
+// On a phone, say once that this is a desktop tool, and offer to send the link to a computer.
+(()=>{ const z=phoneZoom(), n=$('deskNote'); let seen=false; try{ seen=!!localStorage.getItem('weller.deskNote'); }catch(e){}
+  if(!z||seen) return; n.style.setProperty('--z',z.toFixed(3)); n.hidden=false;
+  const done=()=>{ n.hidden=true; try{ localStorage.setItem('weller.deskNote','1'); }catch(e){} };
+  $('deskOk').onclick=done;
+  $('deskSend').onclick=()=>{ const url='https://logs.ryweller.com/', title='Weller Logs';
+    if(navigator.share) navigator.share({title,text:'Open on a computer:',url}).then(done,()=>{});
+    else location.href='mailto:?subject='+encodeURIComponent(title)+'&body='+encodeURIComponent('Open on a computer: '+url); };
+})();
 document.addEventListener('click',e=>{ if(e.target.closest('[data-close]')){ e.target.closest('.pop').hidden=true; return; }
   if(e.target.closest('#btnNotes,#btnAbout,#btnExport,#btnViews,#mudScroll,#mudPop,#colorPop,[data-cedit]')) return;
   document.querySelectorAll('.pop:not([hidden])').forEach(p=>{ if(!p.contains(e.target)) p.hidden=true; }); });

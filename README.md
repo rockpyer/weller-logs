@@ -1,6 +1,6 @@
 <img src="app/icon.svg" width="56" alt="">
 
-# Well(er) Logs
+# Weller Logs
 
 Web-based well-log viewer and correlation tool. It opens LAS files (wireline and mud logs), draws tracks on
 standard scales, runs a transparent quick-look petrophysical interpretation, correlates tops across wells in MD, ground level,
@@ -15,7 +15,8 @@ WOGCC public records) and a Weld County, Colorado Niobrara horizontal, flattened
 [app/data/niobrara/README.md](app/data/niobrara/README.md) for provenance.
 
 Methods, equations, defaults and limits: [app/methods.md](app/methods.md), shown in the app at
-[logs.ryweller.com/methods.html](https://logs.ryweller.com/methods.html).
+[logs.ryweller.com/methods.html](https://logs.ryweller.com/methods.html). After editing `methods.md`, run
+`node scripts/build-methods.mjs` to re-render the page (a test fails if it is stale).
 
 ## What it does
 
@@ -110,7 +111,7 @@ Methods, equations, defaults and limits: [app/methods.md](app/methods.md), shown
   P5–P95 onto a reference well's, over the whole log or one zone. Edits are saved with the project and undo with Cmd+Z.
 - **LAS export.** Export LAS writes the selected well as LAS 2.0: logged curves as shown (shifts, despiking and
   normalization applied), computed curves, tops as `TOP_` parameters, the directional survey and the interpretation
-  parameters in `~Other`. It reads back into Well(er) Logs and lasio.
+  parameters in `~Other`. It reads back into Weller Logs and lasio.
 - **Curve help.** Hover a track header for each curve's color, what it measures, the file it came from and what else
   in the well could stand in. About → *Methods, curve mapping and assumptions* lists every rule and the mnemonics each
   track accepts.
@@ -232,5 +233,6 @@ docs/                plan and petrophysics methods
 
 ## License
 
-Apache License 2.0 (`LICENSE`, `NOTICE`). The software and its results are provided as is, with no warranty and no
-liability; see sections 7 and 8 of the license.
+Proprietary, all rights reserved (`LICENSE`, `NOTICE`); © 2026 Ryan Weller. The software and its results are provided
+as is, with no warranty and no liability. `app/robots.txt` and `app/llms.txt` describe the tool to crawlers and opt the
+source out of AI training and reproduction.

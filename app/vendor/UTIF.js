@@ -1,3 +1,4 @@
+/* @license UTIF.js, https://github.com/photopea/UTIF.js (c) 2017 Photopea. MIT; full text in vendor/LICENSES.txt */
 
 
 

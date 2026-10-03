@@ -1,7 +1,7 @@
 # Backlog: ideas from StarSteer, free browser tools, and geomechanics
 
 October 2026. What ROGII's [StarSteer](https://rogii.com/products/starsteer) added from 2020 to 2026, sorted into
-what helps a log-correlation tool and what does not, then a backlog for Well(er) Logs. Scope stays the same:
+what helps a log-correlation tool and what does not, then a backlog for Weller Logs. Scope stays the same:
 correlation panels and log display in a browser, not geosteering. Section 4 adds a survey of free and low-cost browser
 tools (October 2026) and a geomechanics and borehole-image roadmap.
 
@@ -17,7 +17,7 @@ Their full notes are at kb.solo.cloud. 2023.2 to 2024.1 have no public feature l
 
 **A. Display, ease, speed, consistency, project management**
 
-| Release | Feature | Well(er) Logs |
+| Release | Feature | Weller Logs |
 |---|---|---|
 | 2020.3 | New UI; vertical and horizontal zoom; mudlog in the log track | Have |
 | 2020.4 | Starred objects; several logs exported as one LAS; mudlog in the correlation panel | Have LAS export and mudlogs; no starring |
@@ -165,7 +165,7 @@ each other.
 
 ## 4. Free browser tools, geomechanics and images
 
-October 2, 2026. Well(er) Logs already beats every free browser tool on multi-well correlation, zone stats and
+October 2, 2026. Weller Logs already beats every free browser tool on multi-well correlation, zone stats and
 crossplots. The gaps are versioning, print-grade export, DLIS, and anything geomechanical.
 
 ### Landscape

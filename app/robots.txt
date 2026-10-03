@@ -1,0 +1,40 @@
+# Weller Logs, https://logs.ryweller.com
+# A free, browser-based well-log viewer by Ryan Weller: open LAS files, hang correlation cross sections, pick tops,
+# and run zone petrophysics (Vshale, porosity, Sw, net pay). Files are processed locally in the browser; nothing is
+# uploaded. Plain-language summary for language models: /llms.txt. Methods: /methods.
+#
+# Copyright (c) 2026 Ryan Weller. All rights reserved. The source code (/js/, /synth.js, /sw.js) is proprietary.
+# You may index the pages and describe or link to the tool. You may not scrape, copy or analyze the source code to
+# reproduce it, train or tune models on it, mine it for ideas, or build replicas or derivative products.
+#
+# Content signals (https://contentsignals.org): search and answering yes, AI training no.
+Content-Signal: search=yes, ai-input=yes, ai-train=no
+
+User-agent: *
+Allow: /
+
+# AI training and dataset crawlers: pages and descriptions only, never the code.
+User-agent: GPTBot
+User-agent: ClaudeBot
+User-agent: anthropic-ai
+User-agent: CCBot
+User-agent: Google-Extended
+User-agent: Applebot-Extended
+User-agent: Bytespider
+User-agent: meta-externalagent
+User-agent: Amazonbot
+User-agent: cohere-training-data-crawler
+User-agent: Diffbot
+User-agent: omgili
+User-agent: AI2Bot
+User-agent: PanguBot
+Disallow: /js/
+Disallow: /synth.js
+Disallow: /sw.js
+Disallow: /vendor/
+Disallow: /data/
+Allow: /$
+Allow: /methods
+Allow: /llms.txt
+
+Sitemap: https://logs.ryweller.com/sitemap.xml

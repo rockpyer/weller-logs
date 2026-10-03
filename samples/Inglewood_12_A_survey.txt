@@ -1,4 +1,4 @@
-Synthetic directional survey for the Well(er) Logs demo. Not a real well.
+Synthetic directional survey for the Weller Logs demo. Not a real well.
 Well Name: Inglewood 12-A
 Depth units: feet
 Azimuth reference: True North

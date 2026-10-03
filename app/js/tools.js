@@ -1,4 +1,4 @@
-/* Well(er) Logs view tools: the curve editor (click a curve in a track header), the depth ruler, saved views and the
+/* Weller Logs view tools: the curve editor (click a curve in a track header), the depth ruler, saved views and the
    PNG export dialog. Uses the state and drawing functions in core.js. */
 const WV=WellerViews;
 S.savedViews=S.savedViews||[];

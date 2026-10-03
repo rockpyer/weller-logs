@@ -169,7 +169,7 @@
     L.push('~PARAMETER INFORMATION');
     well.tops.forEach(t => L.push(pad(`TOP_${t.name.toUpperCase()}.FT`, String(t.md), `Formation top: ${t.name}`)));
     L.push('~OTHER');
-    L.push(' Synthetic well generated for the Well(er) Logs demo. Not a real well.');
+    L.push(' Synthetic well generated for the Weller Logs demo. Not a real well.');
     L.push('~A  ' + well.curves.map(c => c.mnemonic.padStart(10)).join(''));
     for (let i = 0; i < dep.length; i++) {
       L.push(well.curves.map(c => { const v = c.data[i]; return (Number.isFinite(v) ? v.toFixed(4) : '-999.25').padStart(10); }).join(''));
