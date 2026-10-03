@@ -91,6 +91,13 @@ Methods, equations, defaults and limits: [app/methods.md](app/methods.md), shown
   index is bit depth, matching curves move to sensor depth, otherwise one click applies the shift (saved with the
   project). Azimuthal GR (up, down, left, right, asymmetry) and survey inclination and azimuth have their own tracks.
   Cable tension plots with GR and caliper to show tight spots.
+- **Edit a curve in place.** Click a curve's scale in a track header: display name, which curve, color, line style
+  (solid, dashed, dotted, dash-dot) and width, left and right scale, log scale, wrap, and a fill (solid or colored by
+  value). Changes apply at once to that track in every well; **Remove from track** drops the curve. Cmd+Z undoes.
+- **Measure** (M) drags out an interval on any log and reads its MD thickness, true vertical thickness (TVT, from the
+  survey) and the MD and TVDSS at top and base. Esc ends.
+- **Saved views.** **Views ▾** names the current section, hang, tracks, scale and depth on screen, and switches back
+  to it from the same menu. Views are kept in the session (so *Resume* brings them back) and in the saved project.
 - **Off-scale values wrap.** A value past a track's scale continues from the other edge as a dotted backup trace, as on a
   printed log, instead of piling up at the edge. Each track's ⚙ turns it off.
 - **Lithology patterns.** The computed lithology and cuttings % tracks draw FGDC-style ornaments over each color (dots for
@@ -151,7 +158,8 @@ Methods, equations, defaults and limits: [app/methods.md](app/methods.md), shown
   The project holds the LAS files (gzip), mudlog images, tops, shifts and edits, point data, tracks (order, curves,
   colors, scales), interpretation parameters, hang, zoom, section order, units, depth labels and header height, so
   it opens complete on another machine. Projects saved by older versions still open; they ask for the LAS files.
-- **Export** menu: the current view as PNG (Cmd+E; the log, section, crossplot or mudlog), the selected well or all wells
+- **Export** menu: the current view as PNG (Cmd+E; the log, section, crossplot or mudlog; for logs and sections a dialog
+  sets the depth range or interval between two tops, print scale, resolution, headers and a white background, with a preview), the selected well or all wells
   as LAS, tops or zone stats as CSV, or a full project bundle (.zip with the project file, every well as LAS, tops and
   stats CSV, and a section PNG).
 - **Undo / redo**: Cmd+Z and Shift+Cmd+Z (Ctrl on Windows and Linux) step through edits to tops, tracks, parameters and the section.
