@@ -1,5 +1,21 @@
+<!doctype html>
+<html lang="en">
 <meta charset="utf-8">
-<title>Weller Logs</title>
+<title>Weller Logs: free well log viewer and correlation in the browser</title>
+<meta name="description" content="Open LAS well logs in your browser, hang correlation cross sections, pick tops and run quick-look petrophysics: Vshale, porosity, Sw and net pay. Free, no install, and your files never leave your computer.">
+<link rel="canonical" href="https://logs.ryweller.com/">
+<meta name="author" content="Ryan Weller">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Weller Logs">
+<meta property="og:title" content="Weller Logs: free well log viewer and correlation">
+<meta property="og:description" content="LAS viewer, cross sections, tops and quick-look petrophysics in the browser. Files stay on your computer.">
+<meta property="og:url" content="https://logs.ryweller.com/">
+<meta property="og:image" content="https://logs.ryweller.com/og.jpg">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Weller Logs correlation section of Niobrara wells with formation tops">
+<meta name="twitter:card" content="summary_large_image">
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"WebApplication","name":"Weller Logs","url":"https://logs.ryweller.com/","description":"Free browser-based well log viewer: open LAS files, hang correlation cross sections, pick formation tops and run quick-look petrophysics (shale volume, porosity, water saturation, net pay). Files stay on your computer.","applicationCategory":"ScientificApplication","applicationSubCategory":"Well log analysis and correlation","operatingSystem":"Any (web browser)","browserRequirements":"Requires JavaScript","isAccessibleForFree":true,"offers":{"@type":"Offer","price":"0","priceCurrency":"USD"},"featureList":["LAS 1.2 and 2.0 well log viewer","Multi-well correlation cross sections, flattened on a top","Formation top picking","Gamma-ray shale volume, density and neutron-density porosity, Archie and Simandoux water saturation","Net pay and zone statistics","Isopach and structure maps","PDF and TIFF mudlog viewer","Export to PNG, LAS and CSV"],"image":"https://logs.ryweller.com/og.jpg","screenshot":"https://logs.ryweller.com/og.jpg","author":{"@type":"Person","name":"Ryan Weller","url":"https://ryweller.com","sameAs":["https://www.linkedin.com/in/ryweller/"]},"copyrightHolder":{"@type":"Person","name":"Ryan Weller"},"copyrightYear":2026}</script>
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="icon" href="icon-192.png" sizes="192x192">
@@ -60,7 +76,7 @@ input[type=number]{width:5.5em;font-family:"IBM Plex Mono",monospace;font-varian
 input[type=color]{width:28px;height:24px;padding:0;border:1px solid var(--line);background:none}
 #app{height:100%;display:flex;flex-direction:column;padding-inline:0}
 .topbar{display:flex;align-items:center;gap:14px;padding:6px 16px;background:var(--panel);border-bottom:1px solid var(--line);flex-wrap:wrap}
-.brand{font:600 18px "IBM Plex Sans Condensed",sans-serif;letter-spacing:.02em;display:flex;align-items:center;gap:8px}
+.brand{margin:0;font:600 18px "IBM Plex Sans Condensed",sans-serif;letter-spacing:.02em;display:flex;align-items:center;gap:8px}
 .brand small{font:500 11px "IBM Plex Mono",monospace;color:var(--muted);letter-spacing:.06em}
 .tabs{display:flex;gap:2px;padding:2px;border:1px solid var(--muted);border-radius:6px;background:var(--ground)}
 .tabs button{border:0;border-radius:4px;background:transparent;color:var(--muted);font-weight:500;padding:4px 14px}
@@ -454,9 +470,10 @@ i.sw{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:5p
 @media (prefers-reduced-motion:no-preference){ .banner{animation:drop .25s ease-out} @keyframes drop{from{transform:translateY(-6px);opacity:0}} }
 </style>
 
+<noscript><p style="padding:16px;max-width:640px">Weller Logs is a free well log viewer that runs in your browser: open LAS files, hang correlation cross sections, pick formation tops and run quick-look petrophysics. It needs JavaScript. See the <a href="methods.html">petrophysics methods</a>.</p></noscript>
 <div id="app">
   <header class="topbar">
-    <svg width="0" height="0" style="position:absolute" aria-hidden="true"><symbol id="wlMark" viewBox="0 0 32 32"><rect width="32" height="32" rx="7" fill="var(--panel)"/><path d="M4 5H28V10L4 9Z" fill="var(--mark)"/><path d="M4 11L28 12V15L4 19Z" fill="var(--accent)"/><path d="M4 21L28 17V27H4Z" fill="var(--ink)"/><path d="M10.8 3.5L11 5.1L10.5 6.7L11.3 8.3L11.5 9.9L11.7 11.5L11.1 13.1L10.7 14.7L10.4 16.3L10.4 17.9L10.3 19.5L10.9 21.1L10.8 22.7L11.2 24.3L11.4 25.9L11 27.5M20.6 3.5L20.9 5.1L21.5 6.7L21 8.3L21.1 9.9L20.9 11.5L21.2 13.1L21.3 14.7L21.2 16.3L21.6 17.9L21.5 19.5L21.1 21.1L20.9 22.7L21.1 24.3L21.2 25.9L20.8 27.5" fill="none" stroke="var(--panel)" stroke-width="2" stroke-linejoin="round"/></symbol></svg><div class="brand"><svg width="26" height="26" viewBox="3 3 26 26" aria-hidden="true"><use href="#wlMark" width="32" height="32"/></svg>Weller <span class="logs">Logs</span></div>
+    <svg width="0" height="0" style="position:absolute" aria-hidden="true"><symbol id="wlMark" viewBox="0 0 32 32"><rect width="32" height="32" rx="7" fill="var(--panel)"/><path d="M4 5H28V10L4 9Z" fill="var(--mark)"/><path d="M4 11L28 12V15L4 19Z" fill="var(--accent)"/><path d="M4 21L28 17V27H4Z" fill="var(--ink)"/><path d="M10.8 3.5L11 5.1L10.5 6.7L11.3 8.3L11.5 9.9L11.7 11.5L11.1 13.1L10.7 14.7L10.4 16.3L10.4 17.9L10.3 19.5L10.9 21.1L10.8 22.7L11.2 24.3L11.4 25.9L11 27.5M20.6 3.5L20.9 5.1L21.5 6.7L21 8.3L21.1 9.9L20.9 11.5L21.2 13.1L21.3 14.7L21.2 16.3L21.6 17.9L21.5 19.5L21.1 21.1L20.9 22.7L21.1 24.3L21.2 25.9L20.8 27.5" fill="none" stroke="var(--panel)" stroke-width="2" stroke-linejoin="round"/></symbol></svg><h1 class="brand"><svg width="26" height="26" viewBox="3 3 26 26" aria-hidden="true"><use href="#wlMark" width="32" height="32"/></svg>Weller <span class="logs">Logs</span></h1>
     <div class="byline"><span>By</span><a class="author" href="https://ryweller.com/services" target="_blank" rel="noopener">Ryan Weller</a><a class="linkedin" href="https://www.linkedin.com/in/ryweller/" target="_blank" rel="noopener" aria-label="Ryan Weller on LinkedIn" title="Ryan Weller on LinkedIn">in</a></div>
     <div class="tabs" role="tablist">
       <button data-mode="single" role="tab" aria-selected="true">Logs</button>
@@ -481,8 +498,8 @@ i.sw{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:5p
     <p class="lede">A free well-log viewer for quick correlation and zone petrophysics in the browser, built by <a href="https://ryweller.com" target="_blank" rel="noopener">Ryan Weller</a>. Opening a LAS file and hanging a cross section shouldn't need a license server. Your files stay on your machine.</p>
     <p>I'd like to hear from you:</p>
     <div class="asks">
-      <a href="https://www.linkedin.com/in/ryweller/" target="_blank" rel="noopener"><b>Feedback &amp; requests</b><span>A bug, a missing curve or a workflow you want next.</span></a>
-      <a href="https://ryweller.com/services" target="_blank" rel="noopener"><b>A demo</b><span>A walkthrough for you or your team, on your own data.</span></a>
+      <a href="https://ryweller.com/services/#contact" target="_blank" rel="noopener"><b>Feedback &amp; requests</b><span>A bug, a missing curve or a workflow you want next.</span></a>
+      <a href="https://ryweller.com/services/#contact" target="_blank" rel="noopener"><b>A demo</b><span>A walkthrough for you or your team, on your own data.</span></a>
       <a class="hire" href="https://ryweller.com/services" target="_blank" rel="noopener"><b>Hire me to build</b><span>Custom subsurface tools, AI workflows and analysis for your team.</span></a>
     </div>
     <p><button class="small" id="btnMethods">Methods, curve mapping and assumptions</button></p>

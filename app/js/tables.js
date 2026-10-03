@@ -26,7 +26,6 @@
     const columns = rows.shift() || [];
     return { delim, columns, rows: rows.map(r => columns.map((_, i) => r[i] ?? '')) };
   }
-  function toCSV(t) { const q = v => /[",\n]/.test(v) ? `"${String(v).replace(/"/g, '""')}"` : v; return [t.columns, ...t.rows].map(r => r.map(q).join(',')).join('\n') + '\n'; }
 
   /* ---------- Column names ---------- */
   // "Top (ft MD)" -> "top ft md"; the unit in brackets is kept separately.
@@ -328,7 +327,6 @@
     if (cls.kind === 'header') return { kind: 'header', source, records: headerRecords(t, cls, source), table: t, cls };
     return { kind: cls.kind, source, table: t, cls };
   }
-  const isTable = text => { const t = readDelimited(text); return t.columns.length >= 2 && t.rows.length >= 1; };
 
   /* ---------- .xlsx: every sheet becomes a table (tab-delimited text), dates as ISO ---------- */
   async function inflateRaw(bytes) {
@@ -378,5 +376,5 @@
     return out;
   }
 
-  root.WellerTables = { convert, unitKey, readDelimited, toCSV, classifyColumns, classify, guess, mapRecords, readTable, isTable, plan, applyValue, matchWell, cleanApi, cleanDate, same, fmt, readXlsx, unzip, HEADER_FIELDS };
+  root.WellerTables = { convert, unitKey, readDelimited, classifyColumns, classify, guess, mapRecords, readTable, plan, applyValue, matchWell, cleanApi, cleanDate, same, fmt, readXlsx, unzip, HEADER_FIELDS };
 })(typeof globalThis !== 'undefined' ? globalThis : this);
