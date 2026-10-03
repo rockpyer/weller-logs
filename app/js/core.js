@@ -174,7 +174,7 @@ function trackTipHTML(w,t,resolved){ const rows=resolved.filter(r=>r.curve).map(
     return `<div class="lr"><i style="background:${visibleColor(cfg.color)}"></i><b>${esc(curve.mnemonic)}</b>${curve.unit?` <small>${esc(curve.unit)}</small>`:''}${curve.cased?' <small>cased hole</small>':''}</div>
       <div class="tipr">${esc(curveInfo(cfg)||curve.description||cfg.label)}${curve.editNote?`<br><small>${esc(curve.editNote)}</small>`:''}${src?`<br><small>From ${esc(src)}</small>`:''}${others.length?`<br><small>Also in this well: ${esc(others.slice(0,5).join(', '))}${others.length>5?'…':''}. Pick in well settings.</small>`:''}</div>`; });
   const missing=resolved.filter(r=>!r.curve).map(r=>r.cfg.label);
-  return `<div class="tiph">${esc(t.name)}</div>`+(rows.join('')||'<div class="tipv">No curves for this track in this well</div>')+(missing.length?`<div class="tipd">Not in this well: ${esc(missing.join(', '))}</div>`:''); }
+  return `<div class="tiph">${esc(t.name)}</div>`+(rows.join('')||'<div class="tipv">No curves for this track in this well</div>')+(missing.length?`<div class="tipd">Not in this well: ${esc(missing.join(', '))}</div>`:'')+(rows.length?'<div class="tipd">Click a curve to edit its line, scale and fill</div>':''); }
 // Saved track sets and projects keep their styling but pick up new built-in tracks, curves and vendor aliases.
 const ADDED_TRACKS=['t13','t14','t15','t16','t17','t18','t19','t20','t21','t22','t23'], ADDED_CURVES=['t1','t3','t5','t7','t12'];
 function migrateTracks(tr){ const D=defaultTracks(); tr=[...tr];
@@ -329,6 +329,7 @@ function render(){ syncDatum();
   fitHeads(panel);
   S._ctx={cols,y};
   if(S.mode==='corr') drawCorrelations(cols,y,gaps,zc); else S._corrWarn='';
+  window.drawMeasure?.();
   renderSidebar(); renderPickBar();
   autosave();
 }
@@ -479,8 +480,8 @@ function logTrack(w,t,F,y,H,ticks){
   const head=document.createElement('div'); head.className='thead';
   head.innerHTML=`<div class="tn" draggable="true" data-tdrag="${t.id}" title="Drag onto another track to plot them together, or to its edge to move it"><span>${esc(t.name)}</span><button title="Edit track" data-edit="${t.id}">⚙</button></div>`;
   const MULTI=CURVE_COLORS;
-  const resolved=t.curves.flatMap(c=>{ if(!t.type&&w.pick?.[famKey(c)]==='*'){ const all=curveCandidates(w,c); if(all.length>1) return all.map((curve,k)=>({cfg:{...autoCfg(effCfg(w,c),curve),label:curve.mnemonic,color:k?MULTI[(k-1)%MULTI.length]:c.color,dash:c.dash,fill:k?'none':c.fill},curve})); }
-    const curve=resolveCurve(w,c); return [{cfg:curve?autoCfg(effCfg(w,c),curve):c,curve}]; });
+  const resolved=t.curves.flatMap((c,ci)=>{ if(!t.type&&w.pick?.[famKey(c)]==='*'){ const all=curveCandidates(w,c); if(all.length>1) return all.map((curve,k)=>({ci,cfg:{...autoCfg(effCfg(w,c),curve),label:curve.mnemonic,name:undefined,color:k?MULTI[(k-1)%MULTI.length]:c.color,dash:c.dash,fill:k?'none':c.fill},curve})); }
+    const curve=resolveCurve(w,c); return [{ci,cfg:curve?autoCfg(effCfg(w,c),curve):c,curve}]; });
   // Auto-scaled curves sharing a unit in one track share one scale (min and average thickness must be comparable).
   // A curve with no data, or one marked own (H2S vs CO2, both ppm but orders apart), keeps its own scale.
   const gk=r=>r.cfg.own?'own:'+r.cfg.label:String(r.cfg.unit||''), live=r=>r.curve.sparse||r.curve.nulls<r.curve.data.length;
@@ -492,10 +493,12 @@ function logTrack(w,t,F,y,H,ticks){
   const vs=resolveCurve(w,{aliases:['VSH_GR','VSH_SP']}), vSrc=gr&&!gr.sparse?'GR':vs?'SP':null;
   if(t.type==='lith') head.innerHTML+=`<div class="scale" style="color:var(--muted)" title="Computed from ${esc(gr?.mnemonic||vSrc||'GR')} cutoffs, not a mud-log or core description${gr?.cased?'. This gamma ray was logged through casing and reads low; pick an open-hole GR in well settings':''}"><span></span><span class="c">${vSrc?'computed* '+esc(vSrc==='GR'?gr.mnemonic:'SP')+(hasPE?' + PE':''):'needs GR or SP'}${gr?.cased?' · cased':''}</span><span></span></div><div class="legend">${Object.keys(lithRules(LP,hasPE)).map(k=>`<i style="background:${patCSS(k,LP.colors[k],!t.nopat)}"></i>`).join('')}</div>`;
   else if(t.type==='flags') head.innerHTML+=`<div class="legend">${resolved.filter(r=>r.curve).map(r=>`<i style="background:${r.cfg.color}"></i>`).join('')}</div>`;
-  else for(const {cfg,curve} of resolved){ if(t.type==='lithpct'&&!curve) continue; const s=document.createElement('div'); s.className='scale'; s.style.color=cfg.color; s.style.opacity=curve?1:.35; s.title=curve?.description||'';
+  else for(const {cfg,curve,ci} of resolved){ if(t.type==='lithpct'&&!curve) continue; const s=document.createElement('div'); s.className='scale'; s.style.color=cfg.color; s.style.opacity=curve?1:.35; s.title=curve?.description||'';
     if(curve?.events){ s.className='scale evleg'; s.style.color=''; const same=x=>String(x).toLowerCase()===String(t.name).toLowerCase(); s.innerHTML=(same(curve.mnemonic)?'':`<span class="c">${esc(curve.mnemonic)}</span>`)+(curve.classes.length===1&&same(curve.classes[0])?'':`<div class="evkeys">${eventLegendHTML(curve)}</div>`); head.appendChild(s); continue; }
     if(cfg.events&&!curve){ s.innerHTML=`<span class="c">${esc(cfg.label)} (none)</span>`; head.appendChild(s); continue; }
-    s.innerHTML=`<span>${cfg.min}</span><span class="c">${curve?curve.mnemonic:cfg.label+' (none)'}${cfg.unit?' '+cfg.unit:''}${cfg.tag?' · '+cfg.tag:''}</span><span class="r">${cfg.max}</span><span class="bar${curve?.sparse?' pts':cfg.dash?' dash':''}"></span>`; head.appendChild(s); }
+    const ls=WellerViews.styleOf(cfg.dash), lw=cfg.lw??WellerViews.DEFAULT_WIDTH;
+    if(!t.type){ s.classList.add('cedit'); s.dataset.cedit=`${t.id}:${ci}`; s.dataset.wid=w.id; s.dataset.cmin=cfg.min; s.dataset.cmax=cfg.max; }
+    s.innerHTML=`<span>${cfg.min}</span><span class="c">${curve?esc(cfg.name||curve.mnemonic):esc(cfg.name||cfg.label)+' (none)'}${cfg.unit?' '+cfg.unit:''}${cfg.tag?' · '+cfg.tag:''}</span><span class="r">${cfg.max}</span><span class="bar${curve?.sparse?' pts':ls==='solid'?'':' '+ls}" data-dash="${curve?.sparse?'':cfg.dash||''}" style="border-top-width:${Math.max(1,Math.round(lw*1.6))}px"></span>`; head.appendChild(s); }
   div.appendChild(head);
   const svg=d3.create('svg').attr('width',width).attr('height',H).classed('pick',S.picking);
   const [top,bot]=[S.view.top,S.view.bottom];
@@ -539,13 +542,14 @@ function logTrack(w,t,F,y,H,ticks){
           svg.append('image').attr('href',gradientStrip(cfg,curve,idx,ok,Y,sx,width,H)).attr('width',width).attr('height',H).attr('preserveAspectRatio','none').attr('clip-path',`url(#${gid})`).attr('opacity',op); }
         else svg.append('path').attr('d',d).attr('fill',cfg.fillColor||cfg.color).attr('opacity',op); }
       const col=visibleColor(cfg.color);
-      if(t.nowrap){ const line=d3.line().digits(1).defined(ok).x(i=>sx(curve.data[i])).y(Y); svg.append('path').attr('d',line(idx)).attr('fill','none').attr('stroke',col).attr('stroke-width',1.2).attr('stroke-dasharray',cfg.dash||null); continue; }
+      const lw=cfg.lw??WellerViews.DEFAULT_WIDTH;
+      if(t.nowrap||cfg.nowrap){ const line=d3.line().digits(1).defined(ok).x(i=>sx(curve.data[i])).y(Y); svg.append('path').attr('d',line(idx)).attr('fill','none').attr('stroke',col).attr('stroke-width',lw).attr('stroke-dasharray',cfg.dash||null); continue; }
       // Main trace: in-range samples, plus the first sample past an edge so the line reaches it. The rest wraps.
       const tOf=scaleT(cfg), inR=i=>{ const v=tOf(curve.data[i]); return v>=0&&v<=1; }, keep=idx.map((i,k)=>ok(i)&&(inR(i)||(k>0&&ok(idx[k-1])&&inR(idx[k-1]))||(k<idx.length-1&&ok(idx[k+1])&&inR(idx[k+1]))));
       const line=d3.line().digits(1).defined((i,k)=>keep[k]).x(i=>sx(curve.data[i])).y(Y);
-      svg.append('path').attr('d',line(idx)).attr('fill','none').attr('stroke',col).attr('stroke-width',1.2).attr('stroke-dasharray',cfg.dash||null);
+      svg.append('path').attr('d',line(idx)).attr('fill','none').attr('stroke',col).attr('stroke-width',lw).attr('stroke-dasharray',cfg.dash||null);
       const runs=wrapRuns(cfg,curve.data,idx,width); if(runs.length){ const wl=d3.line().digits(1).x(p=>p[0]).y(p=>Y(p[1])), g=svg.append('g').attr('class','wrap');
-        for(const r of runs) g.append('path').attr('d',r.length>1?wl(r):`M${r[0][0]},${Y(r[0][1])}h0.01`).attr('fill','none').attr('stroke',col).attr('stroke-width',1).attr('stroke-dasharray','1 2').attr('stroke-linecap','round').attr('opacity',.8); } }
+        for(const r of runs) g.append('path').attr('d',r.length>1?wl(r):`M${r[0][0]},${Y(r[0][1])}h0.01`).attr('fill','none').attr('stroke',col).attr('stroke-width',Math.max(.75,lw*.8)).attr('stroke-dasharray','1 2').attr('stroke-linecap','round').attr('opacity',.8); } }
   }
   flushBands();
   const node=svg.node(); if(t===visibleTracks(w)[0]) node.dataset.toplbl='1'; topMarks(node,w,F,y,S._zc);
@@ -558,7 +562,7 @@ function logTrack(w,t,F,y,H,ticks){
       showTip(e,(on.length?on.map(f=>`<div class="lr on"><i style="background:${f.cfg.color}"></i>${esc(f.cfg.label)}</div>`).join(''):'<div class="tipv">No flag at this depth</div>')+`<div class="tipd">${depthText(w,md)}</div>`); } });
   node.addEventListener('mousemove',onMove);
   node.addEventListener('mouseleave',()=>{ onMove.cancel(); $('cursor').style.display='none'; hideTip(); });
-  if(!t.type){ const onHead=perFrame(e=>{ if(e.target.closest('button')) return hideTip(); showTip(e,trackTipHTML(w,t,resolved)); }); head.addEventListener('mousemove',onHead); head.addEventListener('mouseleave',()=>{ onHead.cancel(); hideTip(); }); }
+  if(!t.type){ const onHead=perFrame(e=>{ if(e.target.closest('button')||!$('curvePop')?.hidden) return hideTip(); showTip(e,trackTipHTML(w,t,resolved)); }); head.addEventListener('mousemove',onHead); head.addEventListener('mouseleave',()=>{ onHead.cancel(); hideTip(); }); }
   const leg=head.querySelector('.legend');
   if(leg&&t.type==='lith'){ leg.addEventListener('mousemove',e=>showTip(e,legendTip(`Computed lithology from ${vSrc==='GR'?gr.mnemonic:vSrc||'GR'}${hasPE?' and PE':' only'}: a quick look from cutoffs, not described cuttings${gr?.cased?'. Cased-hole GR: unreliable':''}`,Object.entries(lithRules(LP,hasPE)).map(([n,r])=>[n,patCSS(n,LP.colors[n],!t.nopat),r])))); leg.addEventListener('mouseleave',hideTip); }
   if(leg&&t.type==='flags'){ leg.addEventListener('mousemove',e=>showTip(e,legendTip('Flags',flagsOn.map(f=>[f.cfg.label,f.cfg.color,(f.curve.description||'').replace(/^[^:]*:\s*/,'')])))); leg.addEventListener('mouseleave',hideTip); }
@@ -569,8 +573,8 @@ function logTrack(w,t,F,y,H,ticks){
    In pick mode a press on a line that does not move is still a pick, so a top can go right next to another. */
 function attachTopDrag(node,w,F,y){
   const near=e=>{ const r=node.getBoundingClientRect(), py=e.clientY-r.top; let best=null,bd=6; for(const tp of w.tops){ const d=Math.abs(y(F.z(tp.md))-py)-(tp.name===S.pickTop?1:0); if(d<bd){ bd=d; best=tp; } } return best; };
-  node.addEventListener('pointermove',e=>{ if(!S.drag) node.style.cursor=near(e)?'ns-resize':''; });
-  node.addEventListener('pointerdown',e=>{ if(e.button!==0) return; const tp=near(e); if(!tp) return; e.preventDefault();
+  node.addEventListener('pointermove',e=>{ if(!S.drag) node.style.cursor=!S.measuring&&near(e)?'ns-resize':''; });
+  node.addEventListener('pointerdown',e=>{ if(e.button!==0||S.measuring) return; const tp=near(e); if(!tp) return; e.preventDefault();
     const col=node.closest('.column'), r=node.getBoundingClientRect(); S.drag={w,tp,F,y,col,top:r.top,md:tp.md,y0:e.clientY,moved:false};
     node.setPointerCapture(e.pointerId); document.body.classList.add('dragging'); });
   node.addEventListener('pointermove',e=>{ const D=S.drag; if(!D||D.w!==w) return; if(Math.abs(e.clientY-D.y0)>2) D.moved=true; if(!D.moved) return;
@@ -670,6 +674,7 @@ function topNames(){ return [...new Set(S.wells.flatMap(w=>[...w.tops].sort((a,b
 function setPicking(on,name){ if(name!==undefined){ name=String(name).trim(); if(name) S.pickTop=name; }
   if(on&&!S.pickTop) S.pickTop=topNames()[0]||'';
   S.picking=!!on&&(S.mode==='single'||S.mode==='corr');
+  if(S.picking&&S.measuring) window.setMeasuring?.(false);
   $('btnTops').setAttribute('aria-pressed',S.picking); $('btnPick').classList.toggle('primary',S.picking); $('pickBar').hidden=!S.picking;
   document.querySelectorAll('#logPanel .tracks svg').forEach(n=>n.classList.toggle('pick',S.picking));
   if(!S.picking) $('cursor').classList.remove('pk');
@@ -995,25 +1000,39 @@ function svgToImage(svgEl){ const clone=svgEl.cloneNode(true); const vars=['--gr
   clone.insertBefore(st,clone.firstChild); clone.setAttribute('xmlns','http://www.w3.org/2000/svg');
   let xml=new XMLSerializer().serializeToString(clone); for(const v of vars) xml=xml.split(`var(${v})`).join(cssVar(v));
   return new Promise((res,rej)=>{ const img=new Image(); img.onload=()=>res(img); img.onerror=rej; img.src='data:image/svg+xml;charset=utf-8,'+encodeURIComponent(xml); }); }
-async function exportPNG(){ const panel=$('logPanel'); const pr=panel.getBoundingClientRect(); const Wp=panel.scrollWidth, Hp=panel.scrollHeight;
-  const scale=Math.min(2,16000/Hp,8000/Wp); const cv=document.createElement('canvas'); cv.width=Math.round(Wp*scale); cv.height=Math.round(Hp*scale); const ctx=cv.getContext('2d'); ctx.scale(scale,scale);
-  ctx.fillStyle=cssVar('--ground'); ctx.fillRect(0,0,Wp,Hp); const rel=el=>{ const r=el.getBoundingClientRect(); return {x:r.left-pr.left,y:r.top-pr.top+panel.scrollTop*0,w:r.width,h:r.height}; };
+/* PNG of the log panel. o.z0/o.z1 crop to a depth window (frame units, as the logs are hung), o.headers keeps the well
+   and track headers, o.res is pixels per screen pixel; the canvas shrinks to stay inside browser limits (cv.reduced). */
+// Track headers are sticky: measure and draw with the logs scrolled to the top, then put the scroll back.
+async function exportPNG(o={}){ const sc=$('logScroll'), keep=sc.scrollTop; sc.scrollTop=0; try{ return await exportPNGAt(o); } finally{ sc.scrollTop=keep; } }
+async function exportPNGAt(o){ const panel=$('logPanel'); const pr=panel.getBoundingClientRect(); const Wp=panel.scrollWidth;
+  const rel=el=>{ const r=el.getBoundingClientRect(); return {x:r.left-pr.left,y:r.top-pr.top,w:r.width,h:r.height}; };
+  const svgs=[...panel.querySelectorAll('.tracks svg')], H=svgs.length?+svgs[0].getAttribute('height'):panel.scrollHeight, svgTop=svgs.length?Math.min(...svgs.map(n=>rel(n).y)):0;
+  const yOf=z=>Math.max(0,Math.min(H,(z-S.view.top)*S.view.pxPerFt)), y0=o.z0!=null?yOf(Math.min(o.z0,o.z1)):0, y1=o.z1!=null?yOf(Math.max(o.z0,o.z1)):H;
+  const headers=o.headers!==false, hdrH=headers?svgTop:0;
+  const Z=WellerViews.exportSize({width:Wp,headerH:hdrH,y0,y1,res:o.res??2,maxW:o.maxW??8000,maxH:o.maxH??16000}), scale=Z.scale, Hp=hdrH+Z.dataH;
+  const cv=document.createElement('canvas'); cv.width=Math.round(Wp*scale); cv.height=Math.round(Hp*scale); cv.reduced=Z.reduced; const ctx=cv.getContext('2d'); ctx.scale(scale,scale);
+  // Panel y (header area, or depth below the top of the logs) to image y.
+  const Y=yp=>yp<svgTop?(headers?yp:0):hdrH+Math.max(0,yp-svgTop-y0);
+  ctx.fillStyle=cssVar('--ground'); ctx.fillRect(0,0,Wp,Hp);
   const mono='"IBM Plex Mono",monospace', cond='"IBM Plex Sans Condensed",sans-serif';
-  for(const col of panel.querySelectorAll('.column')){ const c=rel(col); ctx.fillStyle=cssVar('--paper'); ctx.fillRect(c.x,c.y,c.w,c.h); ctx.strokeStyle=cssVar('--line'); ctx.strokeRect(c.x+.5,c.y+.5,c.w-1,c.h-1);
-    const head=col.querySelector('.colhead'); const hr=rel(head); ctx.fillStyle=cssVar('--ink'); ctx.font=`600 14px ${cond}`; ctx.textBaseline='middle'; ctx.textAlign='left'; ctx.fillText(head.firstChild.textContent,hr.x+8,hr.y+hr.h/2);
-    ctx.font=`11px ${mono}`; ctx.fillStyle=cssVar('--muted'); ctx.textAlign='right'; ctx.fillText(head.lastChild.textContent,hr.x+hr.w-8,hr.y+hr.h/2); ctx.beginPath(); ctx.moveTo(hr.x,hr.y+hr.h); ctx.lineTo(hr.x+hr.w,hr.y+hr.h); ctx.stroke();
+  for(const col of panel.querySelectorAll('.column')){ const c=rel(col), cy=Y(c.y); ctx.fillStyle=cssVar('--paper'); ctx.fillRect(c.x,cy,c.w,Hp-cy); ctx.strokeStyle=cssVar('--line'); ctx.strokeRect(c.x+.5,cy+.5,c.w-1,Hp-cy-1);
+    if(headers){ const head=col.querySelector('.colhead'); const hr=rel(head); ctx.fillStyle=cssVar('--ink'); ctx.font=`600 14px ${cond}`; ctx.textBaseline='middle'; ctx.textAlign='left'; ctx.fillText(head.firstChild.textContent,hr.x+8,hr.y+hr.h/2);
+      ctx.font=`11px ${mono}`; ctx.fillStyle=cssVar('--muted'); ctx.textAlign='right'; ctx.fillText(head.lastChild.textContent,hr.x+hr.w-8,hr.y+hr.h/2); ctx.beginPath(); ctx.moveTo(hr.x,hr.y+hr.h); ctx.lineTo(hr.x+hr.w,hr.y+hr.h); ctx.stroke(); }
     for(const tr of col.querySelectorAll('.track')){ const t=rel(tr); const th=tr.querySelector('.thead'); const thr=rel(th);
-      ctx.textAlign='left'; ctx.fillStyle=cssVar('--muted'); ctx.font=`600 11px ${cond}`; ctx.fillText(th.querySelector('.tn').firstChild.textContent.toUpperCase(),thr.x+4,thr.y+10);
-      let yy=thr.y+22; for(const sc of th.querySelectorAll('.scale')){ const col2=getComputedStyle(sc).color; const sp=sc.querySelectorAll('span'); ctx.font=`10px ${mono}`; ctx.fillStyle=col2; ctx.globalAlpha=parseFloat(getComputedStyle(sc).opacity)||1;
-        ctx.textAlign='left'; ctx.fillText(sp[0].textContent,thr.x+4,yy); ctx.textAlign='center'; ctx.fillText(sp[1].textContent,thr.x+thr.w/2,yy); ctx.textAlign='right'; ctx.fillText(sp[2].textContent,thr.x+thr.w-4,yy);
-        const bar=sc.querySelector('.bar'); if(bar){ ctx.strokeStyle=col2; ctx.lineWidth=2; ctx.setLineDash(bar.classList.contains('dash')?[4,3]:[]); ctx.beginPath(); ctx.moveTo(thr.x+4,yy+7); ctx.lineTo(thr.x+thr.w-4,yy+7); ctx.stroke(); ctx.setLineDash([]); ctx.lineWidth=1; }
-        ctx.globalAlpha=1; yy+=20; }
-      const leg=th.querySelector('.legend'); if(leg){ let lx=thr.x+4; for(const i of leg.querySelectorAll('i')){ ctx.fillStyle=getComputedStyle(i).backgroundColor; ctx.fillRect(lx,yy-6,9,9); lx+=11; } }
-      ctx.strokeStyle=cssVar('--line'); ctx.beginPath(); ctx.moveTo(t.x+t.w,t.y); ctx.lineTo(t.x+t.w,t.y+t.h); ctx.moveTo(thr.x,thr.y+thr.h); ctx.lineTo(thr.x+thr.w,thr.y+thr.h); ctx.stroke();
-      const svg=tr.querySelector('svg'); const sr=rel(svg); const img=await svgToImage(svg); ctx.drawImage(img,sr.x,sr.y,sr.w,sr.h); } }
-  const ov=$('overlay'); if(ov.childNodes.length){ const img=await svgToImage(ov); ctx.drawImage(img,0,0); }
+      if(headers){ ctx.save(); ctx.beginPath(); ctx.rect(thr.x,thr.y,thr.w,thr.h); ctx.clip();
+        ctx.textAlign='left'; ctx.fillStyle=cssVar('--muted'); ctx.font=`600 11px ${cond}`; ctx.fillText(th.querySelector('.tn').firstChild.textContent.toUpperCase(),thr.x+4,thr.y+10);
+        let yy=thr.y+22; for(const sc of th.querySelectorAll('.scale')){ const col2=getComputedStyle(sc).color; const sp=sc.querySelectorAll('span'); ctx.font=`10px ${mono}`; ctx.fillStyle=col2; ctx.globalAlpha=parseFloat(getComputedStyle(sc).opacity)||1;
+          if(sp.length>=3){ ctx.textAlign='left'; ctx.fillText(sp[0].textContent,thr.x+4,yy); ctx.textAlign='center'; ctx.fillText(sp[1].textContent,thr.x+thr.w/2,yy); ctx.textAlign='right'; ctx.fillText(sp[2].textContent,thr.x+thr.w-4,yy); }
+          const bar=sc.querySelector('.bar'); if(bar){ const pat=(bar.dataset.dash||'').split(/[\s,]+/).map(Number).filter(v=>v>0); ctx.strokeStyle=col2; ctx.lineWidth=parseFloat(bar.style.borderTopWidth)||2; ctx.setLineDash(bar.classList.contains('pts')?[1,3]:pat); ctx.beginPath(); ctx.moveTo(thr.x+4,yy+7); ctx.lineTo(thr.x+thr.w-4,yy+7); ctx.stroke(); ctx.setLineDash([]); ctx.lineWidth=1; }
+          ctx.globalAlpha=1; yy+=20; }
+        const leg=th.querySelector('.legend'); if(leg){ let lx=thr.x+4; for(const i of leg.querySelectorAll('i')){ ctx.fillStyle=getComputedStyle(i).backgroundColor; ctx.fillRect(lx,yy-6,9,9); lx+=11; } }
+        ctx.restore(); ctx.strokeStyle=cssVar('--line'); ctx.beginPath(); ctx.moveTo(thr.x,thr.y+thr.h); ctx.lineTo(thr.x+thr.w,thr.y+thr.h); ctx.stroke(); }
+      ctx.strokeStyle=cssVar('--line'); ctx.beginPath(); ctx.moveTo(t.x+t.w,Y(t.y)); ctx.lineTo(t.x+t.w,Hp); ctx.stroke();
+      const svg=tr.querySelector('svg'); const sr=rel(svg), dy=sr.y-svgTop; const img=await svgToImage(svg); ctx.drawImage(img,0,y0,sr.w,Z.dataH,sr.x,hdrH+dy,sr.w,Z.dataH); } }
+  const ov=$('overlay'); if(ov.childNodes.length){ const img=await svgToImage(ov); if(headers&&svgTop>0) ctx.drawImage(img,0,0,Wp,svgTop,0,0,Wp,svgTop); ctx.drawImage(img,0,svgTop+y0,Wp,Z.dataH,0,hdrH,Wp,Z.dataH); }
   return cv; }
-async function exportView(){ if(S.mode==='mud') return window.WellerMud?.exportPNG(); if(S.mode==='map'){ $('stNote').textContent='Map PNG export is not available yet; use a screenshot.'; return; } if(S.mode==='stats'){ $('stXp').toBlob(b=>downloadBlob(`crossplot_${S.stats.x}_${S.stats.y}.png`.replace(/[^\w.-]+/g,'_'),b),'image/png'); return; } $('stNote').textContent='Rendering PNG…'; $('cursor').style.display='none';
+async function exportView(){ if(S.mode==='mud') return window.WellerMud?.exportPNG(); if(S.mode==='map'){ $('stNote').textContent='Map PNG export is not available yet; use a screenshot.'; return; } if(S.mode==='stats'){ $('stXp').toBlob(b=>downloadBlob(`crossplot_${S.stats.x}_${S.stats.y}.png`.replace(/[^\w.-]+/g,'_'),b),'image/png'); return; } if(window.openPngDlg) return openPngDlg();
+  $('stNote').textContent='Rendering PNG…'; $('cursor').style.display='none';
   try{ const cv=await exportPNG(); cv.toBlob(b=>{ downloadBlob(($('vbWell').textContent||'panel').replace(/[^\w-]+/g,'_')+'.png',b); },'image/png'); }
   catch(err){ $('stNote').textContent='PNG export failed: '+err.message; } }
 
@@ -1428,13 +1447,13 @@ addEventListener('paste',e=>{ if(e.target.closest?.('input,textarea,select,[cont
 // A survey imported from a table is not in the LAS, so the project carries it.
 // Projects saved before survey files kept a table survey as ref.survey.
 const dirSurveyOf=ref=>ref.dirSurvey||(ref.survey?.md?.length?{md:ref.survey.md,inc:ref.survey.inc,azi:ref.survey.azi,source:ref.survey.fromTable||'',unit:'',notes:[]}:undefined);
-function projectJSON(){ return { version:3, app:'weller-logs', savedAt:new Date().toISOString(), mode:S.mode, selected:S.selected, panel:S.panel, datum:S.datum, views:S.views, tracks:S.tracks, hiddenPoints:S.hiddenPoints, stats:S.stats, basemap:S.basemap, mapGrid:S.mapGrid?.kind?S.mapGrid:undefined, interp:S.interp, corr:S.corr, topColors:S.topColors,display:{units:S.units,depthLabels:S.depthLabels,showEmpty:S.showEmpty,headH:S.headH},keepZeros:S.keepZeros?.length?S.keepZeros:undefined,
+function projectJSON(){ return { version:3, app:'weller-logs', savedAt:new Date().toISOString(), mode:S.mode, selected:S.selected, panel:S.panel, datum:S.datum, views:S.views, tracks:S.tracks, hiddenPoints:S.hiddenPoints, stats:S.stats, basemap:S.basemap, mapGrid:S.mapGrid?.kind?S.mapGrid:undefined, interp:S.interp, corr:S.corr, topColors:S.topColors,display:{units:S.units,depthLabels:S.depthLabels,showEmpty:S.showEmpty,headH:S.headH},keepZeros:S.keepZeros?.length?S.keepZeros:undefined,savedViews:S.savedViews?.length?S.savedViews:undefined,
   mudlogs:window.WellerMud?.toJSON(),
   wells:S.wells.map(w=>({id:w.id,name:w.name,api:w.api,field:w.field,company:w.company,county:w.county,state:w.state,preset:w.preset,demo:w.demo,fileName:w.fileName,pick:w.pick,shifts:w.shifts,edits:w.edits,files:partsOf(w).length>1?partsOf(w).map(p=>({fileName:p.fileName,demo:p.demo})):undefined,location:w.location,elevation:w.elevation,header:w.header,attrs:w.attrs,depthUnit:w.depthUnit,tops:w.tops,points:pointsJSON(w),dirSurvey:w.dirSurvey,curveList:w.curves.filter(c=>!c.sparse).map(c=>c.mnemonic)})) }; }
 async function loadProject(p){ if(!p||p.app!=='weller-logs') throw new Error('not a Well(er) Logs project'); const missing=[];
   // A file may be a well on its own or one part of a merged well; find it wherever it is now.
   const findPart=fn=>{ for(const w of S.wells){ const ps=partsOf(w); if(ps.length===1&&w.fileName===fn) return w; const q=ps.find(q=>q.fileName===fn); if(q) return q; } return null; };
-  S.keepZeros=p.keepZeros||[];
+  S.keepZeros=p.keepZeros||[]; S.savedViews=Array.isArray(p.savedViews)?p.savedViews:[]; S.activeView=null;
   const las=p.data?.las||{}; for(const [n,e] of Object.entries(las)){ try{ lasCache.put(n,await gunzip(e)); }catch(err){} }
   if(p.data?.mudlogs) await window.WellerMud?.importData(p.data.mudlogs);
   if(p.display){ const d=p.display; if(d.units) S.units=d.units; if(d.depthLabels) S.depthLabels=d.depthLabels; S.showEmpty=!!d.showEmpty; S.headH=d.headH??null;
@@ -1495,7 +1514,7 @@ async function loadExample(name,quiet){
   $('stNote').textContent='Loading Denver Basin Niobrara logs…';
   const texts=await Promise.all(NIOBRARA_FILES.map(f=>fetchText('data/niobrara/'+f)));
   if(texts.some(t=>!t)){ $('stNote').textContent='Could not load the example logs (open the app from a web server, not a file).'; return false; }
-  S.wells=[]; S.tracks=loadTrackDefaults(); S.hiddenPoints=[]; S.views=newViews();
+  S.wells=[]; S.tracks=loadTrackDefaults(); S.hiddenPoints=[]; S.views=newViews(); S.savedViews=[]; S.activeView=null; S.measure=null;
   // Example parameters. Rw: max specific conductance 61.3 mS/cm at 25 C in Niobrara produced water, Weld County
   // (USGS data release doi:10.5066/P14CRSQQ); late-time samples approach formation water, giving Rw 0.16 ohm.m at 77 F.
   S.interp={...interpDefaults(),matrix:'auto',swPhi:'total',rw:0.16,rwTemp:77,
@@ -1528,7 +1547,7 @@ async function newProject(quiet){ const mud=window.WellerMud?._M.logs.length||0,
     option:'Also reset settings: tracks, interpretation parameters, units, depth labels, header height and map'});
   if(!r) return;
   window.WellerMud?.clear(); lasCache.clear(); S.wells=[]; S.panel=[]; S.selected=null; S.views=newViews(); S.view=S.views.single; S.datum='MD'; S.topColors={}; lsSet('weller.topColors',{});
-  S.hiddenPoints=[]; S.keepZeros=[]; S.stats=statsDefaults(); S.interp=interpDefaults(); S.corr={gap:64,spacing:'equal',scale:0.75}; S.fileHandle=null; undoProject=null; lastReport=[];
+  S.hiddenPoints=[]; S.keepZeros=[]; S.stats=statsDefaults(); S.interp=interpDefaults(); S.corr={gap:64,spacing:'equal',scale:0.75}; S.fileHandle=null; undoProject=null; lastReport=[]; S.savedViews=[]; S.activeView=null; S.measure=null;
   if(r.opt){ for(const k of ['weller.trackDefaults2','weller.units','weller.depthLabels','weller.headH','weller.autoMerge']) try{ localStorage.removeItem(k); }catch(e){}
     S.units='imperial'; S.depthLabels={md:true,ss:true}; S.headH=null; S.showEmpty=false; $('showEmpty').checked=false; setBasemap('map');
     document.querySelectorAll('[data-units]').forEach(b=>b.setAttribute('aria-pressed',b.dataset.units===S.units)); }
@@ -1596,7 +1615,7 @@ async function exportBundle(){ $('stNote').textContent='Packing the project bund
 function placePop(pop,anchor){ pop.hidden=false; const r=anchor.getBoundingClientRect(); pop.style.top=(r.bottom+8)+'px'; pop.style.left=Math.max(16,Math.min(r.right-pop.offsetWidth,innerWidth-pop.offsetWidth-16))+'px'; }
 $('btnAbout').onclick=e=>{ e.stopPropagation(); const p=$('aboutPop'); p.hidden?placePop(p,e.currentTarget):(p.hidden=true); };
 document.addEventListener('click',e=>{ if(e.target.closest('[data-close]')){ e.target.closest('.pop').hidden=true; return; }
-  if(e.target.closest('#btnNotes,#btnAbout,#btnExport,#mudScroll,#mudPop')) return;
+  if(e.target.closest('#btnNotes,#btnAbout,#btnExport,#btnViews,#mudScroll,#mudPop,#colorPop,[data-cedit]')) return;
   document.querySelectorAll('.pop:not([hidden])').forEach(p=>{ if(!p.contains(e.target)) p.hidden=true; }); });
 document.addEventListener('keydown',e=>{ if(e.key!=='Escape') return; document.querySelectorAll('.pop:not([hidden])').forEach(p=>p.hidden=true);
   const open=[...document.querySelectorAll('.modal:not([hidden])')]; const top=open[open.length-1]; if(top){ e.preventDefault(); if(top.id==='revDlg') closeReview(null); else if(top.id==='kindDlg') closeKind(null); else top.hidden=true; } });
