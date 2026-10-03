@@ -1,0 +1,7 @@
+// Cloudflare Workers static assets: serves app/ at logs.ryweller.com. Deployed by Workers Builds on every push to main.
+{
+  "name": "weller-logs",
+  "compatibility_date": "2026-09-01",
+  "assets": { "directory": "./app" },
+  "routes": [{ "pattern": "logs.ryweller.com", "custom_domain": true }]
+}
