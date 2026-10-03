@@ -1,8 +1,9 @@
-# Backlog: ideas from StarSteer, and thickness maps
+# Backlog: ideas from StarSteer, free browser tools, and geomechanics
 
 October 2026. What ROGII's [StarSteer](https://rogii.com/products/starsteer) added from 2020 to 2026, sorted into
 what helps a log-correlation tool and what does not, then a backlog for Well(er) Logs. Scope stays the same:
-correlation panels and log display in a browser, not geosteering.
+correlation panels and log display in a browser, not geosteering. Section 4 adds a survey of free and low-cost browser
+tools (October 2026) and a geomechanics and borehole-image roadmap.
 
 Source: ROGII release posts and press ([2026.1](https://www.rogii.com/blog/starsteer-2026-1),
 [2025](https://rogii.com/blog/blog-post-all-the-features-we-launched-in-2025-part-1),
@@ -161,3 +162,89 @@ each other.
 3. ~~Thin-plate grid and contours clipped to the hull.~~ Done.
 4. Section line on the map, and the gridded top ghosted in the section.
 5. PLSS overlay; GeoJSON export.
+
+## 4. Free browser tools, geomechanics and images
+
+October 2, 2026. Well(er) Logs already beats every free browser tool on multi-well correlation, zone stats and
+crossplots. The gaps are versioning, print-grade export, DLIS, and anything geomechanical.
+
+### Landscape
+
+| Tool | Does well | Take |
+|---|---|---|
+| nabilog | Client-side sandbox, Git-style commits per well, composite PDF, two-click depth shifts ($99/mo solo) | Version history, PDF composite, depth shift |
+| [petrophysics.io](https://petrophysics.io) | Viewer, crossplot, in-browser Python, copy-paste AI agent prompts | Agent prompt pack |
+| GeophysX | Free LAS, LIS and DLIS in the browser, image arrays, Python scripting | DLIS/LIS import, image track |
+| WellInsight (AIQ) | AI borehole image, stress, 1D mechanical earth model (MEM), pay; per-foot SaaS | Geomechanics and image roadmap below |
+| [tools.petropt.com](https://tools.petropt.com) + petro-mcp | Paid calculators and an MCP server so LLMs can run log math | Agent interface (parked) |
+| SubsurfAI | Streamlit, Archie plus Claude chat, 4-well compare | Chat over loaded wells (parked) |
+| [Equinor webviz well log viewer](https://github.com/equinor/webviz-subsurface-components) | Open-source React log and correlation component, synced MD/TVD, flattening | Reference spec for correlation UX |
+
+Also seen: WVU Log Viewer, Go Geophysical plotter, plotpetrophysics, and a review of free viewers.
+
+### Now: client-side, keeps the no-upload pitch
+
+14. **Version history ("Git for wells").** Named snapshots of the project with a short message, a diff of tops and
+    parameters between two snapshots, one-click rollback. Store in IndexedDB and bundle into the saved project file.
+    Builds on the existing undo snapshots. (nabilog)
+15. **Workflow recipes.** Save an interpretation as a recipe (Vsh method, matrix, Archie a/m/n, Rw, cutoffs, per zone)
+    and replay it on every well, or a new one, in one click. Each run is logged in the version history.
+16. **Composite log PDF.** Print-ready multi-track PDF with header block, scale bar, tops and zone fills, plus a
+    correlation-panel PDF. PNG export exists. (nabilog, WellInsight)
+17. **Depth shift.** Per-curve offsets exist in the curve editor. Add a two-click pick to shift a curve, a run or a
+    whole well, recorded and undoable. Skip if the existing offset plus tops tooling covers it in use.
+18. **More import formats.** Curve data as CSV in and out first (tops and zone stats CSV export exist). DLIS and LIS
+    later; check whether GeophysX parses DLIS in JS before writing a parser. Today DLIS/LIS are detected and refused
+    with a message.
+19. **Display types.** Blocky/discrete curves (facies, flags, pay) and a stepped style for core points, using the
+    existing point-data track. (WellInsight)
+20. **Net pay intervals.** From zone cutoffs, list contiguous pay intervals with thickness, mean porosity and Sw,
+    ranked and exportable. The honest, non-AI version of WellInsight's "autonomous perforation selection."
+
+### Next: 1D mechanical earth model
+
+Build WellInsight's AI-1DMEM as transparent empirical equations first, calibrated by hand to point data (leak-off test
+(LOT), formation integrity test (FIT), pressure tests), which the point-data track already holds. Add ML
+auto-calibration only once the empirical chain works. Each step feeds the next.
+
+21. **Trajectory and TVD.** Every stress in true vertical depth (TVD) from imported surveys. Minimum curvature exists;
+    this is mostly wiring.
+22. **Missing elastic logs.** Shear sonic from compressional via Greenberg-Castagna, flagged as synthetic.
+23. **Overburden.** Integrate density, with an extrapolation above the logged top (Amoco or Miller style).
+24. **Pore pressure.** Eaton from sonic or resistivity, with a user-picked normal compaction trend in shales.
+25. **Elastic moduli.** Dynamic Young's modulus and Poisson's ratio from DTC, DTS and RHOB; dynamic-to-static
+    conversion.
+26. **Rock strength.** Unconfined compressive strength (UCS) and friction angle from published correlations; the user
+    picks the correlation by lithology.
+27. **Horizontal stresses.** Minimum horizontal stress (Shmin) by the poroelastic method with tectonic strains; maximum
+    (SHmax) bounded by the stress polygon.
+28. **Fracture gradient and mud window.** Kick, breakout, loss and breakdown limits as a shaded mud-weight track.
+
+Zone stats and the correlation panel then carry geomechanical curves across wells for free. Document each equation
+in [methods.md](../app/methods.md) as the existing interpretation is.
+
+### Later: borehole image and stress
+
+Manual picking with good tooling comes before any automatic detection; most interpreters QC every auto-pick anyway.
+
+29. **Image array track.** Render pad images (LAS array curves or DLIS) with static and dynamic normalization, pad gap
+    fill and calibration. (WellInsight AI-BHI)
+30. **Sinusoid picking.** Click to fit planes; classes for bedding, conductive and resistive fractures, faults,
+    stylolites, breakouts and drilling-induced tensile fractures (DITF).
+31. **Dip conversion.** Apparent to true dip and back, using the survey.
+32. **Feature intensity.** Fracture count per foot as a curve, so it drops into zone stats.
+33. **Stereonets and rose diagrams.** Per zone, with simple clustering of fracture sets. (AI-Geostress)
+34. **Stress orientation and regime.** SHmax azimuth from breakouts and DITFs; regime (normal, strike-slip, reverse)
+    from the 1D MEM magnitudes and the stress polygon.
+35. **Auto-detection (research spike).** Test whether a small image model can pre-pick sinusoids well enough to save
+    time. Ship only with a confidence slider and accept/reject per pick.
+
+### Parked
+
+| Item | Why parked |
+|---|---|
+| Real-time multi-user collaboration, SSO | Needs a backend and accounts; breaks the client-side, no-upload pitch |
+| Image-only porosity and permeability (finite-element Darcy flow) | WellInsight's AI-Payzone. Heavy compute, weak validation story, niche users |
+| Primary and secondary porosity partitioning | Depends on the image track and core calibration; revisit after the image work |
+| ML auto-calibration of the 1D MEM | Only worth it once the empirical chain is trusted and calibration data exist |
+| In-browser Python (Pyodide) and an agent/MCP interface | Good ideas from petrophysics.io and petro-mcp, but a large build. A copy-paste agent prompt plus a clean JSON export gets most of the value cheaply |
