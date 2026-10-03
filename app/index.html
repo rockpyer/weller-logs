@@ -209,17 +209,13 @@ details.emptytr .trackrow{opacity:.7}
 .scale.cedit{cursor:pointer;border-radius:3px;margin-left:-2px;margin-right:-2px;padding:0 2px}
 .scale.cedit:hover{background:var(--ground)}
 .scale .bar.dot{border-top-style:dotted}.scale .bar.dashdot{border-top-style:dashed}
-#curvePop{width:min(300px,calc(100vw - 32px));padding:10px 12px}
+#curvePop{width:min(320px,calc(100vw - 32px));padding:10px 12px}
 #curvePop h4 b{font-family:"IBM Plex Mono",monospace;font-size:13px}
-.cpgrid{display:grid;grid-template-columns:auto 1fr;gap:6px 10px;align-items:center;margin:6px 0}
-.cpgrid>label{color:var(--muted);font-size:12px}
-.cpgrid input[type=text],.cpgrid input[type=number],.cpgrid select{width:100%;min-width:0;font-size:12.5px}
-.cpgrid input[type=checkbox]{justify-self:start}
-.cprow{display:flex;gap:6px;align-items:center;min-width:0}.cprow select,.cprow input[type=number]{flex:1;min-width:0}
-.cprow .mini input{width:4.2em}
-.cpsec{display:flex;justify-content:space-between;align-items:center;border-top:1px solid var(--line);padding-top:8px;margin-top:8px;font:600 11px "IBM Plex Sans Condensed",sans-serif;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)}
-.cpsec button{text-transform:none;letter-spacing:0;font-weight:500}
-.cpnone{margin:4px 0 0;font-style:italic}
+.cpinfo{margin:0 0 8px;font-size:12px;line-height:1.4}
+.cpopts{gap:8px;font-size:12.5px}.cpopts .row>label{display:inline-flex;gap:5px;align-items:center;min-width:0}
+.cpopts .row>label:has(select),.cpopts .row>label:has(input[type=text]){flex:1}.cpopts .row select,.cpopts input[type=text]{flex:1;min-width:0;max-width:100%}
+#curvePop .cpopts input[type=number]{width:4.8em}
+.cpsrc{margin:0;font-size:11.5px;line-height:1.45;overflow-wrap:anywhere}
 .cpfoot{display:flex;justify-content:space-between;align-items:center;gap:8px;border-top:1px solid var(--line);padding-top:8px;margin-top:8px}
 button.danger{color:#C62828}
 body.measuring #logPanel .tracks svg{cursor:crosshair}
