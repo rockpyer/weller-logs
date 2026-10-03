@@ -3,5 +3,6 @@ Copyright 2026 Ryan Weller
 
 Proprietary; all rights reserved (see LICENSE).
 
-Third-party code in app/vendor keeps its own licenses: d3 (ISC), Leaflet (BSD-2-Clause), pdf.js (Apache-2.0),
-UTIF.js and pako (MIT).
+Third-party code keeps its own licenses, reproduced in full in app/vendor/LICENSES.txt: d3 (ISC), Leaflet
+(BSD-2-Clause), pdf.js (Apache-2.0), UTIF.js (MIT), pako (MIT and Zlib), and petroplots (MIT; curve aliases and
+lithology colors adapted in app/js).
