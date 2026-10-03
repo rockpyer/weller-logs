@@ -182,7 +182,8 @@ function pointCfg(m) {
 function defaultTrackFor(m) {
   if (eventSeries(m)) return 'new:' + m;
   if (/PHI|POR|GRAIN|RHOG|RHOM|GD$/.test(m)) return S.tracks.find(t => t.id === 't3') ? 't3' : 'new:Core';
-  if (/^(K|PERM|KAIR|KH|KV|KLINK)|_K$|PERM/.test(m)) return 'new:Permeability';
+  // K, KAIR, K_H, CORE_K, PERM_MD; not K_FELDSPAR or KAOLINITE from an XRD sheet
+  if (/^(K|KAIR|KH|KV|KLINK|KINF|KMAX|K90)$|^K_(AIR|H|V|MAX|90|INF|KLINK|MD)$|_K$|PERM/.test(m)) return 'new:Permeability';
   return 'new:Point data';
 }
 
