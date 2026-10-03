@@ -197,6 +197,45 @@ details.emptytr .trackrow{opacity:.7}
 .scale .c{text-align:center;font-weight:500}
 .scale .bar{grid-column:1/4;height:0;border-top:2px solid currentColor;margin-top:1px}
 .scale .bar.dash{border-top-style:dashed}
+.scale.cedit{cursor:pointer;border-radius:3px;margin-left:-2px;margin-right:-2px;padding:0 2px}
+.scale.cedit:hover{background:var(--ground)}
+.scale .bar.dot{border-top-style:dotted}.scale .bar.dashdot{border-top-style:dashed}
+#curvePop{width:min(300px,calc(100vw - 32px));padding:10px 12px}
+#curvePop h4 b{font-family:"IBM Plex Mono",monospace;font-size:13px}
+.cpgrid{display:grid;grid-template-columns:auto 1fr;gap:6px 10px;align-items:center;margin:6px 0}
+.cpgrid>label{color:var(--muted);font-size:12px}
+.cpgrid input[type=text],.cpgrid input[type=number],.cpgrid select{width:100%;min-width:0;font-size:12.5px}
+.cpgrid input[type=checkbox]{justify-self:start}
+.cprow{display:flex;gap:6px;align-items:center;min-width:0}.cprow select,.cprow input[type=number]{flex:1;min-width:0}
+.cprow .mini input{width:4.2em}
+.cpsec{display:flex;justify-content:space-between;align-items:center;border-top:1px solid var(--line);padding-top:8px;margin-top:8px;font:600 11px "IBM Plex Sans Condensed",sans-serif;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)}
+.cpsec button{text-transform:none;letter-spacing:0;font-weight:500}
+.cpnone{margin:4px 0 0;font-style:italic}
+.cpfoot{display:flex;justify-content:space-between;align-items:center;gap:8px;border-top:1px solid var(--line);padding-top:8px;margin-top:8px}
+button.danger{color:#C62828}
+body.measuring #logPanel .tracks svg{cursor:crosshair}
+.measure{position:absolute;z-index:3;pointer-events:none;background:color-mix(in srgb,var(--accent) 14%,transparent);border-top:1.5px solid var(--accent);border-bottom:1.5px solid var(--accent)}
+.measure .ml{position:absolute;left:6px;top:3px;background:var(--panel);border:1px solid var(--accent);border-radius:4px;padding:3px 7px;font:12px "IBM Plex Sans Condensed",sans-serif;color:var(--ink);white-space:nowrap;line-height:1.35;box-shadow:0 2px 8px rgba(0,0,0,.15)}
+.measure .ml small{display:block;font:10.5px "IBM Plex Mono",monospace;color:var(--muted)}
+#btnMeasure[aria-pressed=true]{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+#viewsMenu{width:min(340px,calc(100vw - 32px))}
+#viewsMenu .vmhead{display:flex;justify-content:space-between;align-items:baseline;padding:4px 10px 6px}
+#viewsMenu .vmrow{display:flex;align-items:center;border-radius:4px}#viewsMenu .vmrow.on{background:var(--ground)}
+#viewsMenu .vmrow>button[data-view]{flex:1;min-width:0}
+#viewsMenu .vmrow .x{width:auto;padding:4px 6px;color:var(--muted)}
+#viewsMenu .vmempty{margin:0 10px 6px}
+#viewsMenu .vmsave{display:flex;gap:6px;padding:4px}#viewsMenu .vmsave input{flex:1;min-width:0}#viewsMenu .vmsave button{width:auto;padding:4px 10px;display:inline-block;background:var(--accent);color:var(--accent-ink);border-radius:4px;font-weight:600}#viewsMenu .vmsave button:hover{background:var(--accent);filter:brightness(1.08)}
+#pngDlg .dlg{width:min(1000px,100%)}
+.pngwrap{display:grid;grid-template-columns:minmax(260px,320px) 1fr;gap:16px;min-height:0}
+.pngopts{display:flex;flex-direction:column;gap:10px;font-size:13px}
+.pngopts fieldset{border:1px solid var(--line);border-radius:6px;padding:8px 10px;display:flex;flex-direction:column;gap:6px;margin:0}
+.pngopts legend{font:600 11px "IBM Plex Sans Condensed",sans-serif;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);padding:0 4px}
+.pngopts .row{display:flex;gap:6px;align-items:center;flex-wrap:wrap}.pngopts input[type=number]{width:6.5em}.pngopts select{max-width:100%}
+.pngopts>label{display:flex;gap:6px;align-items:center}
+#pngInfo{margin:0;line-height:1.45}
+.pngprev{background:var(--ground);border:1px solid var(--line);border-radius:6px;padding:10px;max-height:62vh;overflow:auto;display:flex;justify-content:center;align-items:flex-start;min-height:200px;transition:opacity .15s}
+.pngprev.busy{opacity:.5}.pngprev canvas{max-width:100%;height:auto;box-shadow:var(--shadow)}
+@media (max-width:720px){.pngwrap{grid-template-columns:1fr}}
 .legend{display:flex;gap:2px;margin-top:3px;flex-wrap:wrap}
 .evleg{display:block}.evkeys{display:flex;flex-wrap:wrap;gap:2px 8px;justify-content:center;font-size:10px;color:var(--ink)}
 .evk{display:inline-flex;align-items:center;gap:3px;white-space:nowrap}.evk i{display:block;width:8px;height:8px;border-radius:50%}
@@ -441,6 +480,7 @@ i.sw{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:5p
     <hr>
     <button role="menuitem" data-export="bundle"><b>Full project bundle</b><span>.zip: project file, LAS, tops and stats CSV, section PNG</span></button>
   </div>
+  <div id="viewsMenu" class="pop menu" role="menu" aria-label="Saved views" hidden></div>
   <div class="shell">
     <aside class="side">
       <details open id="sideMap"><summary class="mapsum"><h2>Map</h2><span class="tools seg" role="group" aria-label="Basemap"><button class="small" data-basemap="map" aria-pressed="true">Map</button><button class="small" data-basemap="sat" aria-pressed="false">Satellite</button><button class="small" id="mapBig" title="Isopach and structure maps (Map tab)">Gridding</button></span></summary>
@@ -483,6 +523,7 @@ i.sw{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:5p
       <div class="viewbar">
         <span class="well" id="vbWell"></span>
         <button class="small tpbtn" id="btnTops" aria-pressed="false" title="Pick tops: choose a top, click it in each well, drag to move, type an exact depth (T)"><i aria-hidden="true"></i>Pick tops</button>
+        <button class="small" id="btnMeasure" aria-pressed="false" title="Measure: drag on a log to read the interval's MD, true vertical thickness and TVDSS (M)">Measure</button>
         <label id="datumWrap" hidden>Hang on
           <select id="datum">
             <option value="MD">Measured depth</option>
@@ -493,6 +534,7 @@ i.sw{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:5p
         <label id="spacingWrap" hidden>Spacing
           <select id="spacing"><option value="equal">Equal</option><option value="distance">By distance</option></select>
         </label>
+        <button class="small" id="btnViews" aria-haspopup="menu" title="Saved views: the section, hang, tracks and scale under a name. Kept in the session and the project.">Views ▾</button>
         <span class="scalegrp"><button class="small" id="btnFit" title="Fit the logs to the window: sets the scale">Fit</button>
         <label title="Vertical scale. 1:240 means one inch on screen is 240 inches (20 ft) of hole: 5 in per 100 ft, the common detail print. 1:600 is 2 in per 100 ft, the common correlation print. Screen sizes assume 96 px per inch. Ctrl or Cmd + scroll zooms freely.">Scale <select id="scaleSel" aria-label="Vertical scale"></select></label>
         <button class="small" id="zoomOut" title="Smaller scale">−</button>
@@ -622,6 +664,29 @@ i.sw{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:5p
   </div>
 </div>
 
+<div id="pngDlg" class="modal" hidden>
+  <div class="dlg" role="dialog" aria-labelledby="pngTitle">
+    <h3 id="pngTitle">Export PNG</h3>
+    <div class="pngwrap">
+      <div class="pngopts">
+        <fieldset><legend>Depth range</legend>
+          <div class="row"><span id="pngZLbl">MD</span> <span class="mini" id="pngU">ft</span></div>
+          <div class="row"><input type="number" id="pngZ0" step="any" aria-label="From depth"><label>to <input type="number" id="pngZ1" step="any" aria-label="To depth"></label></div>
+          <div class="row"><button type="button" class="small" id="pngAll">Whole log</button><button type="button" class="small" id="pngScreen">On screen</button></div>
+          <div class="row" id="pngTops"><label>Top <select id="pngT0"></select></label><label>to <select id="pngT1"></select></label></div>
+        </fieldset>
+        <label>Scale <select id="pngScale"></select></label>
+        <label>Resolution <select id="pngRes"><option value="1">1× (96 px per inch)</option><option value="2" selected>2× (192 px per inch)</option><option value="3">3× (288 px per inch)</option></select></label>
+        <label><input type="checkbox" id="pngHead" checked> Well and track headers</label>
+        <label id="pngLightL"><input type="checkbox" id="pngLight" checked> White background (for print)</label>
+        <p class="hint" id="pngInfo"></p>
+      </div>
+      <div class="pngprev" id="pngPrev" aria-label="Preview"></div>
+    </div>
+    <div class="foot"><span style="flex:1"></span><button id="pngCancel">Cancel</button><button class="primary" id="pngGo">Download PNG</button></div>
+  </div>
+</div>
+
 <div id="askDlg" class="modal" hidden>
   <div class="dlg" role="alertdialog" aria-labelledby="askTitle" aria-describedby="askBody">
     <h3 id="askTitle"></h3>
@@ -746,7 +811,9 @@ i.sw{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:5p
 <script src="js/stats.js"></script>
 <script src="js/interp.js"></script>
 <script src="js/zip.js"></script>
+<script src="js/views.js"></script>
 <script src="js/core.js"></script>
+<script src="js/tools.js"></script>
 <script src="js/mudcal.js"></script>
 <script src="js/mudlog.js"></script>
 
