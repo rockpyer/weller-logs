@@ -16,5 +16,5 @@ All cover 6,530 to 7,300 ft MD (Sharon Springs base through the Niobrara into th
 to v/v), three blank permeability cells, no well name in the geomech file.
 
 Ranges, all typical of the Niobrara and its bounding shales (checked by `tests/samples.test.mjs`): porosity 1.5 to 14%,
-matrix permeability a few to a few hundred nD, grain density 2.57 to 2.72 g/cc (kerogen pulls the marls down), TOC 0.7 to
+matrix permeability 15 to 1,900 nD (median about 100), grain density 2.57 to 2.72 g/cc (kerogen pulls the marls down), TOC 0.7 to
 5.4 wt%, static Young's modulus 1.4 to 5.7 Mpsi, Poisson's ratio 0.21 to 0.30, calcite 36 to 79 wt% in the chalks and marls.
