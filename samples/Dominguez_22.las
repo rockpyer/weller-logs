@@ -38,7 +38,7 @@
  TOP_REPETTO.FT 3450                 : Formation top: Repetto
  TOP_PUENTE.FT 5050                 : Formation top: Puente
 ~OTHER
- Synthetic well generated for the Weller Logs demo. Not a real well.
+ Synthetic well generated for the Well(er) Logs demo. Not a real well.
 ~A        DEPT        GR        SP      CALI       ILD       ILM       SFL      RHOB      NPHI        DT       ROP       WOB        TG        C1        C2
   100.0000   92.9722  -27.0542    8.5649    9.4817    9.9871   18.6745    2.3084    0.3218   90.2950  111.6811   25.6060    4.6047  187.2501    9.9807
   100.5000   90.2043  -28.2658    8.5107    9.7095    9.2917   19.6494    2.2992    0.3133   87.1022  120.8871   26.0819    4.8568  207.1181    5.7196

@@ -1,7 +1,7 @@
 # Backlog: ideas from StarSteer, and thickness maps
 
 October 2026. What ROGII's [StarSteer](https://rogii.com/products/starsteer) added from 2020 to 2026, sorted into
-what helps a log-correlation tool and what does not, then a backlog for Weller Logs. Scope stays the same:
+what helps a log-correlation tool and what does not, then a backlog for Well(er) Logs. Scope stays the same:
 correlation panels and log display in a browser, not geosteering.
 
 Source: ROGII release posts and press ([2026.1](https://www.rogii.com/blog/starsteer-2026-1),
@@ -16,7 +16,7 @@ Their full notes are at kb.solo.cloud. 2023.2 to 2024.1 have no public feature l
 
 **A. Display, ease, speed, consistency, project management**
 
-| Release | Feature | Weller Logs |
+| Release | Feature | Well(er) Logs |
 |---|---|---|
 | 2020.3 | New UI; vertical and horizontal zoom; mudlog in the log track | Have |
 | 2020.4 | Starred objects; several logs exported as one LAS; mudlog in the correlation panel | Have LAS export and mudlogs; no starring |

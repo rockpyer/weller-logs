@@ -1,6 +1,6 @@
-# Petrophysics in Weller Logs
+# Petrophysics in Well(er) Logs
 
-Weller Logs does a deterministic quick-look interpretation. Every equation is in
+Well(er) Logs does a deterministic quick-look interpretation. Every equation is in
 [`app/js/petro.js`](../app/js/petro.js) and unit-tested in [`tests/petro.test.mjs`](../tests/petro.test.mjs).
 Parameters live in the **Interpretation** panel and are saved with the project. Computed curves are added to each
 well with the mnemonics below, so they can be plotted, crossplotted, averaged and exported like any log.

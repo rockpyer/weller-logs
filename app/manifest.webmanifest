@@ -1,6 +1,6 @@
 {
-  "name": "Weller Logs",
-  "short_name": "Weller",
+  "name": "Well(er) Logs",
+  "short_name": "Well(er) Logs",
   "description": "Well log viewer with correlation panels",
   "start_url": "./",
   "scope": "./",

@@ -1,4 +1,4 @@
-/* Weller Logs: state, LAS parsing, log rendering, files, project. */
+/* Well(er) Logs: state, LAS parsing, log rendering, files, project. */
 const {parseLAS,normalizeWell}=WellerLAS;   // app/js/las.js
 
 /* ---------- Curve aliases and default track presets ---------- */
@@ -163,10 +163,10 @@ const CURVE_INFO={
   THAV:'Casing wall thickness from the ultrasonic tool: loss means corrosion or wear.', THMN:'Minimum wall thickness.', DIAV:'Casing inner diameter.', DIMX:'Maximum inner diameter.', OVLI:'Casing ovality: deformation.',
   TEMP:'Borehole temperature.', MUDT:'Mud temperature, often from the rig (in or out). Unit and source vary; check the header.',
   SHK_LAT_MAX:'Lateral shock (g) from the MWD tool.', SHK_AXL_MAX:'Axial shock (g).', STKSLP:'Stick-slip: torsional vibration.', SHKRSK:'Shock risk level.',
-  VSH_GR:'Computed by Weller Logs: shale volume from GR.', PHI_SW:'Computed by Weller Logs: porosity used for Sw.', BVW:'Computed by Weller Logs: bulk volume water.', PHIE:'Computed by Weller Logs: effective porosity.',
+  VSH_GR:'Computed by Well(er) Logs: shale volume from GR.', PHI_SW:'Computed by Well(er) Logs: porosity used for Sw.', BVW:'Computed by Well(er) Logs: bulk volume water.', PHIE:'Computed by Well(er) Logs: effective porosity.',
   OIL:'Oil stain or show rating from the mud logger (0-100 scale in Petrolog files).', FLR:'Fluorescence of cuttings under UV (percent of sample).', CUT:'Cut rating: solvent-released hydrocarbon (visible or fluorescent).', POPS:'Pops rating: gas bubbles bursting from cuttings.',
   CGSU:'Cuttings gas: gas released from crushed cuttings.', H2S:'Hydrogen sulfide at the shakers. A safety reading as well as a formation indicator.', CO2:'Carbon dioxide in the mud gas.',
-  SW:'Computed by Weller Logs: water saturation.', TOC_DLR:'Computed by Weller Logs: TOC from delta log R.' };
+  SW:'Computed by Well(er) Logs: water saturation.', TOC_DLR:'Computed by Well(er) Logs: TOC from delta log R.' };
 const curveInfo=cfg=>CURVE_INFO[famKey(cfg)]||CURVE_INFO[String(cfg.label||'').toUpperCase()]||'';
 // Header hover: each curve's color, what it is, where it came from, and what else in the well could stand in.
 function trackTipHTML(w,t,resolved){ const rows=resolved.filter(r=>r.curve).map(({cfg,curve})=>{ const src=(curve.sources||[w.fileName]).filter(Boolean).join(' + ');
@@ -228,7 +228,6 @@ function ssArr(w){ const e=WellerLAS.datumElevation(w); if(!Number.isFinite(e)) 
 function ssAt(w,md){ const e=WellerLAS.datumElevation(w); return Number.isFinite(e)?mdToTvd(w,md)-e:NaN; }
 function depthText(w,md){ const ss=ssAt(w,md), u=dispU(); return `MD ${fmtD(md,w)} ${u}`+(Number.isFinite(ss)?` · TVDSS ${fmtD(ss,w)} ${u}`:''); }
 function presetWell(cfg){ const w={...WellerSynth.makeWell(cfg),preset:cfg.id}; for(const p of w.points) w.curves.push(makePointCurve(p.mnemonic,p.unit,p.description,p.md,p.data)); delete w.points; return w; }
-function loadPresets(){ S.wells=WellerSynth.PRESET_WELLS.map(presetWell); S.selected=S.wells[0].id; S.panel=['w1','w2','w4']; S.datum='MD'; pointSeriesNames().forEach(placePointSeries); computeAllInterp(); }
 const wellById=id=>S.wells.find(w=>w.id===id);
 const depthOf=w=>w.curves[0].data;
 function wellRange(w){ const d=depthOf(w); return [d[0],d[d.length-1]]; }
@@ -1130,7 +1129,7 @@ async function openFiles(files){ const mud=files.filter(f=>f.mud); files=files.f
   if(by.project.length&&by.las.length){ const want=new Set(); for(const f of by.project){ try{ for(const r of JSON.parse(f.text).wells||[]) for(const x of r.files||[r]) if(x.fileName) want.add(x.fileName); }catch(e){} }
     for(const f of by.las) if(want.has(f.name)) await lasCache.put(f.name,f.text); by.las=by.las.filter(f=>!want.has(f.name)); }
   for(const f of by.project){ try{ const miss=await loadProject(JSON.parse(f.text)); if(f.handle) S.fileHandle=f.handle; report.push({file:f.name,status:'loaded',note:'Project loaded',problems:miss?.length?[{level:'warn',cat:'Files',title:`${miss.length} LAS file${miss.length>1?'s are':' is'} not in this project file or this browser: ${miss.join(', ')}`,fix:'Open the project again and select those LAS files with it (Cmd/Ctrl-click). Save afterwards and the project carries them.'}]:[]}); }
-    catch(err){ report.push({file:f.name,status:'failed',problems:[{level:'error',cat:err instanceof SyntaxError?'Parsing':'File type',title:err instanceof SyntaxError?'Not valid JSON: '+err.message:err.message,fix:'Open a .lasproj saved by Weller Logs.'}]}); } }
+    catch(err){ report.push({file:f.name,status:'failed',problems:[{level:'error',cat:err instanceof SyntaxError?'Parsing':'File type',title:err instanceof SyntaxError?'Not valid JSON: '+err.message:err.message,fix:'Open a .lasproj saved by Well(er) Logs.'}]}); } }
   if(by.las.length) report.push(...addLASFiles(by.las));
   // Tables we are not sure about: ask, one file at a time, after the LAS so their wells are open.
   const asked=[], later=[]; for(const f of by.ask){ const a=await askKind(f); if(!a){ report.push({file:f.name,status:'failed',problems:[{level:'info',cat:'Import',title:'Skipped; nothing changed'}]}); continue; }
@@ -1373,7 +1372,7 @@ function methodsHTML(){ const tr=S.tracks.filter(t=>t.curves?.length&&t.type!=='
     <li>GR normalization maps this well's P5 and P95 onto the reference well's (a two-point linear rescale), over the whole log or one zone. The coefficients are stored with the project.</li>
     <li>Order applied: sensor-offset shift, despike, normalization, always from the values as loaded.</li></ul>`]);
   S_.push(['export','LAS export',`<ul><li>LAS 2.0, one line per depth, null −999.25, ASCII. STEP is the sample step, or 0 when sampling is irregular.</li>
-    <li>Curves as shown (with shifts, despiking and normalization), then computed curves marked "computed by Weller Logs". A repeated mnemonic (GR:2) is written GR_2.</li>
+    <li>Curves as shown (with shifts, despiking and normalization), then computed curves marked "computed by Well(er) Logs". A repeated mnemonic (GR:2) is written GR_2.</li>
     <li>Tops go in ~Parameter as TOP_NAME (MD); the directional survey (MD INC AZI TVD) and the interpretation parameters go in ~Other.</li></ul>`]);
   S_.push(['display','Display',`<ul><li>Off-scale values wrap: past the right edge the curve continues, dotted, from the left edge (one scale width over), and past the left edge from the right. Log scales wrap by decades of the scale. Each track's ⚙ turns it off.</li>
     <li>Lithology ornaments follow the FGDC 600 series as redrawn by petroplots: dots (sand; size by grain), dashes (shale, clay), dot-dash (silt), brick (limestone), slanted brick (dolomite), brick with dashes (marl), hatching (anhydrite), squares (salt).</li></ul>`]);
@@ -1426,7 +1425,7 @@ const dirSurveyOf=ref=>ref.dirSurvey||(ref.survey?.md?.length?{md:ref.survey.md,
 function projectJSON(){ return { version:3, app:'weller-logs', savedAt:new Date().toISOString(), mode:S.mode, selected:S.selected, panel:S.panel, datum:S.datum, views:S.views, tracks:S.tracks, hiddenPoints:S.hiddenPoints, stats:S.stats, basemap:S.basemap, mapGrid:S.mapGrid?.kind?S.mapGrid:undefined, interp:S.interp, corr:S.corr, topColors:S.topColors,display:{units:S.units,depthLabels:S.depthLabels,showEmpty:S.showEmpty,headH:S.headH},keepZeros:S.keepZeros?.length?S.keepZeros:undefined,
   mudlogs:window.WellerMud?.toJSON(),
   wells:S.wells.map(w=>({id:w.id,name:w.name,api:w.api,field:w.field,company:w.company,county:w.county,state:w.state,preset:w.preset,demo:w.demo,fileName:w.fileName,pick:w.pick,shifts:w.shifts,edits:w.edits,files:partsOf(w).length>1?partsOf(w).map(p=>({fileName:p.fileName,demo:p.demo})):undefined,location:w.location,elevation:w.elevation,header:w.header,attrs:w.attrs,depthUnit:w.depthUnit,tops:w.tops,points:pointsJSON(w),dirSurvey:w.dirSurvey,curveList:w.curves.filter(c=>!c.sparse).map(c=>c.mnemonic)})) }; }
-async function loadProject(p){ if(!p||p.app!=='weller-logs') throw new Error('not a Weller Logs project'); const missing=[];
+async function loadProject(p){ if(!p||p.app!=='weller-logs') throw new Error('not a Well(er) Logs project'); const missing=[];
   // A file may be a well on its own or one part of a merged well; find it wherever it is now.
   const findPart=fn=>{ for(const w of S.wells){ const ps=partsOf(w); if(ps.length===1&&w.fileName===fn) return w; const q=ps.find(q=>q.fileName===fn); if(q) return q; } return null; };
   S.keepZeros=p.keepZeros||[];
@@ -1475,19 +1474,18 @@ async function projectFile(){ const p=projectJSON(), las={}, miss=[];
   p.data={las,mudlogs:await window.WellerMud?.exportData()}; return {text:JSON.stringify(p),miss}; }
 async function saveProject(as){ $('stNote').textContent='Packing the project…'; const {text,miss}=await projectFile();
   const done=name=>{ $('stNote').textContent=`Saved ${name} (${(text.length/1048576).toFixed(1)} MB, data included)`+(miss.length?` · not in this browser, re-open to include: ${miss.join(', ')}`:''); };
-  if(window.showSaveFilePicker){ try{ if(as||!S.fileHandle) S.fileHandle=await showSaveFilePicker({suggestedName:projName(),types:[{description:'Weller Logs project',accept:{'application/json':['.lasproj']}}]});
+  if(window.showSaveFilePicker){ try{ if(as||!S.fileHandle) S.fileHandle=await showSaveFilePicker({suggestedName:projName(),types:[{description:'Well(er) Logs project',accept:{'application/json':['.lasproj']}}]});
       const w=await S.fileHandle.createWritable(); await w.write(text); await w.close(); done(S.fileHandle.name); }catch(e){ if(e.name!=='AbortError') $('stNote').textContent='Save failed: '+e.message; } return; }
   downloadBlob(projName(),new Blob([text],{type:'application/json'})); done(projName()); }
 $('btnSave').onclick=()=>saveProject(false);
 document.addEventListener('keydown',e=>{ if(!(e.metaKey||e.ctrlKey)) return; const k=e.key.toLowerCase(); if(k==='o'){ e.preventDefault(); $('btnOpen').click(); } else if(k==='s'){ e.preventDefault(); saveProject(e.shiftKey); } else if(k==='e'){ e.preventDefault(); exportView(); } });
 
-/* ---------- Examples: real Denver Basin Niobrara logs, or the synthetic LA Basin set ---------- */
+/* ---------- Example dataset: real DJ Basin Niobrara logs ---------- */
 const NIOBRARA_FILES=['2120933C.las','2121045D.las','2121046D.las','2121038B.las','2121035D.las','2121034E.las','2121022A.las','400709586.las'];
 async function fetchText(url){ try{ const r=await fetch(url); return r.ok?await r.text():null; }catch(e){ return null; } }
 let undoProject=null;
 async function loadExample(name,quiet){
   undoProject=S.wells.length?projectJSON():null;
-  if(name==='labasin'){ S.tracks=loadTrackDefaults(); S.views=newViews(); loadPresets(); S.wells=sortWestEast(S.wells); S.mode='single'; setMode('single'); exampleNote('Synthetic LA Basin wells loaded'); toast('Example data project loaded: LA Basin (synthetic)'); return true; }
   $('stNote').textContent='Loading Denver Basin Niobrara logs…';
   const texts=await Promise.all(NIOBRARA_FILES.map(f=>fetchText('data/niobrara/'+f)));
   if(texts.some(t=>!t)){ $('stNote').textContent='Could not load the example logs (open the app from a web server, not a file).'; return false; }
@@ -1505,8 +1503,8 @@ async function loadExample(name,quiet){
   S.wells=[...vert,horiz].filter(Boolean);
   S.panel=[vert[0],vert[1],vert[3],vert[5],vert[6],horiz].filter(Boolean).map(w=>w.id); S.selected=(vert[3]||S.wells[0]).id;
   S.datum='Niobrara'; S.stats={...statsDefaults(),curve:'PHI',x:'NPHI',y:'RHOB',type:'nd'}; S.mode='corr'; setMode('corr');
-  if(!quiet) toast('Example data project loaded: Denver Basin Niobrara');
-  exampleNote('Denver Basin Niobrara: 7 Laramie County, WY verticals (WOGCC) and 1 Weld County, CO horizontal. Tops are rule-based picks.'+(notes.length?' · '+notes.join(' · '):''));
+  if(!quiet) toast('Example dataset loaded: DJ Basin Niobrara');
+  exampleNote('DJ Basin Niobrara: 7 Laramie County, WY verticals (WOGCC) and 1 Weld County, CO horizontal. Tops are rule-based picks.'+(notes.length?' · '+notes.join(' · '):''));
   return true; }
 // In-page confirm: window.confirm() is blocked in embedded previews and returns false without showing anything.
 function ask({title,body,ok='OK',option}){ return new Promise(res=>{ $('askTitle').textContent=title; $('askBody').textContent=body||''; $('askOk').textContent=ok;
@@ -1538,11 +1536,11 @@ $('exampleSel').onchange=async e=>{ const v=e.target.value; e.target.value=''; i
 S.stats=statsDefaults();
 let saved=null; try{ saved=JSON.parse(localStorage.getItem('weller.session')||'null'); }catch(e){}
 if('serviceWorker' in navigator&&/^https?:/.test(location.protocol)&&!/claude\.ai|claudeusercontent/.test(location.host)) navigator.serviceWorker.register('sw.js').catch(()=>{});
-const booted=(async()=>{ if(!(await loadExample('niobrara',true))){ loadPresets(); fitView(); } undoProject=null; HIST.undo=[]; HIST.redo=[]; HIST.last=editSnapshot(); })();
+const booted=(async()=>{ if(!(await loadExample('niobrara',true))) fitView(); undoProject=null; HIST.undo=[]; HIST.redo=[]; HIST.last=editSnapshot(); })();
 { const has=!!(saved&&saved.savedAt&&saved.wells?.length);
   if(has){ const n=saved.wells.length, d=new Date(saved.savedAt);
-    $('wcResumeWhen').textContent=`${n} well${n===1?'':'s'} · autosaved ${d.toLocaleString([],{dateStyle:'medium',timeStyle:'short'})}`; $('wcResume').hidden=false; }
-  const lead=has?$('wcResume'):$('wcExample'); lead.classList.add('primary');
+    $('wcResumeWhen').textContent=`${n} well${n===1?'':'s'} · saved ${d.toLocaleString([],{dateStyle:'medium',timeStyle:'short'})}`; } else $('wcResume').disabled=true;
+  const lead=has?$('wcResume'):$('wcExample'); lead.classList.add('lead');
   const close=()=>{ $('welcomeDlg').hidden=true; };
   $('wcResume').onclick=async()=>{ close(); await booted; try{ await loadProject(saved); HIST.undo=[]; HIST.redo=[]; HIST.last=editSnapshot(); }catch(e){ $('stNote').textContent='Saved session could not be restored: '+e.message; } };
   $('wcExample').onclick=close;
@@ -1574,7 +1572,7 @@ $('exportMenu').addEventListener('click',async e=>{ const b=e.target.closest('[d
   if(k==='stats') return downloadBlob('zone-stats.csv',csvBlob(statsCSV()));
   if(k==='lasall'){ const names=WellerZip.uniqueNames(S.wells.map(lasName)); return downloadBlob('wells-las.zip',zipBlob(S.wells.map((w,i)=>({name:names[i],data:lasText(w)})))); }
   if(k==='bundle') return exportBundle(); });
-/* Everything in one .zip: the project (opens in Weller Logs with its data), every well as LAS, tops and zone stats
+/* Everything in one .zip: the project (opens in Well(er) Logs with its data), every well as LAS, tops and zone stats
    as CSV, and a PNG of the correlation section (or the log, with one well). */
 async function exportBundle(){ $('stNote').textContent='Packing the project bundle…';
   const base=safeName(projName().replace(/\.lasproj$/,'')), files=[], {text,miss}=await projectFile();
@@ -1596,7 +1594,7 @@ document.addEventListener('click',e=>{ if(e.target.closest('[data-close]')){ e.t
   document.querySelectorAll('.pop:not([hidden])').forEach(p=>{ if(!p.contains(e.target)) p.hidden=true; }); });
 document.addEventListener('keydown',e=>{ if(e.key!=='Escape') return; document.querySelectorAll('.pop:not([hidden])').forEach(p=>p.hidden=true);
   const open=[...document.querySelectorAll('.modal:not([hidden])')]; const top=open[open.length-1]; if(top){ e.preventDefault(); if(top.id==='revDlg') closeReview(null); else if(top.id==='kindDlg') closeKind(null); else top.hidden=true; } });
-function setTheme(t){ if(t==='dark') document.documentElement.dataset.theme='dark'; else delete document.documentElement.dataset.theme; try{ localStorage.setItem('weller.theme',t); }catch(e){} }
+function setTheme(t){ window.wellerTheme=t; document.documentElement.dataset.theme=t; try{ localStorage.setItem('weller.theme',t); }catch(e){} }
 $('btnTheme').onclick=()=>{ setTheme(document.documentElement.dataset.theme==='dark'?'light':'dark'); render(); };
 /* Sidebar width: drag the gutter, double-click to reset. Long well names get room without a wider default. */
 { const side=document.querySelector('.side'), g=$('sideGutter'); const setW=w=>{ side.style.width=Math.max(240,Math.min(innerWidth*0.6,w))+'px'; };

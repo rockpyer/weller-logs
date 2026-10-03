@@ -1,4 +1,4 @@
-# Weller Logs — Plan
+# Well(er) Logs — Plan
 
 Desktop well-log viewer with correlation panels, built for Southern California work.
 Opens LAS files (and later scanned PDF/TIFF logs), renders tracks on sensible default

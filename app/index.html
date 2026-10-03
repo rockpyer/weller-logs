@@ -1,9 +1,11 @@
 <meta charset="utf-8">
-<title>Weller Logs</title>
+<title>Well(er) Logs</title>
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon-192.png">
 <meta name="theme-color" content="#FFFFFF">
-<script>try{if(localStorage.getItem("weller.theme")==="dark")document.documentElement.dataset.theme="dark"}catch(e){}</script>
+<script>/* Light unless the user picked dark here. Embedding hosts can set data-theme on <html>; keep ours. */
+(function(){var r=document.documentElement,t="light";try{if(localStorage.getItem("weller.theme")==="dark")t="dark"}catch(e){}
+window.wellerTheme=t;r.dataset.theme=t;new MutationObserver(function(){if(r.dataset.theme!==window.wellerTheme)r.dataset.theme=window.wellerTheme}).observe(r,{attributes:true,attributeFilter:["data-theme"]})})();</script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="preconnect" href="https://cdnjs.cloudflare.com">
@@ -31,6 +33,7 @@
   --shadow:0 1px 2px rgba(23,32,41,.08);
   color-scheme:light;
 }
+:root:not([data-theme="dark"]){color-scheme:light!important}
 :root[data-theme="dark"]{
   --ground:#12161B; --panel:#1B2128; --paper:#1F262E; --ink:#E4E9EE; --muted:#93A0AD; --line:#2E3740;
   --grid:#2A323B; --grid-strong:#3F4A56; --accent:#E07A3E; --accent-ink:#12161B; --focus:#6AA6E8;
@@ -38,7 +41,7 @@
   --gr:#5FBF7F; --sp:#C19A6B; --cal:#9AA6B2; --rdeep:#E4E9EE; --rmed:#AAB4BE; --rshal:#6F7C88;
   --rhob:#F06767; --nphi:#6AA6E8; --dt:#B79BE0; --rop:#E4E9EE; --wob:#6AA6E8; --tg:#E4E9EE; --c1:#F06767; --pef:#D99A5B; --vsh:#AAB4BE; --phie:#4FC3B5; --sw:#8FB3E8; --toc:#C19A6B; --c2:#F7A04A;
   --shadow:0 1px 2px rgba(0,0,0,.4);
-  color-scheme:dark;
+  color-scheme:dark!important;
 }
 html,body{height:100%}
 body{margin:0;background:var(--ground);color:var(--ink);font:14px/1.45 "IBM Plex Sans",system-ui,sans-serif}
@@ -64,12 +67,14 @@ input[type=color]{width:28px;height:24px;padding:0;border:1px solid var(--line);
 .brand svg{flex:none}
 .actions{margin-left:auto;display:flex;gap:6px;flex-wrap:wrap}
 #welcomeDlg .dlg{width:min(560px,100%);gap:10px}#welcomeDlg h3{font-size:22px}#wcLead{margin:0;color:var(--muted)}
-.wcopts{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.wcopts{display:grid;grid-template-columns:1fr 1fr;grid-auto-rows:1fr;gap:8px}
 .wcopts button,.menu button{display:flex;flex-direction:column;align-items:flex-start;gap:2px;text-align:left;padding:10px 12px;line-height:1.3}
+.wcopts button{justify-content:flex-start;min-height:72px}
 .wcopts button span,.menu button span{font-size:12px;color:var(--muted)}
-.wcopts button.primary span{color:inherit;opacity:.85}
-.wcopts button:first-child:not([hidden]){grid-column:1/-1}
-@media (max-width:520px){ .wcopts{grid-template-columns:1fr} }
+.wcopts button.lead{border-color:var(--focus);box-shadow:inset 0 0 0 1px var(--focus);background:color-mix(in srgb,var(--focus) 8%,var(--panel))}
+.wcopts button.lead b{color:var(--focus)}
+.wcopts button:disabled{opacity:.5;cursor:default}.wcopts button:disabled:hover{border-color:var(--line)}
+@media (max-width:520px){ .wcopts{grid-template-columns:1fr;grid-auto-rows:auto} }
 .menu{width:min(320px,calc(100vw - 32px));padding:6px;display:flex;flex-direction:column}
 .menu button{border:0;background:none;padding:7px 10px;border-radius:4px;width:100%}
 .menu button:hover,.menu button:focus-visible{background:var(--ground)}
@@ -391,7 +396,7 @@ i.sw{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:5p
 
 <div id="app">
   <header class="topbar">
-    <div class="brand"><svg width="26" height="26" viewBox="0 0 26 26" aria-hidden="true"><rect x="1" y="1" width="24" height="24" rx="5" fill="none" stroke="var(--line)" stroke-width="1.5"/><path d="M13 3c-4 2 3 3-1 5s5 2 1 4-3 2 1 4-5 2-1 4 2 2 0 3" fill="none" stroke="var(--gr)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M7 3v20" stroke="var(--muted)" stroke-width="1" opacity=".5"/></svg>Weller Logs</div>
+    <div class="brand"><svg width="26" height="26" viewBox="0 0 26 26" aria-hidden="true"><rect x="1" y="1" width="24" height="24" rx="5" fill="none" stroke="var(--line)" stroke-width="1.5"/><path d="M13 3c-4 2 3 3-1 5s5 2 1 4-3 2 1 4-5 2-1 4 2 2 0 3" fill="none" stroke="var(--gr)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M7 3v20" stroke="var(--muted)" stroke-width="1" opacity=".5"/></svg>Well(er) Logs</div>
     <div class="byline"><span>By</span><a class="author" href="https://ryweller.com/services" target="_blank" rel="noopener">Ryan Weller</a><a class="linkedin" href="https://www.linkedin.com/in/ryweller/" target="_blank" rel="noopener" aria-label="Ryan Weller on LinkedIn" title="Ryan Weller on LinkedIn">in</a></div>
     <div class="tabs" role="tablist">
       <button data-mode="single" role="tab" aria-selected="true">Logs</button>
@@ -412,7 +417,7 @@ i.sw{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:5p
     </div>
   </header>
   <div id="aboutPop" class="pop about" role="dialog" aria-labelledby="aboutH" hidden>
-    <h4 id="aboutH">About Weller Logs <button class="x" data-close aria-label="Close">×</button></h4>
+    <h4 id="aboutH">About Well(er) Logs <button class="x" data-close aria-label="Close">×</button></h4>
     <p>Built by <a href="https://ryweller.com" target="_blank" rel="noopener">Ryan Weller</a>. A free, open well-log viewer for quick correlation and zone petrophysics in the browser. I built it because opening a LAS file and hanging a cross section shouldn't need a license server. Your files stay on your machine.</p>
     <p><b>Built with</b></p>
     <ul>
@@ -448,7 +453,7 @@ i.sw{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:5p
         <div class="tools"><button class="small" id="btnQC" title="Data coverage across wells; gaps, flat runs, spikes, ranges and units per curve; despike; normalize GR">Curve QC</button><button class="small" id="btnManageWells" title="Rename, fill header fields, remove or clear wells">Manage wells</button></div>
         <ul class="list" id="wellList"></ul>
         <p class="hint">Click to view · dot adds to section · drag ⋮⋮ to reorder</p>
-        <div class="row"><select id="exampleSel" aria-label="Load example data"><option value="">Load example data…</option><option value="niobrara">Denver Basin Niobrara</option><option value="labasin">LA Basin (synthetic)</option></select></div>
+        <div class="row"><select id="exampleSel" aria-label="Load example data"><option value="">Load example data…</option><option value="niobrara">DJ Basin · Niobrara</option></select></div>
       </details>
       <details open><summary><h2>Tops</h2></summary>
         <div class="row" style="margin:0 0 6px"><select id="topsWellSel" aria-label="Well to edit" style="flex:1;min-width:0"></select><span class="mini" id="topsUnit"></span></div>
@@ -583,15 +588,15 @@ i.sw{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:5p
 
 <div id="welcomeDlg" class="modal" hidden>
   <div class="dlg" role="dialog" aria-labelledby="wcTitle" aria-describedby="wcLead">
-    <h3 id="wcTitle">Weller Logs</h3>
-    <p id="wcLead">View, correlate and pick tops on well logs in your browser. Your files stay on this computer.</p>
+    <h3 id="wcTitle">Well(er) Logs</h3>
+    <p id="wcLead">Well log viewer for correlation, tops and zone stats. Files stay on this computer.</p>
     <div class="wcopts">
-      <button id="wcResume" hidden><b>Resume last session</b><span id="wcResumeWhen"></span></button>
-      <button id="wcExample"><b>Explore the example</b><span>Eight public Denver Basin Niobrara wells with tops, open behind this window</span></button>
-      <button id="wcNew"><b>New project</b><span>Start empty and add your own LAS files</span></button>
-      <button id="wcOpen"><b>Open files…</b><span>LAS, a saved project, tops CSV or a mudlog</span></button>
+      <button id="wcResume"><b>Resume last session</b><span id="wcResumeWhen">No saved session</span></button>
+      <button id="wcExample"><b>Load example dataset</b><span>DJ Basin · Niobrara: 8 public wells with tops</span></button>
+      <button id="wcNew"><b>New project</b><span>Empty project. Add your LAS files.</span></button>
+      <button id="wcOpen"><b>Open files…</b><span>LAS, .lasproj, tops CSV, PDF or TIFF mudlog</span></button>
     </div>
-    <p class="hint">You can also drop files anywhere, any time.</p>
+    <p class="hint">Or drop files anywhere.</p>
   </div>
 </div>
 <div id="trackDlg" class="modal" hidden>
