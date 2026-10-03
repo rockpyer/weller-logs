@@ -1,3 +1,5 @@
+<img src="app/icon.svg" width="56" alt="">
+
 # Well(er) Logs
 
 Web-based well-log viewer and correlation tool. It opens LAS files (wireline and mud logs), draws tracks on
