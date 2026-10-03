@@ -1,6 +1,6 @@
-"""Publication figures from a Weller Logs export, drawn with petroplots.
+"""Publication figures from a Well(er) Logs export, drawn with petroplots.
 
-In Weller Logs, open Zone stats and press "Export for petroplots". Then:
+In Well(er) Logs, open Zone stats and press "Export for petroplots". Then:
 
     pip install petroplots
     python tools/petroplots_figures.py weller-curves-petroplots.csv --out figures
@@ -20,7 +20,7 @@ import pandas as pd
 import petroplots as pp
 
 
-# The same zone palette Weller Logs uses, in depth order, so a formation has one color in the app and in print.
+# The same zone palette Well(er) Logs uses, in depth order, so a formation has one color in the app and in print.
 ZONE_COLORS = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#4a3aa7"]
 
 
@@ -63,7 +63,7 @@ def log_plot(df: pd.DataFrame, well: str, top: float | None, bottom: float | Non
 
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("csv", help="Weller Logs 'Export for petroplots' CSV")
+    ap.add_argument("csv", help="Well(er) Logs 'Export for petroplots' CSV")
     ap.add_argument("--out", default="figures", help="output folder")
     ap.add_argument("--top", type=float, help="top of the log plots (MD)")
     ap.add_argument("--bottom", type=float, help="bottom of the log plots (MD)")

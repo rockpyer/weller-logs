@@ -1,4 +1,4 @@
-# Weller Logs
+# Well(er) Logs
 
 Web-based well-log viewer and correlation tool. It opens LAS files (wireline and mud logs), draws tracks on
 standard scales, runs a transparent quick-look petrophysical interpretation, correlates tops across wells in MD, ground level,
@@ -61,7 +61,7 @@ Methods, equations, defaults and limits: [docs/PETROPHYSICS.md](docs/PETROPHYSIC
   the file name, and one sheet may hold several wells. A file with only MD, TVD and offsets works too. TVD and
   offsets are recomputed by minimum curvature, tied in at the first station, and a disagreement with the file's own
   TVD is noted. An imported survey replaces the LAS one and is saved in the project; each well's ⚙ has *Load
-  survey…* and *Remove imported survey*. `samples/Inglewood_12_A_survey.txt` is a synthetic example for the LA Basin set.
+  survey…* and *Remove imported survey*. `samples/Inglewood_12_A_survey.txt` is a synthetic example survey.
 - **Robust LAS reading.** LAS 1.2, 2.0 and 3.0 (Log, Tops and Inclinometry data sets; comma or tab delimiters, quoted text), wrapped data, several null values, headers with label and value swapped,
   lasio-style tolerance (run-together values like `-999.25-999.25`, comma decimal marks, text nulls such as `NA` or `INF`,
   extra sentinels such as `9999.25` and `2147483647`, header lines missing the period, byte-order marks and old Mac line ends),
@@ -100,7 +100,7 @@ Methods, equations, defaults and limits: [docs/PETROPHYSICS.md](docs/PETROPHYSIC
   P5–P95 onto a reference well's, over the whole log or one zone. Edits are saved with the project and undo with Cmd+Z.
 - **LAS export.** Export LAS writes the selected well as LAS 2.0: logged curves as shown (shifts, despiking and
   normalization applied), computed curves, tops as `TOP_` parameters, the directional survey and the interpretation
-  parameters in `~Other`. It reads back into Weller Logs and lasio.
+  parameters in `~Other`. It reads back into Well(er) Logs and lasio.
 - **Curve help.** Hover a track header for each curve's color, what it measures, the file it came from and what else
   in the well could stand in. About → *Methods, curve mapping and assumptions* lists every rule and the mnemonics each
   track accepts.
@@ -167,9 +167,8 @@ Methods, equations, defaults and limits: [docs/PETROPHYSICS.md](docs/PETROPHYSIC
   the table is `app/js/apicodes.js`, built by `scripts/make-api-codes.py`. Names already in the file are kept.
 - The lithology track's gear edits its Vshale and PE cutoffs and colors. Hover the lithology or flag tracks for the
   class at that depth, the values behind it and MD / TVDSS; hover their header swatches for the full legend.
-- **Load example data** in the Wells panel switches between the Niobrara set and a synthetic LA Basin set. The app
-  opens on the Niobrara set.
-- On load, a welcome dialog offers: resume the last session, explore the example, start a new project, or open files.
+- On load, a dialog offers: resume the last session, load the example dataset (DJ Basin Niobrara), start a new
+  project, or open files. **Load example data** in the Wells panel reloads the example.
   Opened LAS files are cached in the browser.
 - In Brave or Chrome, the address-bar *Install* icon adds it to the Dock and it works offline.
 

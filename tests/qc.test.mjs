@@ -67,7 +67,7 @@ test('LAS 2.0 export reads back: header, curves, nulls, tops, survey, computed c
   assert.ok(names.includes('VSH_GR') && names.includes('GR_2'), names.join(' '));
   for (let j = 1; j < w.curves.length - 2; j++) { const a = w.curves[j].data, c = b.curves[j].data;
     for (let i = 0; i < a.length; i += 97) assert.ok(Number.isNaN(a[i]) ? Number.isNaN(c[i]) : Math.abs(a[i] - c[i]) <= Math.abs(a[i]) * 1e-6 + 1e-9, `${w.curves[j].mnemonic}[${i}]`); }
-  assert.match(out, /OHMM/); assert.match(out, /computed by Weller Logs/); assert.match(out, /# Interpretation/);
+  assert.match(out, /OHMM/); assert.match(out, /computed by Well\(er\) Logs/); assert.match(out, /# Interpretation/);
   assert.equal(writeLAS(w, { computed: false }).includes('VSH_GR'), false);
 });
 

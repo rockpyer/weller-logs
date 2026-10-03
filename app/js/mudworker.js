@@ -1,4 +1,4 @@
-/* Weller Logs: TIFF mudlog decoding off the main thread. Decodes each page once, then cuts it into horizontal strips
+/* Well(er) Logs: TIFF mudlog decoding off the main thread. Decodes each page once, then cuts it into horizontal strips
    (bands) at display resolution plus a quarter-resolution overview, encoded as WebP (JPEG where WebP encoding is
    missing). The full-size RGBA image is never built: rows are expanded a few thousand at a time. */
 importScripts('../vendor/pako.min.js', '../vendor/UTIF.js');
