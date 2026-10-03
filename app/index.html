@@ -80,6 +80,10 @@ input[type=color]{width:28px;height:24px;padding:0;border:1px solid var(--line);
 .menu button:hover,.menu button:focus-visible{background:var(--ground)}
 .menu button:disabled{opacity:.45;cursor:default;background:none}
 .menu hr{border:0;border-top:1px solid var(--line);margin:4px 0}
+.ctxmenu{width:min(290px,calc(100vw - 16px));max-height:calc(100vh - 16px);overflow:auto;padding:4px}
+.ctxmenu button{flex-direction:row;justify-content:space-between;align-items:baseline;padding:5px 10px;font-size:13px}
+.ctxmenu button.danger{color:#c1121f}.ctxmenu .cmhead{display:flex;flex-direction:column;padding:4px 10px 2px;font-size:12px}.ctxmenu .cmhead span{color:var(--muted);font-size:11px}
+.ctxmenu .cmnew{padding:3px 10px 4px}.ctxmenu .cmnew input{width:100%;font-size:12px}.ctxmenu .cmfoot{margin:4px 10px 2px;font-size:11px}
 .banner{display:flex;gap:8px;align-items:center;padding:3px 16px;background:var(--panel);color:var(--muted);border-bottom:1px solid var(--line);border-left:3px solid var(--accent);font-size:12.5px;flex-wrap:wrap}
 .banner b{font-weight:500;color:var(--ink)}
 .banner button{font-size:12px;padding:2px 8px}
@@ -146,6 +150,7 @@ table.data tr.grp td{border-top:1px solid var(--grid-strong)}
 #stXp{display:block;max-width:100%;cursor:crosshair}
 .more>summary{cursor:pointer;font-size:12px;color:var(--focus);margin:6px 0}
 .readout{font:400 11px "IBM Plex Mono",monospace;color:var(--muted);margin-left:auto}
+.histcurves{display:flex;flex-wrap:wrap;gap:4px 10px;font-weight:400;flex:1}.histwrap{overflow-x:auto}.histread{margin:2px 0 0;min-height:1.4em}.card h3 .pngbtn{margin-left:auto}
 #dropHint{position:fixed;inset:12px;border:3px dashed var(--accent);border-radius:10px;background:var(--panel);opacity:.92;display:none;align-items:center;justify-content:center;font:600 20px "IBM Plex Sans Condensed",sans-serif;color:var(--accent);z-index:1000;pointer-events:none}
 body.dropping #dropHint{display:flex}
 ul.list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:2px}
@@ -465,6 +470,7 @@ i.sw{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:5p
       <li>Example logs: WOGCC public records via <a href="https://github.com/jessepisel/5minutesofpython" target="_blank" rel="noopener">5minutesofpython</a>; Rw from <a href="https://doi.org/10.5066/P14CRSQQ" target="_blank" rel="noopener">USGS produced-water data</a></li>
     </ul>
     <p><button class="small" id="btnMethods">Methods, curve mapping and assumptions</button></p>
+    <p class="hint">Provided as is, with no warranty and no liability (Apache License 2.0). Results are screening estimates from the data you load, not professional advice: check them before you rely on them.</p>
     <p>Want a custom AI workflow, tool or subsurface analysis for your team? I build these.</p>
     <div class="cta"><a class="primary" href="https://ryweller.com/services" target="_blank" rel="noopener">Work with me</a><a href="https://www.linkedin.com/in/ryweller/" target="_blank" rel="noopener">Message on LinkedIn</a></div>
   </div>
@@ -472,7 +478,7 @@ i.sw{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:5p
   <div id="notesPop" class="pop" role="dialog" aria-label="Interpretation notes" hidden></div>
   <div id="tip" class="tip" hidden></div>
   <div id="exportMenu" class="pop menu" role="menu" aria-label="Export" hidden>
-    <button role="menuitem" data-export="png"><b>Current view as PNG</b><span id="exPngHint">The log or section on screen · Cmd+E</span></button>
+    <button role="menuitem" data-export="png"><b>PNG image or print pages</b><span id="exPngHint">The log or section on screen · Cmd+E</span></button>
     <button role="menuitem" data-export="las"><b>Selected well as LAS</b><span id="exLasHint">Curves as shown, computed curves, tops, survey</span></button>
     <button role="menuitem" data-export="lasall"><b>All wells as LAS</b><span>One .las per well, in a .zip</span></button>
     <button role="menuitem" data-export="tops"><b>Tops as CSV</b><span>Every well's picks, MD</span></button>
@@ -594,7 +600,7 @@ i.sw{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:5p
           <div class="legend2" id="stLegend"></div>
           <div class="grid2">
             <section class="card">
-              <h3>Distribution <select id="stCurve" aria-label="Curve"></select></h3>
+              <h3>Distribution <select id="stCurve" aria-label="Curve"></select><button class="small pngbtn" data-stpng="box" title="Download this chart as a PNG">PNG</button></h3>
               <svg id="stBox" role="img" aria-label="Box plots by zone and well"></svg>
               <p class="hint">Box P25 to P75, whisker P10 to P90, bar median, open dot mean.</p>
               <details class="more"><summary>Show table</summary><div class="tblwrap"><table class="data" id="stDetail"></table></div></details>
@@ -604,12 +610,18 @@ i.sw{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:5p
                 <span id="stXY"><select id="stX" aria-label="X curve"></select> vs <select id="stY" aria-label="Y curve"></select></span>
                 <label class="mini">Color <select id="stColor"><option value="zone">Zone</option><option value="gr">GR bands</option><option value="well">Well</option><option value="curve">Curve groups</option></select> <select id="stZ" aria-label="Color curve"></select></label>
                 <label class="mini" id="stCleanWrap"><input type="checkbox" id="stClean"> clean only</label>
-                <span id="stXpRead" class="readout"></span></h3>
+                <span id="stXpRead" class="readout"></span><button class="small" data-stpng="xp" title="Download this crossplot as a PNG">PNG</button></h3>
               <canvas id="stXp" role="img" aria-label="Crossplot"></canvas>
               <div class="legend2" id="stXpLegend"></div>
               <p class="hint" id="stXpNote"></p>
             </section>
           </div>
+          <section class="card">
+            <h3>Histograms by zone <span id="stHistCurves" class="histcurves"></span><button class="small" data-stpng="hist" title="Download these histograms as a PNG">PNG</button></h3>
+            <div class="histwrap"><canvas id="stHist" role="img" aria-label="Histograms of the standard petrophysics curves by zone"></canvas></div>
+            <p class="readout histread" id="stHistRead"></p>
+            <p class="hint" id="stHistNote"></p>
+          </section>
           <section class="card">
             <h3>Summary by zone</h3>
             <div class="tblwrap"><table class="data" id="stSummary"></table></div>
@@ -674,6 +686,11 @@ i.sw{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:5p
           <div class="row"><input type="number" id="pngZ0" step="any" aria-label="From depth"><label>to <input type="number" id="pngZ1" step="any" aria-label="To depth"></label></div>
           <div class="row"><button type="button" class="small" id="pngAll">Whole log</button><button type="button" class="small" id="pngScreen">On screen</button></div>
           <div class="row" id="pngTops"><label>Top <select id="pngT0"></select></label><label>to <select id="pngT1"></select></label></div>
+        </fieldset>
+        <fieldset><legend>Output</legend>
+          <label><input type="radio" name="pngOut" value="one" checked> One image</label>
+          <label><input type="radio" name="pngOut" value="pages"> Pages for print <select id="pngPage" aria-label="Paper size"></select></label>
+          <span class="hint" id="pngPageHint" hidden>One PNG per page in a .zip, headers repeated on each page, ¼ in margins.</span>
         </fieldset>
         <label>Scale <select id="pngScale"></select></label>
         <label>Resolution <select id="pngRes"><option value="1">1× (96 px per inch)</option><option value="2" selected>2× (192 px per inch)</option><option value="3">3× (288 px per inch)</option></select></label>

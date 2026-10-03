@@ -139,6 +139,7 @@ function renderStats() {
     : T === 'pe' ? [cfgOf('PEF', A.PE, { min: 0, max: 7, unit: 'b/e' }), cfgOf('RHOB', A.RHOB, { min: 1.9, max: 3.0, unit: 'g/cc' })]
     : [all.find(c => c.label === S.stats.x), all.find(c => c.label === S.stats.y)];
   drawCrossplot(pair[0], pair[1], colors, T, all.find(c => c.label === S.stats.z));
+  drawHistograms(colors);
 }
 
 function drawBoxes(rows, cfg, colors) {
@@ -291,6 +292,102 @@ function drawCrossplot(cx, cy, colors, type = 'custom', cz) {
     $('stXpRead').textContent = `${cx.label} ${f3(x.invert(px), cx.log)} · ${cy.label} ${f3(y.invert(py), cy.log)}`; };
 }
 
+/* ---------- Zone histograms: the standard petrophysics set, one row per zone (and all zones), one column per curve.
+   Bars are the share of zone thickness (depth-weighted, true vertical in deviated wells) in each bin; the line is the
+   cumulative share; the triangle is the P50; the dashed line is the cutoff that sets net reservoir or pay. ---------- */
+const HIST_SET = () => { const tot = S.interp?.swPhi === 'total';
+  return [
+    { key: 'GR', label: 'GR', unit: 'API', aliases: A.GR, min: 0, max: 200, cut: () => S.stats.cutoff, cutLbl: 'GR cutoff' },
+    { key: 'VSH', label: 'Vsh', unit: 'v/v', aliases: ['VSH_GR'], min: 0, max: 1, cut: () => S.interp?.cut?.vsh, cutLbl: 'Vsh cutoff' },
+    { key: 'PHI', label: tot ? 'PHIT' : 'PHIE', unit: 'v/v', aliases: tot ? ['PHIT_ND', 'PHIT'] : ['PHIE'], min: 0, max: 0.3, cut: () => S.interp?.cut?.phi, cutLbl: 'φ cutoff' },
+    { key: 'SW', label: 'Sw', unit: 'v/v', aliases: ['SW'], min: 0, max: 1, cut: () => S.interp?.cut?.sw, cutLbl: 'Sw cutoff' },
+    { key: 'RT', label: 'Deep res.', unit: 'Ω·m', aliases: A.RD, min: 0.2, max: 2000, log: true },
+    { key: 'RHOB', label: 'RHOB', unit: 'g/cc', aliases: A.RHOB, min: 1.95, max: 2.95 },
+    { key: 'NPHI', label: 'NPHI', unit: 'v/v', aliases: A.NPHI, min: -0.05, max: 0.45 },
+    { key: 'DT', label: 'DT', unit: 'µs/ft', aliases: A.DT, min: 40, max: 140 },
+    { key: 'PEF', label: 'PEF', unit: 'b/e', aliases: A.PE, min: 0, max: 10 },
+  ]; };
+const HIST_DEFAULT = ['GR', 'VSH', 'PHI', 'SW', 'RT', 'RHOB', 'NPHI'];
+
+function histData(colors) {
+  const wells = statWells(), set = HIST_SET().filter(c => wells.some(w => resolveCurve(w, c)));
+  const on = S.stats.hist || HIST_DEFAULT, cols = set.filter(c => on.includes(c.key));
+  const names = [...colors.keys()], rows = [{ name: 'All zones', color: cssVar('--muted') }, ...names.map(n => ({ name: n, color: colors.get(n) }))];
+  const acc = new Map(rows.map(r => [r.name, cols.map(() => ({ v: [], wt: [] }))]));
+  for (const w of wells) for (const z of zonesOf(w)) cols.forEach((c, k) => { const cur = resolveCurve(w, c); if (!cur) return;
+    const { v, wt } = zoneValues(w, cur, z, c.log); for (const a of [acc.get(z.name)?.[k], acc.get('All zones')[k]]) if (a) { for (let i = 0; i < v.length; i++) { a.v.push(v[i]); a.wt.push(wt[i]); } } });
+  const grid = rows.map(r => ({ ...r, cells: acc.get(r.name).map((a, k) => ({ n: a.v.length, h: WellerPetro.histogram(a.v, a.wt, { min: cols[k].min, max: cols[k].max, bins: 20, log: cols[k].log }) })) }))
+    .filter((r, i) => i === 0 || r.cells.some(c => c.n));
+  return { set, cols, grid: grid.length === 2 ? grid.slice(1) : grid };   // one zone: "All zones" would repeat it
+}
+
+function drawHistograms(colors) {
+  const { set, cols, grid } = histData(colors), on = S.stats.hist || HIST_DEFAULT;
+  $('stHistCurves').innerHTML = set.map(c => `<label class="mini"><input type="checkbox" data-sthist="${c.key}"${on.includes(c.key) ? ' checked' : ''}> ${esc(c.label)}</label>`).join('');
+  const cv = $('stHist'), read = $('stHistRead'); read.textContent = '';
+  if (!cols.length || !grid.length) { cv.width = cv.height = 0; cv.style.width = cv.style.height = '0'; $('stHistNote').textContent = set.length ? 'Pick at least one curve.' : 'None of the standard curves (GR, Vsh, porosity, Sw, resistivity, density, neutron, sonic, PE) are in the selected wells.'; return; }
+  const labW = 128, headH = 34, footH = 18, cellH = 74, gap = 10;
+  const W0 = Math.max(320, cv.parentElement.clientWidth - 4), cellW = Math.max(110, Math.floor((W0 - labW) / cols.length) - gap);
+  const W = labW + cols.length * (cellW + gap), H = headH + grid.length * (cellH + footH + 6);
+  const dpr = window.devicePixelRatio || 1; cv.width = W * dpr; cv.height = H * dpr; cv.style.width = W + 'px'; cv.style.height = H + 'px';
+  const ctx = cv.getContext('2d'); ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, W, H);
+  const ink = cssVar('--ink'), muted = cssVar('--muted'), grid0 = cssVar('--grid'), mono = '"IBM Plex Mono",monospace', cond = '"IBM Plex Sans Condensed",sans-serif';
+  const cutCol = isDark() ? '#ff7b72' : '#c1121f';
+  const geo = [];
+  cols.forEach((c, k) => { const x0 = labW + k * (cellW + gap);
+    ctx.fillStyle = ink; ctx.font = `600 12px ${cond}`; ctx.textAlign = 'center'; ctx.fillText(`${c.label}${c.log ? ' (log)' : ''}`, x0 + cellW / 2, 13);
+    ctx.fillStyle = muted; ctx.font = `10px ${mono}`; ctx.fillText(c.unit, x0 + cellW / 2, 26); });
+  grid.forEach((r, j) => { const y0 = headH + j * (cellH + footH + 6);
+    ctx.fillStyle = r.color; ctx.fillRect(0, y0 + cellH / 2 - 5, 10, 10);
+    ctx.fillStyle = ink; ctx.font = `${j === 0 && r.name === 'All zones' ? 'italic ' : ''}600 12px ${cond}`; ctx.textAlign = 'left';
+    let nm = r.name; while (nm.length > 4 && ctx.measureText(nm).width > labW - 22) nm = nm.slice(0, -2) + '…'; ctx.fillText(nm, 16, y0 + cellH / 2 + 4);
+    r.cells.forEach((cell, k) => { const c = cols[k], x0 = labW + k * (cellW + gap), h = cell.h, nb = h.frac.length, bw = cellW / nb;
+      geo.push({ x0, y0, r, c, cell });
+      ctx.strokeStyle = grid0; ctx.lineWidth = 1; ctx.strokeRect(x0 + .5, y0 + .5, cellW - 1, cellH - 1);
+      ctx.fillStyle = muted; ctx.font = `9px ${mono}`; ctx.textAlign = 'left'; ctx.fillText(c.min === 0 ? '0' : f3(c.min, c.log), x0, y0 + cellH + 11); ctx.textAlign = 'right'; ctx.fillText(f3(c.max, c.log), x0 + cellW, y0 + cellH + 11);
+      if (!cell.n) { ctx.textAlign = 'center'; ctx.fillText('no data', x0 + cellW / 2, y0 + cellH / 2 + 3); return; }
+      const peak = Math.max(...h.frac, 1e-9), sy = (cellH - 14) / peak, base = y0 + cellH - 1;
+      ctx.fillStyle = r.color; ctx.globalAlpha = .6; h.frac.forEach((f, b) => { if (f > 0) ctx.fillRect(x0 + b * bw + .5, base - f * sy, Math.max(1, bw - 1), f * sy); }); ctx.globalAlpha = 1;
+      // Cumulative share, full cell height = 100%.
+      ctx.strokeStyle = ink; ctx.lineWidth = 1.2; ctx.beginPath(); ctx.moveTo(x0, base - h.below * (cellH - 2));
+      h.cum.forEach((f, b) => ctx.lineTo(x0 + (b + 1) * bw, base - f * (cellH - 2))); ctx.stroke();
+      const xv = v => { const t = c.log ? (Math.log10(v) - Math.log10(c.min)) / (Math.log10(c.max) - Math.log10(c.min)) : (v - c.min) / (c.max - c.min); return x0 + Math.max(0, Math.min(1, t)) * cellW; };
+      const cut = c.cut?.(); if (Number.isFinite(cut) && (c.key !== 'GR' || !set.some(s => s.key === 'PHI'))) { ctx.strokeStyle = cutCol; ctx.setLineDash([3, 3]); ctx.beginPath(); ctx.moveTo(xv(cut) + .5, y0 + 1); ctx.lineTo(xv(cut) + .5, base); ctx.stroke(); ctx.setLineDash([]); }
+      if (Number.isFinite(h.p50)) { const px = xv(h.p50); ctx.fillStyle = ink; ctx.beginPath(); ctx.moveTo(px, base + 1); ctx.lineTo(px - 4, base + 7); ctx.lineTo(px + 4, base + 7); ctx.fill(); }
+      ctx.fillStyle = muted; ctx.font = `9px ${mono}`; ctx.textAlign = 'left'; ctx.fillText(`${Math.round(peak * 100)}%`, x0 + 3, y0 + 10);
+      ctx.textAlign = 'right'; ctx.fillText(`P50 ${f3(h.p50, c.log)}`, x0 + cellW - 3, y0 + 10); }); });
+  cv.onmousemove = e => { const b = cv.getBoundingClientRect(), px = e.clientX - b.left, py = e.clientY - b.top;
+    const g = geo.find(g => px >= g.x0 && px < g.x0 + cellW && py >= g.y0 && py < g.y0 + cellH); if (!g || !g.cell.n) { read.textContent = ''; return; }
+    const h = g.cell.h, k = Math.min(h.frac.length - 1, Math.floor((px - g.x0) / (cellW / h.frac.length)));
+    read.textContent = `${g.r.name} · ${g.c.label} ${f3(h.edges[k], g.c.log)}–${f3(h.edges[k + 1], g.c.log)}: ${(100 * h.frac[k]).toFixed(1)}% of thickness, ${(100 * h.cum[k]).toFixed(0)}% below · P10 ${f3(h.p10, g.c.log)} P50 ${f3(h.p50, g.c.log)} P90 ${f3(h.p90, g.c.log)} · n ${g.cell.n.toLocaleString()}`; };
+  cv.onmouseleave = () => { read.textContent = ''; };
+  const outs = grid[0].cells.map((cell, k) => cell.n && cell.h.below + cell.h.above > 0.02 ? `${cols[k].label} ${Math.round(100 * (cell.h.below + cell.h.above))}%` : '').filter(Boolean);
+  $('stHistNote').textContent = 'Bars: share of zone thickness per bin (true vertical in deviated wells), scaled to each panel\'s peak. Line: cumulative share. ▲ P50. Dashed: the cutoff for net reservoir or pay.' + (outs.length ? ` Outside the plotted range (not in the bars): ${outs.join(', ')}.` : '');
+}
+
+/* PNG of a stats chart: a canvas or an SVG drawn on the page background, with a title line. */
+async function statsChartPNG(kind) {
+  const title = { box: `Distribution · ${S.stats.curve}`, xp: `Crossplot · ${$('stType').selectedOptions[0]?.text || ''}${S.stats.type === 'custom' ? ` · ${S.stats.x} vs ${S.stats.y}` : ''}`, hist: 'Histograms by zone' }[kind];
+  const src = { box: $('stBox'), xp: $('stXp'), hist: $('stHist') }[kind], r = src.getBoundingClientRect(); if (!r.width || !r.height) { $('stNote').textContent = 'Nothing to export in that chart'; return; }
+  const res = 2, pad = 12, tH = 26, legend = kind === 'xp' ? $('stXpLegend').textContent.trim() : '';
+  const W = Math.ceil(r.width) + 2 * pad, H = Math.ceil(r.height) + tH + pad + (legend ? 18 : 0);
+  const cv = document.createElement('canvas'); cv.width = W * res; cv.height = H * res; const ctx = cv.getContext('2d'); ctx.scale(res, res);
+  ctx.fillStyle = cssVar('--paper'); ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = cssVar('--ink'); ctx.font = '600 14px "IBM Plex Sans Condensed",sans-serif'; ctx.textBaseline = 'alphabetic'; ctx.fillText(title, pad, 18);
+  ctx.fillStyle = cssVar('--muted'); ctx.font = '11px "IBM Plex Mono",monospace'; ctx.textAlign = 'right'; ctx.fillText(statWells().map(w => w.name).join(', ').slice(0, 120), W - pad, 18); ctx.textAlign = 'left';
+  if (src instanceof HTMLCanvasElement) ctx.drawImage(src, pad, tH, r.width, r.height);
+  else ctx.drawImage(await inlinedSVG(src), pad, tH, r.width, r.height);
+  if (legend) { ctx.fillStyle = cssVar('--muted'); ctx.fillText(legend.slice(0, 160), pad, H - pad + 4); }
+  const name = `${kind === 'box' ? 'distribution_' + S.stats.curve : kind === 'xp' ? 'crossplot_' + (S.stats.type === 'custom' ? S.stats.x + '_' + S.stats.y : S.stats.type) : 'zone_histograms'}.png`.replace(/[^\w.-]+/g, '_');
+  cv.toBlob(b => downloadBlob(name, b), 'image/png');
+}
+// An SVG with its CSS-styled text and lines baked in, as an image the canvas can draw.
+function inlinedSVG(svg) { const clone = svg.cloneNode(true), a = svg.querySelectorAll('*'), b = clone.querySelectorAll('*');
+  a.forEach((el, i) => { const cs = getComputedStyle(el); b[i].setAttribute('style', ['fill', 'stroke', 'stroke-width', 'stroke-dasharray', 'opacity', 'font-family', 'font-size', 'font-weight'].map(p => `${p}:${cs.getPropertyValue(p)}`).join(';')); });
+  clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg'); const r = svg.getBoundingClientRect(); clone.setAttribute('width', r.width); clone.setAttribute('height', r.height);
+  return new Promise((res, rej) => { const img = new Image(); img.onload = () => res(img); img.onerror = rej; img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(new XMLSerializer().serializeToString(clone)); }); }
+document.addEventListener('click', e => { const b = e.target.closest('[data-stpng]'); if (b) statsChartPNG(b.dataset.stpng).catch(err => { $('stNote').textContent = 'PNG export failed: ' + err.message; }); });
+
 function statsCSV() {
   const { rows, curves } = computeStats();
   const head = ['well', 'zone', 'top_md_ft', 'base_md_ft', 'gross_tvt_ft', 'net_ft', 'ntg', 'pay_ft', (S.interp?.swPhi === 'total' ? 'phit' : 'phie') + '_net', 'sw_pay', 'phi_h_ft', 'hc_h_ft', ...curves.flatMap(c => ['mean', 'p10', 'p50', 'p90', 'n'].map(k => `${c.label}_${k === 'mean' && c.log ? 'gmean' : k}`))];
@@ -334,4 +431,5 @@ document.addEventListener('change', e => {
   else if (t.id === 'stZ') { S.stats.z = t.value; render(); }
   else if (t.id === 'stColor') { S.stats.color = t.value; render(); }
   else if (t.id === 'stClean') { S.stats.clean = t.checked; render(); }
+  else if (t.dataset?.sthist) { const on = new Set(S.stats.hist || HIST_DEFAULT); t.checked ? on.add(t.dataset.sthist) : on.delete(t.dataset.sthist); S.stats.hist = HIST_SET().map(c => c.key).filter(k => on.has(k)); render(); }
 });

@@ -88,3 +88,17 @@ test('reduced log suites: SP Vshale, sonic porosity, resistivity-index Sw, washo
   assert.ok(!P.washout(9.5, 8.75));
   assert.ok(!P.washout(12, NaN));
 });
+
+test('histogram weights by thickness and keeps out-of-range values out of the end bins', () => {
+  const { histogram } = globalThis.WellerPetro;
+  const h = histogram([10, 20, 30, 200, -5, NaN], [1, 1, 2, 1, 1, 1], { min: 0, max: 100, bins: 10 });
+  assert.equal(h.total, 6);
+  assert.ok(Math.abs(h.frac[1] - 1 / 6) < 1e-12 && Math.abs(h.frac[3] - 2 / 6) < 1e-12);
+  assert.ok(Math.abs(h.below - 1 / 6) < 1e-12 && Math.abs(h.above - 1 / 6) < 1e-12);
+  assert.ok(Math.abs(h.cum[9] - 5 / 6) < 1e-12, 'cumulative ends short of 1 by the share above max');
+  assert.equal(h.p50, 20); assert.equal(h.p90, 200);
+  const g = histogram([1, 10, 100], null, { min: 0.1, max: 1000, bins: 4, log: true });
+  assert.deepEqual(g.frac.map(x => +x.toFixed(3)), [0, 0.333, 0.333, 0.333]);
+  assert.equal(histogram([100], null, { min: 0, max: 100, bins: 5 }).frac[4], 1, 'max itself lands in the last bin');
+  assert.equal(histogram([], null, { min: 0, max: 1 }).total, 0);
+});

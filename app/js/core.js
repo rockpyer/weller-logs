@@ -1031,7 +1031,7 @@ async function exportPNGAt(o){ const panel=$('logPanel'); const pr=panel.getBoun
       const svg=tr.querySelector('svg'); const sr=rel(svg), dy=sr.y-svgTop; const img=await svgToImage(svg); ctx.drawImage(img,0,y0,sr.w,Z.dataH,sr.x,hdrH+dy,sr.w,Z.dataH); } }
   const ov=$('overlay'); if(ov.childNodes.length){ const img=await svgToImage(ov); if(headers&&svgTop>0) ctx.drawImage(img,0,0,Wp,svgTop,0,0,Wp,svgTop); ctx.drawImage(img,0,svgTop+y0,Wp,Z.dataH,0,hdrH,Wp,Z.dataH); }
   return cv; }
-async function exportView(){ if(S.mode==='mud') return window.WellerMud?.exportPNG(); if(S.mode==='map'){ $('stNote').textContent='Map PNG export is not available yet; use a screenshot.'; return; } if(S.mode==='stats'){ $('stXp').toBlob(b=>downloadBlob(`crossplot_${S.stats.x}_${S.stats.y}.png`.replace(/[^\w.-]+/g,'_'),b),'image/png'); return; } if(window.openPngDlg) return openPngDlg();
+async function exportView(){ if(S.mode==='mud') return window.WellerMud?.exportPNG(); if(S.mode==='map'){ $('stNote').textContent='Map PNG export is not available yet; use a screenshot.'; return; } if(S.mode==='stats') return statsChartPNG('xp'); if(window.openPngDlg) return openPngDlg();
   $('stNote').textContent='Rendering PNG…'; $('cursor').style.display='none';
   try{ const cv=await exportPNG(); cv.toBlob(b=>{ downloadBlob(($('vbWell').textContent||'panel').replace(/[^\w-]+/g,'_')+'.png',b); },'image/png'); }
   catch(err){ $('stNote').textContent='PNG export failed: '+err.message; } }
@@ -1583,7 +1583,7 @@ const canvasBlob=cv=>new Promise(res=>cv.toBlob(res,'image/png'));
 function syncExportMenu(){ const w=wellById(S.selected), n=S.wells.length, tops=S.wells.some(w=>w.tops?.length), m=$('exportMenu');
   const set=(k,on)=>{ m.querySelector(`[data-export="${k}"]`).disabled=!on; };
   set('png',S.mode!=='map'&&(n>0||S.mode==='mud')); set('las',!!w); set('lasall',n>0); set('tops',tops); set('stats',n>0&&tops); set('bundle',n>0);
-  $('exPngHint').textContent=S.mode==='map'?'Not available on the Map tab yet':{single:'The log on screen',corr:'The section on screen',stats:'The crossplot',mud:'The mudlog'}[S.mode]+' · Cmd+E';
+  $('exPngHint').textContent=S.mode==='map'?'Not available on the Map tab yet':{single:'The log: depth range, scale, pages',corr:'The section: depth range, scale, pages',stats:'The crossplot (each chart has a PNG button)',mud:'The mudlog'}[S.mode]+' · Cmd+E';
   $('exLasHint').textContent=w?`${w.name}: curves as shown, computed curves, tops, survey`:'Select a well first'; }
 $('btnExport').onclick=e=>{ e.stopPropagation(); const p=$('exportMenu'); if(!p.hidden){ p.hidden=true; $('btnExport').setAttribute('aria-expanded','false'); return; }
   syncExportMenu(); placePop(p,e.currentTarget); $('btnExport').setAttribute('aria-expanded','true'); p.querySelector('button:not(:disabled)')?.focus(); };

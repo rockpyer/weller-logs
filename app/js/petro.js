@@ -85,5 +85,23 @@
   // Sw lines on a Pickett plot: log10(Rt) = log10(a Rw) - m log10(phi) - n log10(Sw)  ->  Rt at a given phi.
   function pickettRt(phi, sw, rw, a = 1, m = 2, n = 2) { return a * rw / (Math.pow(phi, m) * Math.pow(sw, n)); }
 
-  root.WellerPetro = { igr, vsh, vshSP, DT_MATRIX, phiSonic, swFromRI, washout, MATRIX, phiDensity, phiND, tempAtDepth, rwAtTemp, swArchie, swSimandoux, deltaLogR, tocPassey, badHole, percentile, pickettRt, clamp };
+  /* Depth-weighted histogram for zone stats: the fraction of zone thickness in each bin, with the cumulative fraction
+     and weighted P10, P50 and P90. Bins are equal in value, or in log10 for log curves. Values outside [min, max] are
+     counted in below/above, not piled into the end bins. */
+  function histogram(v, wt, { min, max, bins = 20, log = false }) {
+    const f = log ? Math.log10 : x => x, lo = f(min), hi = f(max), step = (hi - lo) / bins;
+    const h = new Float64Array(bins); let below = 0, above = 0, total = 0;
+    const pairs = [];
+    for (let i = 0; i < v.length; i++) { const x = v[i], w = wt ? wt[i] : 1; if (!fin(x) || !(w > 0) || (log && x <= 0)) continue;
+      total += w; pairs.push([x, w]); const k = Math.floor((f(x) - lo) / step);
+      if (k < 0) below += w; else if (k >= bins) { if (f(x) === hi) h[bins - 1] += w; else above += w; } else h[k] += w; }
+    const edges = Array.from({ length: bins + 1 }, (_, k) => log ? 10 ** (lo + k * step) : lo + k * step);
+    if (!total) return { edges, frac: [...h], cum: [...h], below: 0, above: 0, total: 0, p10: NaN, p50: NaN, p90: NaN };
+    const frac = [...h].map(x => x / total); let c = below / total; const cum = frac.map(x => (c += x));
+    pairs.sort((a, b) => a[0] - b[0]);
+    const q = p => { let acc = 0; for (const [x, w] of pairs) { acc += w; if (acc >= p * total - 1e-12) return x; } return pairs[pairs.length - 1][0]; };
+    return { edges, frac, cum, below: below / total, above: above / total, total, p10: q(.1), p50: q(.5), p90: q(.9) };
+  }
+
+  root.WellerPetro = { igr, vsh, vshSP, DT_MATRIX, phiSonic, swFromRI, washout, MATRIX, phiDensity, phiND, tempAtDepth, rwAtTemp, swArchie, swSimandoux, deltaLogR, tocPassey, badHole, percentile, pickettRt, histogram, clamp };
 })(typeof globalThis !== 'undefined' ? globalThis : this);

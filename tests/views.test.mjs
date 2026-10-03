@@ -45,3 +45,13 @@ test('PNG export size crops to the depth window and respects canvas limits', () 
   assert.equal(b.h, 16000); assert.equal(b.reduced, true);
   assert.equal(exportSize({ width: 960, headerH: 0, y0: 0, y1: 960 }).printIn.h, 10);
 });
+
+test('page ranges split a depth window into abutting pages', () => {
+  const { pageRanges } = globalThis.WellerViews;
+  // 1:240 (0.4 px per ft), 11 in page = 1056 px, 156 px headers, 20 px footer: 2200 ft per page.
+  const p = pageRanges(1000, 6000, { pxPerUnit: 0.4, pageH: 1056, headerH: 156, footH: 20 });
+  assert.equal(p.length, 3);
+  assert.deepEqual(p[0], [1000, 3200]); assert.deepEqual(p[1], [3200, 5400]); assert.deepEqual(p[2], [5400, 6000]);
+  assert.equal(pageRanges(0, 2200, { pxPerUnit: 0.4, pageH: 880 }).length, 1);
+  assert.deepEqual(pageRanges(0, 100, { pxPerUnit: 1, pageH: 50, headerH: 60 }), [], 'headers taller than the page');
+});
