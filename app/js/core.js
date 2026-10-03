@@ -168,13 +168,6 @@ const CURVE_INFO={
   CGSU:'Cuttings gas: gas released from crushed cuttings.', H2S:'Hydrogen sulfide at the shakers. A safety reading as well as a formation indicator.', CO2:'Carbon dioxide in the mud gas.',
   SW:'Computed by Weller Logs: water saturation.', TOC_DLR:'Computed by Weller Logs: TOC from delta log R.' };
 const curveInfo=cfg=>CURVE_INFO[famKey(cfg)]||CURVE_INFO[String(cfg.label||'').toUpperCase()]||'';
-// Header hover: each curve's color, what it is, where it came from, and what else in the well could stand in.
-function trackTipHTML(w,t,resolved){ const rows=resolved.filter(r=>r.curve).map(({cfg,curve})=>{ const src=(curve.sources||[w.fileName]).filter(Boolean).join(' + ');
-    const others=cfg.aliases?curveCandidates(w,cfg).filter(c=>c!==curve&&!c.computed).map(c=>c.mnemonic):[];
-    return `<div class="lr"><i style="background:${visibleColor(cfg.color)}"></i><b>${esc(curve.mnemonic)}</b>${curve.unit?` <small>${esc(curve.unit)}</small>`:''}${curve.cased?' <small>cased hole</small>':''}</div>
-      <div class="tipr">${esc(curveInfo(cfg)||curve.description||cfg.label)}${curve.editNote?`<br><small>${esc(curve.editNote)}</small>`:''}${src?`<br><small>From ${esc(src)}</small>`:''}${others.length?`<br><small>Also in this well: ${esc(others.slice(0,5).join(', '))}${others.length>5?'…':''}. Pick in well settings.</small>`:''}</div>`; });
-  const missing=resolved.filter(r=>!r.curve).map(r=>r.cfg.label);
-  return `<div class="tiph">${esc(t.name)}</div>`+(rows.join('')||'<div class="tipv">No curves for this track in this well</div>')+(missing.length?`<div class="tipd">Not in this well: ${esc(missing.join(', '))}</div>`:'')+(rows.length?'<div class="tipd">Click a curve to edit its line, scale and fill</div>':''); }
 // Saved track sets and projects keep their styling but pick up new built-in tracks, curves and vendor aliases.
 const ADDED_TRACKS=['t13','t14','t15','t16','t17','t18','t19','t20','t21','t22','t23'], ADDED_CURVES=['t1','t3','t5','t7','t12'];
 function migrateTracks(tr){ const D=defaultTracks(); tr=[...tr];
@@ -493,7 +486,7 @@ function logTrack(w,t,F,y,H,ticks){
   const vs=resolveCurve(w,{aliases:['VSH_GR','VSH_SP']}), vSrc=gr&&!gr.sparse?'GR':vs?'SP':null;
   if(t.type==='lith') head.innerHTML+=`<div class="scale" style="color:var(--muted)" title="Computed from ${esc(gr?.mnemonic||vSrc||'GR')} cutoffs, not a mud-log or core description${gr?.cased?'. This gamma ray was logged through casing and reads low; pick an open-hole GR in well settings':''}"><span></span><span class="c">${vSrc?'computed* '+esc(vSrc==='GR'?gr.mnemonic:'SP')+(hasPE?' + PE':''):'needs GR or SP'}${gr?.cased?' · cased':''}</span><span></span></div><div class="legend">${Object.keys(lithRules(LP,hasPE)).map(k=>`<i style="background:${patCSS(k,LP.colors[k],!t.nopat)}"></i>`).join('')}</div>`;
   else if(t.type==='flags') head.innerHTML+=`<div class="legend">${resolved.filter(r=>r.curve).map(r=>`<i style="background:${r.cfg.color}"></i>`).join('')}</div>`;
-  else for(const {cfg,curve,ci} of resolved){ if(t.type==='lithpct'&&!curve) continue; const s=document.createElement('div'); s.className='scale'; s.style.color=cfg.color; s.style.opacity=curve?1:.35; s.title=curve?.description||'';
+  else for(const {cfg,curve,ci} of resolved){ if(t.type==='lithpct'&&!curve) continue; const s=document.createElement('div'); s.className='scale'; s.style.color=cfg.color; s.style.opacity=curve?1:.35; if(t.type) s.title=curve?.description||'';
     if(curve?.events){ s.className='scale evleg'; s.style.color=''; const same=x=>String(x).toLowerCase()===String(t.name).toLowerCase(); s.innerHTML=(same(curve.mnemonic)?'':`<span class="c">${esc(curve.mnemonic)}</span>`)+(curve.classes.length===1&&same(curve.classes[0])?'':`<div class="evkeys">${eventLegendHTML(curve)}</div>`); head.appendChild(s); continue; }
     if(cfg.events&&!curve){ s.innerHTML=`<span class="c">${esc(cfg.label)} (none)</span>`; head.appendChild(s); continue; }
     const ls=WellerViews.styleOf(cfg.dash), lw=cfg.lw??WellerViews.DEFAULT_WIDTH;
@@ -562,7 +555,6 @@ function logTrack(w,t,F,y,H,ticks){
       showTip(e,(on.length?on.map(f=>`<div class="lr on"><i style="background:${f.cfg.color}"></i>${esc(f.cfg.label)}</div>`).join(''):'<div class="tipv">No flag at this depth</div>')+`<div class="tipd">${depthText(w,md)}</div>`); } });
   node.addEventListener('mousemove',onMove);
   node.addEventListener('mouseleave',()=>{ onMove.cancel(); $('cursor').style.display='none'; hideTip(); });
-  if(!t.type){ const onHead=perFrame(e=>{ if(e.target.closest('button')||!$('curvePop')?.hidden) return hideTip(); showTip(e,trackTipHTML(w,t,resolved)); }); head.addEventListener('mousemove',onHead); head.addEventListener('mouseleave',()=>{ onHead.cancel(); hideTip(); }); }
   const leg=head.querySelector('.legend');
   if(leg&&t.type==='lith'){ leg.addEventListener('mousemove',e=>showTip(e,legendTip(`Computed lithology from ${vSrc==='GR'?gr.mnemonic:vSrc||'GR'}${hasPE?' and PE':' only'}: a quick look from cutoffs, not described cuttings${gr?.cased?'. Cased-hole GR: unreliable':''}`,Object.entries(lithRules(LP,hasPE)).map(([n,r])=>[n,patCSS(n,LP.colors[n],!t.nopat),r])))); leg.addEventListener('mouseleave',hideTip); }
   if(leg&&t.type==='flags'){ leg.addEventListener('mousemove',e=>showTip(e,legendTip('Flags',flagsOn.map(f=>[f.cfg.label,f.cfg.color,(f.curve.description||'').replace(/^[^:]*:\s*/,'')])))); leg.addEventListener('mouseleave',hideTip); }
