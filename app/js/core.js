@@ -485,12 +485,12 @@ function logTrack(w,t,F,y,H,ticks){
   const vs=resolveCurve(w,{aliases:['VSH_GR','VSH_SP']}), vSrc=gr&&!gr.sparse?'GR':vs?'SP':null;
   if(t.type==='lith') head.innerHTML+=`<div class="scale" style="color:var(--muted)" title="Computed from ${esc(gr?.mnemonic||vSrc||'GR')} cutoffs, not a mud-log or core description${gr?.cased?'. This gamma ray was logged through casing and reads low; pick an open-hole GR in well settings':''}"><span></span><span class="c">${vSrc?'computed* '+esc(vSrc==='GR'?gr.mnemonic:'SP')+(hasPE?' + PE':''):'needs GR or SP'}${gr?.cased?' · cased':''}</span><span></span></div><div class="legend">${Object.keys(lithRules(LP,hasPE)).map(k=>`<i style="background:${patCSS(k,LP.colors[k],!t.nopat)}"></i>`).join('')}</div>`;
   else if(t.type==='flags') head.innerHTML+=`<div class="legend">${resolved.filter(r=>r.curve).map(r=>`<i style="background:${r.cfg.color}"></i>`).join('')}</div>`;
-  else for(const {cfg,curve,ci} of resolved){ if(t.type==='lithpct'&&!curve) continue; const s=document.createElement('div'); s.className='scale'; s.style.color=cfg.color; s.style.opacity=curve?1:.35; if(t.type) s.title=curve?.description||'';
+  else for(const {cfg,curve,ci} of resolved){ if(t.type==='lithpct'&&!curve) continue; if(!curve&&!S.showEmpty&&!t.type) continue; const s=document.createElement('div'); s.className='scale'; s.style.color=cfg.color; s.style.opacity=curve?1:.35; if(t.type) s.title=curve?.description||'';
     if(curve?.events){ s.className='scale evleg'; s.style.color=''; const same=x=>String(x).toLowerCase()===String(t.name).toLowerCase(); s.innerHTML=(same(curve.mnemonic)?'':`<span class="c">${esc(curve.mnemonic)}</span>`)+(curve.classes.length===1&&same(curve.classes[0])?'':`<div class="evkeys">${eventLegendHTML(curve)}</div>`); head.appendChild(s); continue; }
     if(cfg.events&&!curve){ s.innerHTML=`<span class="c">${esc(cfg.label)} (none)</span>`; head.appendChild(s); continue; }
     const ls=WellerViews.styleOf(cfg.dash), lw=cfg.lw??WellerViews.DEFAULT_WIDTH;
     if(!t.type){ s.classList.add('cedit'); s.dataset.cedit=`${t.id}:${ci}`; s.dataset.wid=w.id; s.dataset.cmin=cfg.min; s.dataset.cmax=cfg.max; }
-    s.innerHTML=`<span>${cfg.min}</span><span class="c">${curve?esc(cfg.name||curve.mnemonic):esc(cfg.name||cfg.label)+' (none)'}${cfg.unit?' '+cfg.unit:''}${cfg.tag?' · '+cfg.tag:''}</span><span class="r">${cfg.max}</span><span class="bar${curve?.sparse?' pts':ls==='solid'?'':' '+ls}" data-dash="${curve?.sparse?'':cfg.dash||''}" style="border-top-width:${Math.max(1,Math.round(lw*1.6))}px"></span>`; head.appendChild(s); }
+    s.innerHTML=`<span>${cfg.min}</span><span class="c">${curve?.sparse?pointGlyph(cfg)+' ':''}${curve?esc(cfg.name||curve.mnemonic):esc(cfg.name||cfg.label)+' (none)'}${cfg.unit?' '+cfg.unit:''}${cfg.tag?' · '+cfg.tag:''}</span><span class="r">${cfg.max}</span><span class="bar${curve?.sparse?' pts':ls==='solid'?'':' '+ls}" data-dash="${curve?.sparse?'':cfg.dash||''}" style="border-top-width:${Math.max(1,Math.round(lw*1.6))}px"></span>`; head.appendChild(s); }
   div.appendChild(head);
   const svg=d3.create('svg').attr('width',width).attr('height',H).classed('pick',S.picking);
   const [top,bot]=[S.view.top,S.view.bottom];
@@ -806,7 +806,14 @@ function drawTdCurves(){ drawTdToggles(); const lith=editing.type==='lith'; $('t
           <select class="tdfs" data-i="${i}"><option value="solid"${c.fillStyle!=='gradient'?' selected':''}>Solid</option><option value="gradient"${c.fillStyle==='gradient'?' selected':''}>Color by value</option></select></td>
       <td><button type="button" class="swatchbtn tdfc" data-i="${i}" data-color="${toHex(c.fillColor||c.color||'#cccccc')}" style="background:${toHex(c.fillColor||c.color||'#cccccc')}" title="Fill color. Gradient: color at the left scale value"></button><button type="button" class="swatchbtn tdfc2" data-i="${i}" data-color="${toHex(c.fillColor2||c.fillColor||c.color||'#cccccc')}" style="background:${toHex(c.fillColor2||c.fillColor||c.color||'#cccccc')}" title="Gradient color at the right scale value"></button></td>
       <td><input type="number" class="tdfo" data-i="${i}" value="${c.fillOpacity??.35}" min="0" max="1" step="0.05" style="width:4em"></td>
-      <td><button class="small tdrm" data-i="${i}">×</button></td>`; tb.appendChild(tr); }); }
+      <td><button class="small tdrm" data-i="${i}">×</button></td>`;
+    // Point series: marker symbol, size and opacity in place of the line dash and fill cells.
+    if(cur?.sparse||c.pointSeries){ const td=document.createElement('td'); td.colSpan=4; td.className='tdmark';
+      td.innerHTML=`Marker <select class="tdsym" data-i="${i}" aria-label="Marker symbol">${POINT_SYMBOLS.map(s=>`<option${(c.symbol||'circle')===s?' selected':''}>${s}</option>`).join('')}</select>
+        size <input type="number" class="tdsize" data-i="${i}" value="${c.size??3}" min="1" max="10" step="0.5" style="width:3.6em" aria-label="Marker size">
+        opacity <input type="number" class="tdmo" data-i="${i}" value="${c.opacity??0.85}" min="0.1" max="1" step="0.05" style="width:4.8em" aria-label="Marker opacity">`;
+      const cells=[...tr.children]; cells.slice(5,9).forEach(x=>x.remove()); tr.insertBefore(td,cells[9]); }
+    tb.appendChild(tr); }); }
 function autoScale(curve,log){ const v=Array.from(curve.data).filter(x=>Number.isFinite(x)&&(!log||x>0)).sort((a,b)=>a-b); if(v.length<10) return null;
   const lo=v[Math.floor(v.length*.02)], hi=v[Math.floor(v.length*.98)]; if(log){ return [10**Math.floor(Math.log10(lo)),10**Math.ceil(Math.log10(hi))]; }
   const [a,b]=d3.scaleLinear().domain([lo,hi]).nice(5).domain(); return [a,b]; }
@@ -819,7 +826,8 @@ function readTd(){ editing.name=$('tdName').value; editing.width=+$('tdWidth').v
   if(editing.type==='flags'){ document.querySelectorAll('#tdCurves tr').forEach((tr,i)=>{ const c=editing.curves[i], m=tr.querySelector('.tdm').value; if(m){ const mu=m.toUpperCase(); c.aliases=[m,...(c.aliases||[]).filter(a=>a.toUpperCase()!==mu)]; }
     c.label=tr.querySelector('.tdlbl').value.trim()||m||c.label; const fa=parseFloat(tr.querySelector('.tdfa').value); c.flagAt=Number.isFinite(fa)?fa:0.5; c.color=tr.querySelector('.tdcol').dataset.color; }); return; }
   document.querySelectorAll('#tdCurves tr').forEach((tr,i)=>{ const c=editing.curves[i]; const m=tr.querySelector('.tdm').value; if(m){ const mu=m.toUpperCase(); if(!c.aliases.some(a=>a.toUpperCase()===mu)){ c.label=m; c.exact=true; } c.aliases=[m,...c.aliases.filter(a=>a.toUpperCase()!==mu)]; }
-    const mn=+tr.querySelector('.tdmin').value, mx=+tr.querySelector('.tdmax').value; if(c.matchNeutron&&(mn!==c.min||mx!==c.max)) c.matchNeutron=false; c.min=mn; c.max=mx; c.log=tr.querySelector('.tdlog').checked; if(c.log&&!logOK(c)) fixLogScale(c); c.color=tr.querySelector('.tdcol').dataset.color; c.dash=tr.querySelector('.tddash').checked?'4 3':undefined;
+    const mn=+tr.querySelector('.tdmin').value, mx=+tr.querySelector('.tdmax').value; if(c.matchNeutron&&(mn!==c.min||mx!==c.max)) c.matchNeutron=false; c.min=mn; c.max=mx; c.log=tr.querySelector('.tdlog').checked; if(c.log&&!logOK(c)) fixLogScale(c); c.color=tr.querySelector('.tdcol').dataset.color; c.dash=tr.querySelector('.tddash')?.checked?'4 3':undefined;
+    if(tr.querySelector('.tdsym')){ c.symbol=tr.querySelector('.tdsym').value; c.size=+tr.querySelector('.tdsize').value||3; c.opacity=+tr.querySelector('.tdmo').value||0.85; delete c.dash; return; }
     c.fill=tr.querySelector('.tdfill').value; c.fillStyle=tr.querySelector('.tdfs').value; c.fillColor=tr.querySelector('.tdfc').dataset.color; c.fillColor2=tr.querySelector('.tdfc2').dataset.color; c.fillOpacity=+tr.querySelector('.tdfo').value; }); }
 document.addEventListener('change',e=>{ if(e.target.dataset.panel!==undefined){ S.tracks[+e.target.dataset.panel].panel=e.target.checked; render(); } });
 document.addEventListener('click',e=>{
