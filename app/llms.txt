@@ -14,7 +14,7 @@
 ## How to use it
 
 Open https://logs.ryweller.com. Example Niobrara wells load on first visit. Load your own LAS files to replace them.
-Methods, equations and assumptions: https://logs.ryweller.com/methods.html (Markdown: https://logs.ryweller.com/methods.md)
+Methods, equations and assumptions: https://logs.ryweller.com/methods (Markdown: https://logs.ryweller.com/methods.md)
 
 ## Contact
 

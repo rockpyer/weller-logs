@@ -1207,7 +1207,7 @@ function splitWell(w){ const parts=partsOf(w); if(parts.length<2) return [w]; co
 /* ---------- LAS 2.0 export of one well: curves as shown, computed curves, tops and survey ---------- */
 function interpNote(){ const I=S.interp; if(!I?.enabled) return [];
   return [`Interpretation (computed curves): Vsh ${I.vshMethod}; porosity ${I.porMethod}, matrix ${I.matrix}; Sw ${I.swMethod} on ${I.swPhi} porosity, a=${I.a} m=${I.m} n=${I.n}, Rw ${I.rw} ohm.m at ${I.rwTemp} F; net cutoffs Vsh<${I.cut.vsh} PHI>${I.cut.phi} Sw<${I.cut.sw}`,
-    'Methods: https://logs.ryweller.com/methods.html']; }
+    'Methods: https://logs.ryweller.com/methods']; }
 function lasText(w){
   const bl=grBaselines(w), notes=[...interpNote()]; if(S.interp?.enabled&&Number.isFinite(bl.clean)) notes.push(`GR baselines clean ${bl.clean} API, shale ${bl.shale} API`);
   return WellerQC.writeLAS(w,{computed:true,notes}); }
