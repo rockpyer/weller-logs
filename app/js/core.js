@@ -368,7 +368,9 @@ function visibleColor(c){ const bg=cssVar('--paper')||'#FFFFFF', key=c+'|'+bg; i
   let h=d3.hsl(src); const dark=lum(B)<.2; for(let i=0;i<12&&cr(h,B)<3;i++) h.l=Math.max(0,Math.min(1,h.l+(dark?.07:-.07)));
   const out=cr(h,B)>=3?h.formatHex():c; _vis.set(key,out); return out; }
 const fillHex=c=>c&&c.startsWith('var(')?cssVarHex(c.slice(4,-1)):c;
-function scaleFor(c,width){ return c.log?d3.scaleLog([c.min,c.max],[0,width]).clamp(true):d3.scaleLinear([c.min,c.max],[0,width]).clamp(true); }
+/* A log scale needs both ends above zero. Anything else draws linear rather than hanging the grid loop or plotting NaN. */
+const logOK=c=>c.log&&c.min>0&&c.max>0&&c.min!==c.max;
+function scaleFor(c,width){ return logOK(c)?d3.scaleLog([c.min,c.max],[0,width]).clamp(true):d3.scaleLinear([c.min,c.max],[0,width]).clamp(true); }
 const LITHO={Sandstone:'#EDC84A',Siltstone:'#C0CCC6',Shale:'#465445',Marl:'#A2DBDB','Limestone / chalk':'#4E86C4'};   // petroplots LITHOLOGY colors
 // Quick-look cutoffs, editable per lithology track (gear on the track).
 const LITH_DEF={sandVsh:0.4,shaleVsh:0.65,limePE:4,marlPE:3.5,marlVsh:0.75,sandPE:2.6};
@@ -417,7 +419,7 @@ function patCSS(name,color,on=true){ const key=on&&LITH_PAT[name], tl=key&&patTi
   const [pw,ph,body]=tl; return `${color} url('data:image/svg+xml,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="${pw}" height="${ph}">${body}</svg>`)}')`; }
 /* Off-scale values wrap back into the track, the way a log print's backup trace does: past the right edge the curve
    continues from the left edge, dotted, one scale width over. Returns runs of [x, sample index]. */
-function scaleT(cfg){ const f=cfg.log?(v=>v>0?Math.log10(v):NaN):(v=>v), a=f(cfg.min), span=f(cfg.max)-a; return v=>span?(f(v)-a)/span:NaN; }
+function scaleT(cfg){ const f=logOK(cfg)?(v=>v>0?Math.log10(v):NaN):(v=>v), a=f(cfg.min), span=f(cfg.max)-a; return v=>span?(f(v)-a)/span:NaN; }
 function wrapRuns(cfg,data,idx,width){ const tOf=scaleT(cfg), runs=[]; let cur=null, ck=0;
   for(const i of idx){ const t=tOf(data[i]); if(!Number.isFinite(t)||(t>=0&&t<=1)){ cur=null; continue; } const k=Math.floor(t);
     if(!cur||k!==ck){ cur=[]; runs.push(cur); ck=k; } cur.push([(t-k)*width,i]); }
@@ -502,7 +504,7 @@ function logTrack(w,t,F,y,H,ticks){
   for(const tk of ticks.grid) (tk.major?gMaj:gMin).push(`M0,${tk.y}H${width}`);
   const first=resolved[0]?.cfg||t.curves[0];
   if(t.type==='lithpct'){ for(let i=1;i<10;i++) vLine(width*i/10,i%5===0); }
-  else if(first&&!t.type){ if(first.log){ const dec=Math.round(Math.log10(Math.max(first.max,first.min)/Math.min(first.max,first.min))); const sx=scaleFor(first,width); const lo=Math.min(first.min,first.max);
+  else if(first&&!t.type){ if(logOK(first)){ const dec=Math.min(12,Math.round(Math.log10(Math.max(first.max,first.min)/Math.min(first.max,first.min)))); const sx=scaleFor(first,width); const lo=Math.min(first.min,first.max);
       for(let d=0;d<=dec;d++){ const base=lo*10**d; for(let m=1;m<10;m++){ const v=base*m; if(v>Math.max(first.min,first.max)*1.0001) break; vLine(sx(v),m===1); } } }
     else for(let i=0;i<=10;i++) vLine(width*i/10,i%5===0); }
   gridPath(svg,gMin,'grid'); gridPath(svg,gMaj,'grid s');
@@ -530,7 +532,7 @@ function logTrack(w,t,F,y,H,ticks){
         const area=d3.area().digits(1).defined(i=>Number.isFinite(ra.curve.data[i])&&Number.isFinite(rb.curve.data[i])&&sa(ra.curve.data[i])<sb(rb.curve.data[i]))
           .x0(i=>sa(ra.curve.data[i])).x1(i=>sb(rb.curve.data[i])).y(Y);
         svg.append('path').attr('d',area(idx)).attr('fill','var(--gas)').attr('opacity',.45); } }
-    for(const {cfg,curve} of resolved){ if(!curve) continue; const sx=scaleFor(cfg,width); if(curve.sparse){ drawPoints(svg,cfg,curve,sx,y,F,top,bot); continue; } const ok=i=>Number.isFinite(curve.data[i])&&!(cfg.log&&curve.data[i]<=0);
+    for(const {cfg,curve} of resolved){ if(!curve) continue; const sx=scaleFor(cfg,width); if(curve.sparse){ drawPoints(svg,cfg,curve,sx,y,F,top,bot); continue; } const ok=i=>Number.isFinite(curve.data[i])&&!(logOK(cfg)&&curve.data[i]<=0);
       if(cfg.fill&&cfg.fill!=='none'){ const area=d3.area().digits(1).defined(ok).x0(cfg.fill==='left'?0:width).x1(i=>sx(curve.data[i])).y(Y), d=area(idx), op=cfg.fillOpacity??.35;
         if(cfg.fillStyle==='gradient'){ const gid='g'+t.id+'_'+cfg.label.replace(/\W/g,'')+'_'+w.id;
           svg.append('defs').append('clipPath').attr('id',gid).append('path').attr('d',d);
@@ -812,12 +814,16 @@ function drawTdCurves(){ drawTdToggles(); const lith=editing.type==='lith'; $('t
 function autoScale(curve,log){ const v=Array.from(curve.data).filter(x=>Number.isFinite(x)&&(!log||x>0)).sort((a,b)=>a-b); if(v.length<10) return null;
   const lo=v[Math.floor(v.length*.02)], hi=v[Math.floor(v.length*.98)]; if(log){ return [10**Math.floor(Math.log10(lo)),10**Math.ceil(Math.log10(hi))]; }
   const [a,b]=d3.scaleLinear().domain([lo,hi]).nice(5).domain(); return [a,b]; }
+// Log scale switched on over a 0 or negative bound: take decades from this well's data, or else keep the positive end.
+function fixLogScale(c){ const w=wellById(S.selected)||S.wells[0], cur=w&&resolveCurve(w,c), r=cur&&!cur.sparse&&autoScale(cur,true), rev=c.min>c.max;
+  let [lo,hi]=r||[0,0]; if(!r){ hi=Math.max(c.min,c.max); hi=hi>0?10**Math.ceil(Math.log10(hi)):1000; lo=hi/1000; }
+  [c.min,c.max]=rev?[hi,lo]:[lo,hi]; }
 function cssVarHex(name){ const v=cssVar(name); if(/^#/.test(v)) return v; const m=v.match(/\d+/g); return m?'#'+m.slice(0,3).map(n=>(+n).toString(16).padStart(2,'0')).join(''):'#333333'; }
 function readTd(){ editing.name=$('tdName').value; editing.width=+$('tdWidth').value||190; if($('tdWrap').checked) delete editing.nowrap; else editing.nowrap=true; if($('tdPat').checked) delete editing.nopat; else editing.nopat=true; if(editing.type==='lith') return readTdLith();
   if(editing.type==='flags'){ document.querySelectorAll('#tdCurves tr').forEach((tr,i)=>{ const c=editing.curves[i], m=tr.querySelector('.tdm').value; if(m){ const mu=m.toUpperCase(); c.aliases=[m,...(c.aliases||[]).filter(a=>a.toUpperCase()!==mu)]; }
     c.label=tr.querySelector('.tdlbl').value.trim()||m||c.label; const fa=parseFloat(tr.querySelector('.tdfa').value); c.flagAt=Number.isFinite(fa)?fa:0.5; c.color=tr.querySelector('.tdcol').dataset.color; }); return; }
   document.querySelectorAll('#tdCurves tr').forEach((tr,i)=>{ const c=editing.curves[i]; const m=tr.querySelector('.tdm').value; if(m){ const mu=m.toUpperCase(); if(!c.aliases.some(a=>a.toUpperCase()===mu)){ c.label=m; c.exact=true; } c.aliases=[m,...c.aliases.filter(a=>a.toUpperCase()!==mu)]; }
-    const mn=+tr.querySelector('.tdmin').value, mx=+tr.querySelector('.tdmax').value; if(c.matchNeutron&&(mn!==c.min||mx!==c.max)) c.matchNeutron=false; c.min=mn; c.max=mx; c.log=tr.querySelector('.tdlog').checked; c.color=tr.querySelector('.tdcol').dataset.color; c.dash=tr.querySelector('.tddash').checked?'4 3':undefined;
+    const mn=+tr.querySelector('.tdmin').value, mx=+tr.querySelector('.tdmax').value; if(c.matchNeutron&&(mn!==c.min||mx!==c.max)) c.matchNeutron=false; c.min=mn; c.max=mx; c.log=tr.querySelector('.tdlog').checked; if(c.log&&!logOK(c)) fixLogScale(c); c.color=tr.querySelector('.tdcol').dataset.color; c.dash=tr.querySelector('.tddash').checked?'4 3':undefined;
     c.fill=tr.querySelector('.tdfill').value; c.fillStyle=tr.querySelector('.tdfs').value; c.fillColor=tr.querySelector('.tdfc').dataset.color; c.fillColor2=tr.querySelector('.tdfc2').dataset.color; c.fillOpacity=+tr.querySelector('.tdfo').value; }); }
 document.addEventListener('change',e=>{ if(e.target.dataset.panel!==undefined){ S.tracks[+e.target.dataset.panel].panel=e.target.checked; render(); } });
 document.addEventListener('click',e=>{
