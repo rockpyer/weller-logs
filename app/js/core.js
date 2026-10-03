@@ -1191,7 +1191,7 @@ function splitWell(w){ const parts=partsOf(w); if(parts.length<2) return [w]; co
 /* ---------- LAS 2.0 export of one well: curves as shown, computed curves, tops and survey ---------- */
 function interpNote(){ const I=S.interp; if(!I?.enabled) return [];
   return [`Interpretation (computed curves): Vsh ${I.vshMethod}; porosity ${I.porMethod}, matrix ${I.matrix}; Sw ${I.swMethod} on ${I.swPhi} porosity, a=${I.a} m=${I.m} n=${I.n}, Rw ${I.rw} ohm.m at ${I.rwTemp} F; net cutoffs Vsh<${I.cut.vsh} PHI>${I.cut.phi} Sw<${I.cut.sw}`,
-    'Methods: https://github.com/rockpyer/weller-logs/blob/main/docs/PETROPHYSICS.md']; }
+    'Methods: https://logs.ryweller.com/methods.html']; }
 function lasText(w){
   const bl=grBaselines(w), notes=[...interpNote()]; if(S.interp?.enabled&&Number.isFinite(bl.clean)) notes.push(`GR baselines clean ${bl.clean} API, shale ${bl.shale} API`);
   return WellerQC.writeLAS(w,{computed:true,notes}); }
@@ -1394,7 +1394,7 @@ function methodsHTML(){ const tr=S.tracks.filter(t=>t.curves?.length&&t.type!=='
     <li>A value logged at bit depth D was measured at D minus the offset, so the curve moves up the hole by the offset.</li></ul>`]);
   S_.push(['lith','Lithology and interpretation',`<ul><li>The lithology track is computed (marked *): shale volume from gamma ray between clean and shale baselines, plus PE where logged. It is not a described mud log; cuttings percentages have their own track.</li>
     <li>GR baselines: clean = P2; shale = P95 after dropping hot organic shale (above median + 2.5 MAD).</li>
-    <li>Vsh, porosity, Sw, TOC and net pay equations and defaults: <a href="https://github.com/rockpyer/weller-logs/blob/main/docs/PETROPHYSICS.md" target="_blank" rel="noopener">PETROPHYSICS.md</a>.</li></ul>`]);
+    <li>Vsh, porosity, Sw, TOC and net pay equations and defaults: <a href="methods.html" target="_blank" rel="noopener">Methods</a>.</li></ul>`]);
   S_.push(['colors','Colors',`<ul><li>Curve colors keep at least 3:1 contrast against the track background in light and dark themes; any color too close to the background is darkened or lightened when drawn.</li></ul>`]);
   $('mthNav').innerHTML=S_.map(([id,h])=>`<a href="#m-${id}">${h}</a>`).join(''); $('mthBody').innerHTML=S_.map(([id,h,b])=>sec(id,h,b)).join(''); }
 $('btnMethods').onclick=()=>{ $('aboutPop').hidden=true; methodsHTML(); $('mthDlg').hidden=false; };

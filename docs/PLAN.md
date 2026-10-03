@@ -8,7 +8,7 @@ scales, correlates across wells, and saves the whole session as one project file
 
 | Concern | Choice | Why |
 |---|---|---|
-| Shell | **Web app on GitHub Pages**, installable PWA | No install, works in Firefox/Brave/Chrome, offline via service worker. Brave/Chrome can pin it to the Dock and save straight to `.lasproj` (File System Access API); Firefox downloads copies. Opened LAS text is cached in IndexedDB so "Resume last session" needs no file picking. Electron was tried and dropped: not needed. |
+| Shell | **Web app on Cloudflare Workers** (logs.ryweller.com), installable PWA | No install, works in Firefox/Brave/Chrome, offline via service worker. Brave/Chrome can pin it to the Dock and save straight to `.lasproj` (File System Access API); Firefox downloads copies. Opened LAS text is cached in IndexedDB so "Resume last session" needs no file picking. Electron was tried and dropped: not needed. |
 | UI | Plain HTML + D3, one file for now | The app is ~1,500 lines. Splitting into Vite modules happens when the raster and survey code lands, not before. |
 | LAS parsing | Our own parser (LAS 1.2/2.0, wrapped) | Real SoCal files break `las-js` assumptions: free-text ELEV and LOC fields, `-9999` in addition to `-999.25`, mixed-case mnemonics, positive west longitudes. The parser handles those with notes shown to the user. |
 | Track rendering | Our D3 renderer now; **@equinor/videx-wellog** stays an option | videx-wellog is excellent for a single well, but the correlation panel needs datum shifts, cross-column polygons and gradient fills it does not provide. The current renderer does all of that in ~300 lines. Revisit if per-track zoom or huge curve counts become a problem. |
@@ -26,7 +26,7 @@ Links: [las-js](https://www.npmjs.com/package/las-js) · [videx-wellog](https://
 Done: web app on GitHub Pages with offline install; LAS reader hardened on real files and unit-tested; tracks,
 fills and point data; map with satellite toggle and NAD27 shift; correlation in MD, TVDSS or flattened, with TVD
 from surveys, distance spacing, draggable tops and crossing checks; deterministic interpretation (Vsh, porosity,
-Sw, TOC, net pay) documented in [PETROPHYSICS.md](PETROPHYSICS.md); zone summations and chartbook-style
+Sw, TOC, net pay) documented in [methods.md](../app/methods.md); zone summations and chartbook-style
 crossplots; petroplots export and figure script; real Denver Basin Niobrara example; CI.
 
 Also done: LAS 2.0 export with computed curves; off-scale wrap; FGDC-style lithology patterns; curve QC (coverage,

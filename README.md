@@ -6,13 +6,14 @@ TVDSS or flattened on a top, and summarizes zones with net pay and crossplots. I
 Chrome, installs as an offline web app, and saves everything to one `.lasproj` file: the LAS data, mudlog images,
 tops, tracks and settings, so a project opens on any computer. No data leaves your machine.
 
-**Live:** https://rockpyer.github.io/weller-logs/
+**Live:** https://logs.ryweller.com
 
 It opens on real data: seven Niobrara wells from the northern Denver-Julesburg Basin (Laramie County, Wyoming;
 WOGCC public records) and a Weld County, Colorado Niobrara horizontal, flattened on the Niobrara top. See
 [app/data/niobrara/README.md](app/data/niobrara/README.md) for provenance.
 
-Methods, equations, defaults and limits: [docs/PETROPHYSICS.md](docs/PETROPHYSICS.md).
+Methods, equations, defaults and limits: [app/methods.md](app/methods.md), shown in the app at
+[logs.ryweller.com/methods.html](https://logs.ryweller.com/methods.html).
 
 ## What it does
 
@@ -193,7 +194,8 @@ npm test        # LAS parser, petrophysics and mudlog calibration unit tests (No
 npm run tops    # re-pick the example tops (Python 3 with numpy)
 ```
 
-GitHub Pages deploys `app/` on every push to `main`; CI runs the tests on every pull request.
+Cloudflare Workers Builds deploys `app/` to https://logs.ryweller.com on every push to `main` (config in `wrangler.jsonc`)
+and builds a preview URL for every other branch; CI runs the tests on every pull request.
 
 ```
 app/index.html       layout and styles

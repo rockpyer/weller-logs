@@ -43,7 +43,7 @@ def log_plot(df: pd.DataFrame, well: str, top: float | None, bottom: float | Non
         for c in res:
             t.add_curve(c, limits=(0.2, 2000), units="ohm.m")
     if have("RHOB") and have("NPHI"):
-        # Density scale matched to the neutron calibration so the crossover reads true (see docs/PETROPHYSICS.md).
+        # Density scale matched to the neutron calibration so the crossover reads true (see app/methods.md).
         matrix = df["NEUTRON_MATRIX"].dropna().iloc[0] if df["NEUTRON_MATRIX"].notna().any() else "limestone"
         rho = {"sandstone": (1.90, 2.90), "dolomite": (2.12, 3.12)}.get(matrix, (1.95, 2.95))
         t = plot.add_track(label=f"Density-neutron ({matrix})")

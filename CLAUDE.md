@@ -1,6 +1,7 @@
 # Instructions for Claude
 
-This is a public repository.
+This is a private repository. `app/` is deployed by Cloudflare Workers Builds to https://logs.ryweller.com on every
+push to `main` (`wrangler.jsonc`); other branches get a Cloudflare preview URL.
 
 - **No session links.** Never put a Claude session URL (`claude.ai/code/session_...`) or a `Claude-Session:` trailer in
   commit messages, PR titles or bodies, code, comments or docs. A `Co-Authored-By` line is fine.
