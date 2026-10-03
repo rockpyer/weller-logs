@@ -1605,7 +1605,9 @@ async function exportBundle(){ $('stNote').textContent='Packing the project bund
 
 /* ---------- About, popouts and theme ---------- */
 function placePop(pop,anchor){ pop.hidden=false; const r=anchor.getBoundingClientRect(); pop.style.top=(r.bottom+8)+'px'; pop.style.left=Math.max(16,Math.min(r.right-pop.offsetWidth,innerWidth-pop.offsetWidth-16))+'px'; }
-$('btnAbout').onclick=e=>{ e.stopPropagation(); const p=$('aboutPop'); p.hidden?placePop(p,e.currentTarget):(p.hidden=true); };
+$('btnAbout').onclick=e=>{ e.stopPropagation(); const p=$('aboutPop'); p.hidden=!p.hidden; if(p.hidden) return;
+  const z=innerWidth/screen.width, phone=matchMedia('(pointer:coarse)').matches&&screen.width<700&&z>1.2;
+  p.classList.toggle('sheet',phone); p.style.setProperty('--z',phone?z.toFixed(3):1); p.querySelector('.x').focus(); };
 document.addEventListener('click',e=>{ if(e.target.closest('[data-close]')){ e.target.closest('.pop').hidden=true; return; }
   if(e.target.closest('#btnNotes,#btnAbout,#btnExport,#btnViews,#mudScroll,#mudPop,#colorPop,[data-cedit]')) return;
   document.querySelectorAll('.pop:not([hidden])').forEach(p=>{ if(!p.contains(e.target)) p.hidden=true; }); });
