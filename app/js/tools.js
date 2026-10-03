@@ -18,23 +18,29 @@ function drawCurvePop(){ const T=cpTarget(); if(!T) return closeCurvePop(); cons
   const fill=c.fill&&c.fill!=='none', grad=c.fillStyle==='gradient', ls=WV.styleOf(c.dash), lw=c.lw??WV.DEFAULT_WIDTH;
   const opts=(list,v)=>list.map(([k,l])=>`<option value="${esc(k)}"${String(k)===String(v)?' selected':''}>${esc(l)}</option>`).join('');
   const curves=w?w.curves.slice(1).filter(x=>!x.events):[];
+  // What the curve is and where it came from: this used to be the header tooltip.
+  const info=cur?(curveInfo(c)||cur.description||''):'', src=cur?(cur.sources||[w.fileName]).filter(Boolean).join(' + '):'';
+  const others=cur&&c.aliases?curveCandidates(w,c).filter(x=>x!==cur&&!x.computed).map(x=>x.mnemonic):[];
+  const fillSel=fill?c.fill:'none', num=(id,v,extra='')=>`<input type="number" id="${id}" step="any" value="${v}"${extra}>`;
   setHTML(cpPop,`<h4><span><b style="color:${visibleColor(c.color)}">${esc(c.name||cur?.mnemonic||c.label)}</b> <small class="hint">${esc(cur?.unit||c.unit||'')}</small></span><button type="button" class="x" data-close aria-label="Close">×</button></h4>
-    <div class="cpgrid">
-      <label for="cpName">Display name</label><input type="text" id="cpName" value="${esc(c.name||'')}" placeholder="${esc(cur?.mnemonic||c.label)}" spellcheck="false">
-      <label for="cpCurve">Curve</label><select id="cpCurve">${cur?'':`<option value="" selected>${esc(c.label)} (not in ${esc(w?.name||'this well')})</option>`}${curves.map(x=>`<option value="${esc(x.mnemonic)}"${x===cur?' selected':''}>${esc(x.mnemonic)}${x.unit?' ('+esc(x.unit)+')':''}${x.sparse?' · points':''}</option>`).join('')}</select>
-      <label>Line</label><span class="cprow"><button type="button" class="swatchbtn" id="cpColor" data-color="${hexOf(c.color)}" style="background:${hexOf(c.color)}" title="Line color"></button><select id="cpStyle" aria-label="Line style">${opts(WV.LINE_STYLES.map(s=>[s.key,s.label]),ls)}</select><select id="cpWidth" aria-label="Line width">${opts(WV.LINE_WIDTHS.map(x=>[x,x+' px']),lw)}</select></span>
-      <label for="cpMin">Left</label><input type="number" id="cpMin" step="any" value="${CP.shown.min}">
-      <label for="cpMax">Right</label><span class="cprow"><input type="number" id="cpMax" step="any" value="${CP.shown.max}"><button type="button" class="small" id="cpAuto" title="Scale from ${esc(w?.name||'this well')}'s data (2nd to 98th percentile)"${cur&&!cur.sparse?'':' disabled'}>Auto</button></span>
-      <label for="cpLog">Log scale</label><input type="checkbox" id="cpLog"${c.log?' checked':''}>
-      <label for="cpWrap">Wrap around</label><input type="checkbox" id="cpWrap"${!t.nowrap&&!c.nowrap?' checked':''}${t.nowrap?' disabled title="Wrap is off for the whole track (track ⚙)"':' title="Values past the scale continue from the other edge, dotted"'}>
+    ${info?`<p class="hint cpinfo">${esc(info)}</p>`:''}
+    <div class="pngopts cpopts">
+      <div class="row"><label>Curve <select id="cpCurve">${cur?'':`<option value="" selected>${esc(c.label)} (not in ${esc(w?.name||'this well')})</option>`}${curves.map(x=>`<option value="${esc(x.mnemonic)}"${x===cur?' selected':''}>${esc(x.mnemonic)}${x.unit?' ('+esc(x.unit)+')':''}${x.sparse?' · points':''}</option>`).join('')}</select></label></div>
+      <div class="row"><label>Name <input type="text" id="cpName" value="${esc(c.name||'')}" placeholder="${esc(cur?.mnemonic||c.label)}" spellcheck="false"></label></div>
+      <fieldset><legend>Scale</legend>
+        <div class="row"><label>Left ${num('cpMin',CP.shown.min)}</label><label>Right ${num('cpMax',CP.shown.max)}</label><button type="button" class="small" id="cpAuto" title="Scale from ${esc(w?.name||'this well')}'s data (2nd to 98th percentile)"${cur&&!cur.sparse?'':' disabled'}>Auto</button></div>
+        <div class="row"><label><input type="checkbox" id="cpLog"${c.log?' checked':''}> Log</label><label${t.nowrap?' title="Wrap is off for the whole track (track ⚙)"':' title="Values past the scale continue from the other edge, dotted"'}><input type="checkbox" id="cpWrap"${!t.nowrap&&!c.nowrap?' checked':''}${t.nowrap?' disabled':''}> Wrap off-scale values</label></div>
+      </fieldset>
+      <fieldset><legend>Line</legend>
+        <div class="row"><button type="button" class="swatchbtn" id="cpColor" data-color="${hexOf(c.color)}" style="background:${hexOf(c.color)}" title="Line color"></button><select id="cpStyle" aria-label="Line style">${opts(WV.LINE_STYLES.map(s=>[s.key,s.label]),ls)}</select><select id="cpWidth" aria-label="Line width">${opts(WV.LINE_WIDTHS.map(x=>[x,x+' px']),lw)}</select></div>
+      </fieldset>
+      <fieldset><legend>Fill</legend>
+        <div class="row"><select id="cpFillSide" aria-label="Fill">${opts([['none','None'],['left','Left of curve'],['right','Right of curve']],fillSel)}</select>${fill?`<select id="cpFillStyle" aria-label="Fill color">${opts([['solid','Solid'],['gradient','By value']],grad?'gradient':'solid')}</select>`:''}</div>
+        ${fill?`<div class="row"><button type="button" class="swatchbtn" id="cpFill1" data-color="${hexOf(c.fillColor||c.color)}" style="background:${hexOf(c.fillColor||c.color)}" title="${grad?'Color at the left scale value':'Fill color'}"></button>${grad?`<button type="button" class="swatchbtn" id="cpFill2" data-color="${hexOf(c.fillColor2||c.fillColor||c.color)}" style="background:${hexOf(c.fillColor2||c.fillColor||c.color)}" title="Color at the right scale value"></button>`:''}<label>Opacity <input type="number" id="cpFillOp" min="0" max="1" step="0.05" value="${c.fillOpacity??.35}"></label></div>`:''}
+      </fieldset>
+      ${src||others.length||cur?.editNote?`<p class="hint cpsrc">${src?`File: ${esc(src)}`:''}${cur?.editNote?`<br>${esc(cur.editNote)}`:''}${others.length?`<br>Also in this well: ${esc(others.slice(0,6).join(', '))}${others.length>6?'…':''} (pick in well settings)`:''}</p>`:''}
     </div>
-    <div class="cpsec"><b>Fill</b>${fill?`<button type="button" class="small" id="cpNoFill">Remove</button>`:`<button type="button" class="small" id="cpAddFill">+ Add</button>`}</div>
-    ${fill?`<div class="cpgrid">
-      <label for="cpFillSide">Side</label><select id="cpFillSide">${opts([['left','Left of curve'],['right','Right of curve']],c.fill)}</select>
-      <label for="cpFillStyle">Color</label><select id="cpFillStyle">${opts([['solid','Solid'],['gradient','By value']],grad?'gradient':'solid')}</select>
-      <label>${grad?'Left · right':'Fill'}</label><span class="cprow"><button type="button" class="swatchbtn" id="cpFill1" data-color="${hexOf(c.fillColor||c.color)}" style="background:${hexOf(c.fillColor||c.color)}" title="${grad?'Color at the left scale value':'Fill color'}"></button>${grad?`<button type="button" class="swatchbtn" id="cpFill2" data-color="${hexOf(c.fillColor2||c.fillColor||c.color)}" style="background:${hexOf(c.fillColor2||c.fillColor||c.color)}" title="Color at the right scale value"></button>`:''}<label class="mini">opacity <input type="number" id="cpFillOp" min="0" max="1" step="0.05" value="${c.fillOpacity??.35}"></label></span>
-    </div>`:'<p class="hint cpnone">No fill</p>'}
-    <div class="cpfoot"><button type="button" class="small danger" id="cpRemove">Remove from track</button><span class="hint">${esc(t.name)} · every well</span></div>`); }
+    <div class="cpfoot"><button type="button" class="small" id="cpRemove">Remove from track</button><span class="hint">${esc(t.name)} · every well</span></div>`); }
 // Structural changes redraw the editor; plain value edits only refresh the scale it shows.
 function cpApply(redraw){ render(); if(!cpTarget()) return closeCurvePop(); if(redraw) drawCurvePop(); else { const row=cpRow(); if(row){ $('cpMin').value=row.dataset.cmin; $('cpMax').value=row.dataset.cmax; } } }
 cpPop.addEventListener('change',e=>{ const T=cpTarget(); if(!T) return; const {t,c}=T, id=e.target.id, v=e.target.value, w=wellById(CP.wid)||wellById(S.selected)||S.wells[0];
@@ -49,7 +55,7 @@ cpPop.addEventListener('change',e=>{ const T=cpTarget(); if(!T) return; const {t
     c.min=a; c.max=b; delete c.auto; c.matchNeutron=false; if(c.log&&!logOK(c)) fixLogScale(c); return cpApply(false); }
   if(id==='cpLog'){ c.log=e.target.checked; if(c.log&&!logOK(c)) fixLogScale(c); return cpApply(true); }
   if(id==='cpWrap'){ if(e.target.checked) delete c.nowrap; else c.nowrap=true; return cpApply(false); }
-  if(id==='cpFillSide'){ c.fill=v; return cpApply(false); }
+  if(id==='cpFillSide'){ const was=c.fill&&c.fill!=='none'; c.fill=v; if(v!=='none'&&!was){ c.fillStyle=c.fillStyle||'solid'; c.fillColor=c.fillColor||hexOf(c.color); c.fillOpacity=c.fillOpacity??.35; } return cpApply(was!==(v!=='none')); }
   // By value starts as a ramp from a pale tint of the line color to the line color, so it reads at once.
   if(id==='cpFillStyle'){ c.fillStyle=v; if(v==='gradient'&&(!c.fillColor2||c.fillColor2===c.fillColor)){ const col=hexOf(c.color); c.fillColor=d3.interpolateRgb(col,'#ffffff')(0.8); c.fillColor=d3.color(c.fillColor).formatHex(); c.fillColor2=col; c.fillOpacity=Math.max(c.fillOpacity??.35,.6); } return cpApply(true); }
   if(id==='cpFillOp'){ const o=parseFloat(v); if(Number.isFinite(o)) c.fillOpacity=Math.max(0,Math.min(1,o)); return cpApply(false); } });
@@ -57,8 +63,6 @@ cpPop.addEventListener('colorpicked',e=>{ const T=cpTarget(); if(!T) return; con
   if(id==='cpColor') c.color=e.detail; else if(id==='cpFill1') c.fillColor=e.detail; else if(id==='cpFill2') c.fillColor2=e.detail; else return; cpApply(true); });
 cpPop.addEventListener('click',e=>{ e.stopPropagation(); const b=e.target.closest('button'); if(b?.dataset.close!==undefined) return closeCurvePop(); const T=cpTarget(); if(!b||!T) return; const {t,c}=T, w=wellById(CP.wid)||wellById(S.selected)||S.wells[0];
   if(b.id==='cpAuto'){ const cur=w&&resolveCurve(w,c), r=cur&&!cur.sparse&&autoScale(cur,c.log); if(r){ [c.min,c.max]=c.min>c.max?[r[1],r[0]]:r; delete c.auto; c.matchNeutron=false; cpApply(false); } }
-  if(b.id==='cpAddFill'){ c.fill='left'; c.fillStyle=c.fillStyle||'solid'; c.fillColor=c.fillColor||hexOf(c.color); c.fillOpacity=c.fillOpacity??.35; cpApply(true); }
-  if(b.id==='cpNoFill'){ c.fill='none'; cpApply(true); }
   if(b.id==='cpRemove'){ const label=c.name||c.label; t.curves.splice(CP.ci,1); const gone=!t.curves.length; if(gone) S.tracks=S.tracks.filter(x=>x!==t); closeCurvePop(); render();
     $('stNote').textContent=`${label} removed from ${t.name}${gone?', and the empty track with it':''} · Cmd/Ctrl+Z undoes`; } });
 $('logPanel').addEventListener('click',e=>{ const row=e.target.closest('[data-cedit]'); if(!row) return; if(!cpPop.hidden&&row.dataset.cedit===`${CP.tid}:${CP.ci}`) return closeCurvePop(); openCurvePop(row); });
@@ -216,13 +220,11 @@ function ctxReadings(w,md){ const dep=depthOf(w), i=Math.min(dep.length-1,Math.m
     const v=c.sparse?(k=>k<0?NaN:c.data[k])(nearestPoint(c,md,0.5)):c.data[i]; if(Number.isFinite(v)) out.push(`${c.mnemonic} ${+v.toPrecision(5)}${c.unit?' '+c.unit:''}`); } }
   return out; }
 function openCtxMenu(e){ const node=e.target.closest('.tracks svg'), col=node?.closest('.column'), c=col&&S._ctx?.cols.find(c=>c.el===col);
-  const row=e.target.closest('[data-cedit]');
-  if(!c&&!row) return false;
+  if(!c) return false;
   const items=[];
-  if(row) items.push(`<button type="button" role="menuitem" data-ctx="curve">Edit ${esc(row.textContent.trim().split(/\s+/)[0]||'curve')}…<span>line, scale, fill</span></button>`);
   if(c){ const r=node.getBoundingClientRect(), yy=e.clientY-r.top, w=c.w, md=snapMD(mdAtZ(w,c.F,S._ctx.y.invert(yy)));
     const near=[...w.tops].map(t=>({t,d:Math.abs(S._ctx.y(c.F.z(t.md))-yy)})).filter(x=>x.d<7).sort((a,b)=>a.d-b.d)[0]?.t;
-    CTX={w,md,top:near?.name,row};
+    CTX={w,md,top:near?.name};
     items.push(`<div class="cmhead"><b>${esc(w.name)}</b><span>${esc(depthText(w,md))}</span></div>`,
       `<button type="button" role="menuitem" data-ctx="copy">Copy depth and readings</button>`);
     if(near){ const flat=S.datum===near.name;
@@ -240,7 +242,6 @@ function openCtxMenu(e){ const node=e.target.closest('.tracks svg'), col=node?.c
       `<button type="button" role="menuitem" data-ctx="fit">Fit to screen</button>`,'<hr>',
       `<button type="button" role="menuitem" data-ctx="pngscreen">Export PNG of what's on screen…</button>`,
       `<button type="button" role="menuitem" data-ctx="png">Export PNG…<span>whole ${S.mode==='corr'?'section':'log'}, depth range or print pages</span></button>`); }
-  else CTX={row};
   items.push('<p class="hint cmfoot">Shift + right-click for the browser menu</p>');
   setHTML(ctxMenu,items.join('')); hideTip(); ctxMenu.hidden=false;
   const pw=ctxMenu.offsetWidth, ph=ctxMenu.offsetHeight; ctxMenu.style.left=Math.max(8,Math.min(innerWidth-pw-8,e.clientX))+'px'; ctxMenu.style.top=Math.max(8,Math.min(innerHeight-ph-8,e.clientY))+'px';
@@ -250,7 +251,6 @@ const closeCtx=()=>{ ctxMenu.hidden=true; };
 $('logScroll').addEventListener('scroll',closeCtx,{passive:true});
 function ctxSetTop(name){ const {w,md}=CTX; setTopMD(w,name,md); S.selected=w.id; refreshTops(name); $('stNote').textContent=`${name} at ${depthText(w,md)} in ${w.name} · Cmd/Ctrl+Z undoes`; }
 ctxMenu.addEventListener('click',async e=>{ e.stopPropagation(); const b=e.target.closest('button[data-ctx]'); if(!b||!CTX) return; const k=b.dataset.ctx, {w,md,top}=CTX; closeCtx();
-  if(k==='curve'&&CTX.row) return openCurvePop(CTX.row);
   if(k==='copy'){ const txt=[w.name,depthText(w,md),...ctxReadings(w,md)].join('\t'); try{ await navigator.clipboard.writeText(txt); $('stNote').textContent='Copied: '+txt.replace(/\t/g,' · '); }catch(err){ $('stNote').textContent=txt.replace(/\t/g,' · '); } return; }
   if(k==='settop') return ctxSetTop(b.dataset.name);
   if(k==='pick'){ setPicking(true,top); return; }
