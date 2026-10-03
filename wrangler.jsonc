@@ -3,5 +3,9 @@
   "name": "weller-logs",
   "compatibility_date": "2026-09-01",
   "assets": { "directory": "./app" },
+  // Required by `wrangler preview`, which Workers Builds runs for branches other than main. Empty: previews serve the same assets.
+  "previews": {},
+  // Preview links on workers.dev for those branches (Wrangler turns them off by default when a custom domain is set).
+  "preview_urls": true,
   "routes": [{ "pattern": "logs.ryweller.com", "custom_domain": true }]
 }
