@@ -3,6 +3,23 @@
    cursor readout and zone stats all find it through the same alias lookup as log curves. */
 
 const POINT_COLORS = ['#2a78d6', '#eb6834', '#1baf7a', '#eda100', '#e87ba4', '#4a3aa7'];
+// One symbol per series in a track, so dense series stay apart without relying on color alone.
+const POINT_SYMBOLS = ['circle', 'square', 'triangle', 'diamond', 'cross', 'star', 'wye'];
+const SYMBOL_FN = { circle: d3.symbolCircle, square: d3.symbolSquare, triangle: d3.symbolTriangle, diamond: d3.symbolDiamond, cross: d3.symbolCross, star: d3.symbolStar, wye: d3.symbolWye };
+// K, KAIR, K_H, CORE_K, PERM_MD; not K_FELDSPAR or KAOLINITE from an XRD sheet
+const isPerm = m => /^(K|KAIR|KH|KV|KLINK|KINF|KMAX|K90)$|^K_(AIR|H|V|MAX|90|INF|KLINK|MD)$|_K$|PERM/.test(m);
+const isPorosity = m => /PHI|POR|GRAIN|RHOG|RHOM|GD$/.test(m);
+/* Imported value series land in a track per kind of measurement. Each kind lists its usual first picks; a track shows at
+   most MAX_PER_TRACK series and the rest start hidden (Point data list in the sidebar moves them into a track). */
+const POINT_GROUPS = [
+  { name: 'XRD', re: /QUARTZ|QTZ|CALCITE|DOLOMITE|ANKERITE|SIDERITE|CLAY|ILLITE|SMECTITE|KAOLIN|CHLORITE|MICA|FELDSPAR|PLAG|PYRITE|MARCASITE|APATITE|GYPSUM|ANHYDRITE|HALITE|BARITE|MINERAL/,
+    first: [/CALCITE/, /QUARTZ|QTZ/, /TOTAL_CLAY|^CLAY/, /DOLOMITE/], pct: true },
+  { name: 'Geomechanics', re: /YOUNG|POISSON|STRENGTH|BRITTLE|(^|_)(YM|YME|E|PR|NU|UCS|CCS|TSTR|BI|VP|VS|DTC|DTS|BULK_MOD|SHEAR_MOD|COHESION|FRICTION)(_|$)/,
+    first: [/^(YM|E|YME)_?STAT|YOUNG.*STAT|^YM$|^E$/, /^(PR|NU)_?STAT|POISSON.*STAT|^PR$/, /UCS|CCS|STRENGTH/, /^(YM|E)_?DYN/] },
+  { name: 'Core', re: /./, first: [/(^|_)SW(_|$)/, /TOC/, /(^|_)SO(_|$)/, /BULK_DEN|RHOB/] },
+];
+const MAX_PER_TRACK = 4;
+const groupOf = m => POINT_GROUPS.find(g => g.re.test(m));
 
 function makePointCurve(mnemonic, unit, description, md, data, labels) {
   const order = d3.range(md.length).sort((a, b) => md[a] - md[b]);
@@ -83,9 +100,11 @@ function importValuePoints(t, map, fileName) {
     added.push(mnemonic);
   }
   if (!added.length && !g.missing.length) throw new Error('no numeric values next to depth');
-  added.forEach(m => placePointSeries(m));
+  const hidden = placeImported(added);
   const n = [...g.byWell.values()].reduce((a, r) => a + r.length, 0);
-  return { note: `Point data: ${plural(n, 'sample')}, ${added.length} series (${added.join(', ')}) in ${plural(g.byWell.size, 'well')}` + (notes.length ? '; ' + notes.join('; ') : ''), problems: importProblems(g) };
+  const tracks = [...new Set(added.filter(m => !hidden.includes(m)).map(m => pointTrackOf(m)?.name).filter(Boolean))];
+  if (hidden.length) notes.push(`${hidden.join(', ')} hidden to keep tracks readable; show them from Point data in the sidebar`);
+  return { note: `Point data: ${plural(n, 'sample')}, ${added.length} series (${added.join(', ')}) in ${plural(g.byWell.size, 'well')}` + (tracks.length ? ` → track${tracks.length > 1 ? 's' : ''} ${tracks.map(x => `"${x}"`).join(', ')}` : '') + (notes.length ? '; ' + notes.join('; ') : ''), problems: importProblems(g) };
 }
 
 /* Labeled depths (events): corrosion points, perforations, shows, casing damage. One series per import, drawn in
@@ -168,10 +187,13 @@ function pointCfg(m) {
   const pos = vals.filter(v => v > 0);
   const spansDecades = pos.length === vals.length && pos.length > 1 && d3.max(pos) / d3.min(pos) > 100;
   const i = pointSeriesNames().indexOf(m);
-  const cfg = { label: m, aliases: [m], pointSeries: m, unit, size: 3.5, color: POINT_COLORS[Math.max(0, i) % POINT_COLORS.length] };
+  const cfg = { label: m, aliases: [m], pointSeries: m, unit, size: 3, symbol: 'circle', color: POINT_COLORS[Math.max(0, i) % POINT_COLORS.length] };
   if (/PHI|POR/.test(m)) Object.assign(cfg, { min: 0.45, max: -0.15, color: 'var(--ink)' });           // same scale as NPHI
-  else if (/^(K|PERM|KAIR|KH|KV|KLINK)|_K$|PERM/.test(m)) Object.assign(cfg, { min: 0.01, max: 10000, log: true });
+  // Conventional core perm on 0.01 to 10,000 mD; tight rock (nD to µD) on its own decades.
+  else if (isPerm(m)) Object.assign(cfg, { min: Math.min(0.01, 10 ** Math.floor(Math.log10(d3.min(pos) || 0.01))), max: Math.max(10000, 10 ** Math.ceil(Math.log10(d3.max(pos) || 1))), log: true },
+    pos.length && d3.max(pos) < 0.01 ? { min: 10 ** Math.floor(Math.log10(d3.min(pos))), max: 10 ** Math.ceil(Math.log10(d3.max(pos))) } : {});
   else if (/GRAIN|RHOG|RHOM|GD$/.test(m)) Object.assign(cfg, { min: 1.95, max: 2.95 });               // same scale as RHOB
+  else if (groupOf(m)?.pct && /%/.test(unit) && d3.max(vals) <= 100) Object.assign(cfg, { min: 0, max: 100 });   // XRD on one scale
   else if (spansDecades) Object.assign(cfg, { min: 10 ** Math.floor(Math.log10(d3.min(pos))), max: 10 ** Math.ceil(Math.log10(d3.max(pos))), log: true });
   else { const [a, b] = d3.scaleLinear().domain(d3.extent(vals.length ? vals : [0, 1])).nice(5).domain(); Object.assign(cfg, { min: a, max: b }); }
   return cfg;
@@ -179,9 +201,9 @@ function pointCfg(m) {
 
 function defaultTrackFor(m) {
   if (eventSeries(m)) return 'new:' + m;
-  if (/PHI|POR|GRAIN|RHOG|RHOM|GD$/.test(m)) return S.tracks.find(t => t.id === 't3') ? 't3' : 'new:Core';
-  if (/^(K|PERM|KAIR|KH|KV|KLINK)|_K$|PERM/.test(m)) return 'new:Permeability';
-  return 'new:Point data';
+  if (isPorosity(m)) return S.tracks.find(t => t.id === 't3') ? 't3' : 'new:Core';
+  if (isPerm(m)) return 'new:Permeability';
+  return 'new:' + groupOf(m).name;
 }
 
 // target: track id, 'new:<name>' (reuse a same-named track), or 'hidden'
@@ -198,26 +220,47 @@ function movePointSeries(m, target) {
     t = S.tracks.find(x => x.name === name && x.pointTrack);
     // Labeled depths go next to GR and show in the correlation panel too; value series sit after density-neutron.
     const ev = !!eventSeries(m);
-    if (!t) { t = { id: 't' + Date.now().toString(36) + Math.floor(Math.random() * 1e3), name, width: ev ? 110 : 130, pointTrack: true, panel: ev, curves: [] };
+    if (!t) { t = { id: 't' + Date.now().toString(36) + Math.floor(Math.random() * 1e3), name, width: ev ? 110 : 150, pointTrack: true, panel: true, curves: [] };
       const after = S.tracks.findIndex(x => x.id === (ev ? 't1' : 't3')); S.tracks.splice(after >= 0 ? after + 1 : S.tracks.length, 0, t); }
   } else t = S.tracks.find(x => x.id === target);
-  if (t) t.curves.push(cfg);
+  if (!t) return;
+  // A series new to this track takes the next free color and symbol there (porosity keeps ink, on the NPHI scale).
+  if (!old && !cfg.events) {
+    const used = t.curves.filter(c => c.pointSeries), k = used.length;
+    cfg.symbol = POINT_SYMBOLS.find(s => !used.some(c => (c.symbol || 'circle') === s)) || POINT_SYMBOLS[k % POINT_SYMBOLS.length];
+    if (!/PHI|POR/.test(m)) cfg.color = POINT_COLORS.find(c => !used.some(u => u.color === c)) || POINT_COLORS[k % POINT_COLORS.length];
+  }
+  t.curves.push(cfg);
 }
 
 function placePointSeries(m) {
   if (pointTrackOf(m) || (S.hiddenPoints || []).includes(m)) return;
   movePointSeries(m, defaultTrackFor(m));
 }
+// Place a batch from one import: each kind's usual picks first, up to MAX_PER_TRACK point series per new track.
+// Returns the series left hidden.
+function placeImported(names) {
+  const rank = m => { const g = groupOf(m), i = isPerm(m) || isPorosity(m) ? -1 : g.first.findIndex(re => re.test(m)); return i < 0 && !isPerm(m) && !isPorosity(m) ? 99 : i; };
+  const hidden = [];
+  for (const m of [...names].sort((a, b) => rank(a) - rank(b))) {
+    if (pointTrackOf(m) || (S.hiddenPoints || []).includes(m)) continue;
+    const target = defaultTrackFor(m), t = target.startsWith('new:') && S.tracks.find(x => x.pointTrack && x.name === target.slice(4));
+    if (target.startsWith('new:') && t && t.curves.filter(c => c.pointSeries).length >= MAX_PER_TRACK) { movePointSeries(m, 'hidden'); hidden.push(m); }
+    else movePointSeries(m, target);
+  }
+  return hidden;
+}
 
 /* ---------- Drawing and readout ---------- */
 function drawPoints(svg, cfg, curve, sx, y, F, top, bot) {
   const g = svg.append('g');
   if (curve.events) return drawEvents(g, curve, y, F, top, bot);
+  const r = cfg.size || 3, sym = d3.symbol(SYMBOL_FN[cfg.symbol] || d3.symbolCircle, Math.PI * r * r)();
   for (let k = 0; k < curve.md.length; k++) {
     const md = curve.md[k], v = curve.data[k], z = F.z(md);
     if (z < top || z > bot || !Number.isFinite(v) || (cfg.log && v <= 0)) continue;
-    g.append('circle').attr('cx', sx(v)).attr('cy', y(z)).attr('r', cfg.size || 3.5)
-      .attr('fill', cfg.color || 'var(--ink)').attr('stroke', 'var(--paper)').attr('stroke-width', 1)
+    g.append('path').attr('d', sym).attr('transform', `translate(${+sx(v).toFixed(1)},${+y(z).toFixed(1)})`)
+      .attr('fill', cfg.color || 'var(--ink)').attr('fill-opacity', cfg.opacity ?? 0.85).attr('stroke', 'var(--paper)').attr('stroke-width', 0.75)
       .append('title').text(`${curve.mnemonic} ${fmtVal(v, cfg)} ${curve.unit} at ${md} ft${curve.labels?.[k] ? ' · ' + curve.labels[k] : ''}`);
   }
 }
@@ -242,6 +285,11 @@ function drawEvents(g, curve, y, F, top, bot) {
 }
 const eventLegendHTML = curve => curve.classes.map(c => `<span class="evk"><i style="background:${eventColor(c)}"></i>${esc(c)}</span>`).join('');
 
+// Small SVG of a series' marker for headers and the sidebar list.
+function pointGlyph(cfg, px = 10) {
+  const r = px / 3.2, d = d3.symbol(SYMBOL_FN[cfg?.symbol] || d3.symbolCircle, Math.PI * r * r)();
+  return `<svg class="ptglyph" width="${px}" height="${px}" viewBox="${-px / 2} ${-px / 2} ${px} ${px}" aria-hidden="true"><path d="${d}" fill="${cfg?.color || 'currentColor'}"/></svg>`;
+}
 function fmtVal(v, cfg) { return !Number.isFinite(v) ? 'null' : cfg?.log ? v.toPrecision(3) : Math.abs(v) < 10 ? v.toFixed(3) : v.toFixed(1); }
 
 function nearestPoint(curve, md, tol = 1.5) {
@@ -272,7 +320,7 @@ function renderPointList() {
     const t = pointTrackOf(m); const hidden = (S.hiddenPoints || []).includes(m);
     const cfg = t?.curves.find(c => c.pointSeries === m), ev = eventSeries(m);
     const opts = S.tracks.filter(x => !x.type).map(x => `<option value="${x.id}"${t === x ? ' selected' : ''}>${x.name}</option>`).join('');
-    return `<div class="trackrow"><span class="sw"><i class="dotsw" style="background:${cfg?.color || 'var(--muted)'}"></i></span><span class="nm" title="${n} samples in ${wells.map(w => w.name).join(', ')}">${m} <small class="hint">${n}</small></span>
+    return `<div class="trackrow"><span class="sw">${cfg ? pointGlyph(cfg) : '<i class="dotsw" style="background:var(--muted)"></i>'}</span><span class="nm" title="${n} samples in ${wells.map(w => w.name).join(', ')}">${m} <small class="hint">${n}</small></span>
       <select data-ptmove="${esc(m)}" aria-label="Track for ${esc(m)}">${opts}<option value="new:${esc(m)}">New track</option><option value="hidden"${hidden ? ' selected' : ''}>Hidden</option></select>${ev && ev.classes.length > 1 ? `<button class="small" data-ptsplit="${esc(m)}" title="One series and track per class: ${esc(ev.classes.join(', '))}">Split</button>` : ''}<button class="small" data-ptdel="${esc(m)}" title="Remove ${esc(m)} from all wells" aria-label="Remove ${esc(m)}">✕</button></div>`;
   }).join(''));
 }
