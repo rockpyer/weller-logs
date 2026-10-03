@@ -120,7 +120,9 @@ function saveCurrentView(){ const name=$('vmName').value.trim()||defaultViewName
   S.savedViews=[...(S.savedViews||[]),v]; S.activeView=v.id; autosave(); drawViewsMenu(); $('stNote').textContent=`Saved view “${v.name}”: it is kept in the session and in the project when you save`; }
 
 /* ---------- PNG export: choose the depth range, scale, resolution and headers, with a preview ---------- */
-const EXP={z0:0,z1:0,ratio:0,res:2,headers:true,light:true,busy:null,token:0};
+const EXP={z0:0,z1:0,ratio:0,res:2,headers:true,light:true,pages:false,page:'letter',busy:null,token:0};
+const PAGE_MARGIN=0.25, PAGE_FOOT=22;   // inches each side; footer px
+$('pngPage').innerHTML=Object.entries(WV.PAGES).map(([k,p])=>`<option value="${k}">${p.label}</option>`).join('');
 const pngW0=()=>viewWells()[0];
 function frameLabel(){ if(S.mode!=='corr') return 'MD'; return {MD:'MD',GL:'Below GL',TVDSS:'TVDSS'}[S.datum]||`From ${S.datum}`; }
 function pngSetRange(z0,z1){ const w=pngW0(); EXP.z0=Math.min(z0,z1); EXP.z1=Math.max(z0,z1); $('pngZ0').value=+toDisp(EXP.z0,w).toFixed(1); $('pngZ1').value=+toDisp(EXP.z1,w).toFixed(1); }
@@ -138,14 +140,24 @@ async function withExportState(fn){ const w=pngW0(), sc=$('logScroll'), root=doc
 // One render at a time; a change while one runs queues just the latest.
 function pngPreview(){ const tok=++EXP.token; clearTimeout(EXP.t); EXP.t=setTimeout(async()=>{ await EXP.busy; if(tok!==EXP.token||$('pngDlg').hidden) return;
   $('pngPrev').classList.add('busy');
-  EXP.busy=withExportState(async()=>{ const cv=await exportPNG({z0:EXP.z0,z1:EXP.z1,headers:EXP.headers,res:1,maxW:760,maxH:5000}); return {cv,full:pngFullSize()}; })
-    .then(({cv,full})=>{ if(tok!==EXP.token) return; const box=$('pngPrev'); box.replaceChildren(cv); box.classList.remove('busy'); pngInfo(full); })
+  EXP.busy=withExportState(async()=>{ const cv=await exportPNG({z0:EXP.z0,z1:EXP.z1,headers:EXP.headers,res:1,maxW:760,maxH:5000}); return {cv,full:pngFullSize(),pages:pngPages()}; })
+    .then(({cv,full,pages})=>{ if(tok!==EXP.token) return; if(pages) markPages(cv,pages); const box=$('pngPrev'); box.replaceChildren(cv); box.classList.remove('busy'); pngInfo(full,pages); })
     .catch(err=>{ $('pngPrev').textContent='Preview failed: '+err.message; }); },180); }
 // The image's size at full resolution, from the panel as it is laid out for export.
 function pngFullSize(){ const panel=$('logPanel'), pr=panel.getBoundingClientRect(), svgs=[...panel.querySelectorAll('.tracks svg')]; if(!svgs.length) return null;
   const svgTop=Math.min(...svgs.map(n=>n.getBoundingClientRect().top-pr.top)), H=+svgs[0].getAttribute('height'), yOf=z=>Math.max(0,Math.min(H,(z-S.view.top)*S.view.pxPerFt));
   return WV.exportSize({width:panel.scrollWidth,headerH:EXP.headers?svgTop:0,y0:yOf(EXP.z0),y1:yOf(EXP.z1),res:EXP.res}); }
-function pngInfo(Z){ if(!Z) return; const w=pngW0(), r=EXP.ratio||Math.round(ratioOf(w)), met=S.units==='metric', L=x=>met?`${(x*2.54).toFixed(1)} cm`:`${x.toFixed(1)} in`;
+/* Pages for print, measured at the export scale (call inside withExportState): depth ranges, header height, page size. */
+function pngPages(){ if(!EXP.pages) return null; const panel=$('logPanel'), svg=panel.querySelector('.tracks svg'); if(!svg) return null;
+  const P=WV.PAGES[EXP.page]||WV.PAGES.letter, hdr=EXP.headers?svg.getBoundingClientRect().top-panel.getBoundingClientRect().top:0, pageH=(P.h-2*PAGE_MARGIN)*96;
+  return {P,hdr,pageH,pxPerUnit:S.view.pxPerFt,panelW:panel.scrollWidth,ranges:WV.pageRanges(EXP.z0,EXP.z1,{pxPerUnit:S.view.pxPerFt,pageH,headerH:hdr,footH:PAGE_FOOT})}; }
+// Dashed red lines on the preview where each page ends.
+function markPages(cv,G){ const k=cv.width/G.panelW, ctx=cv.getContext('2d'); ctx.save(); ctx.strokeStyle='#c1121f'; ctx.lineWidth=1.5; ctx.setLineDash([6,4]); ctx.font='bold 11px sans-serif'; ctx.fillStyle='#c1121f';
+  G.ranges.forEach(([,z1],i)=>{ if(i===G.ranges.length-1) return; const y=(G.hdr+(z1-EXP.z0)*G.pxPerUnit)*k; ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(cv.width,y); ctx.stroke(); ctx.fillText(`page ${i+2}`,4,y+12); }); ctx.restore(); }
+function pngInfo(Z,G){ if(!Z) return; const w=pngW0(), r=EXP.ratio||Math.round(ratioOf(w)), met=S.units==='metric', L=x=>met?`${(x*2.54).toFixed(1)} cm`:`${x.toFixed(1)} in`;
+  if(G){ const n=G.ranges.length, wide=G.panelW/96>G.P.w-2*PAGE_MARGIN+1e-6;
+    $('pngInfo').innerHTML=n?`<b>${n} page${n>1?'s':''}</b> of ${G.P.label} at 1:${Math.round(r).toLocaleString()} · ${Math.round(EXP.res*96)} px per inch`+(wide?`<br>⚠ The ${S.mode==='corr'?'section':'log'} is ${L(G.panelW/96)} wide, wider than the page: print it fit to width (smaller than 1:${Math.round(r).toLocaleString()}), pick a larger sheet, or hide tracks.`:''):'⚠ The headers are taller than the page: pick a larger sheet, or turn the headers off.';
+    return; }
   $('pngInfo').innerHTML=`<b>${Z.w.toLocaleString()} × ${Z.h.toLocaleString()} px</b> · prints ${L(Z.printIn.w)} × ${L(Z.printIn.h)} at 1:${Math.round(r).toLocaleString()}`+(Z.reduced?`<br>⚠ Reduced to ${(Z.scale*96).toFixed(0)} px per inch to fit the browser's image limit. Export a shorter range or a smaller scale for full resolution.`:` · ${Math.round(Z.scale*96)} px per inch`); }
 function openPngDlg(){ const wells=viewWells(), w=wells[0]; if(!w){ $('stNote').textContent='Open a well first'; return; }
   const [lo,hi]=frameExtent(wells); pngSetRange(lo,hi); EXP.ratio=0; EXP.res=+$('pngRes').value||2; EXP.headers=$('pngHead').checked; EXP.light=$('pngLight').checked;
@@ -155,7 +167,7 @@ function openPngDlg(){ const wells=viewWells(), w=wells[0]; if(!w){ $('stNote').
   $('pngT0').innerHTML=topOpts; $('pngT1').innerHTML=topOpts; $('pngTops').hidden=!names.length;
   $('pngLightL').hidden=document.documentElement.dataset.theme!=='dark';
   $('pngPrev').replaceChildren(Object.assign(document.createElement('span'),{className:'hint',textContent:'Rendering preview…'})); $('pngInfo').textContent='';
-  $('pngDlg').hidden=false; $('pngGo').focus(); pngPreview(); }
+  $('pngAll').textContent=S.mode==='corr'?'Whole section':'Whole log'; pngOutUI(); $('pngDlg').hidden=false; $('pngGo').focus(); pngPreview(); }
 window.openPngDlg=openPngDlg;
 $('pngDlg').addEventListener('change',e=>{ const id=e.target.id, w=pngW0();
   if(id==='pngZ0'||id==='pngZ1'){ const a=parseFloat($('pngZ0').value), b=parseFloat($('pngZ1').value); if(Number.isFinite(a)&&Number.isFinite(b)&&a!==b) pngSetRange(fromDisp(a,w),fromDisp(b,w)); $('pngT0').value=''; $('pngT1').value=''; }
@@ -165,13 +177,91 @@ $('pngDlg').addEventListener('change',e=>{ const id=e.target.id, w=pngW0();
   if(id==='pngRes') EXP.res=+e.target.value||2;
   if(id==='pngHead') EXP.headers=e.target.checked;
   if(id==='pngLight') EXP.light=e.target.checked;
+  if(e.target.name==='pngOut'||id==='pngPage'){ if(id==='pngPage') $('pngDlg').querySelector('input[name=pngOut][value=pages]').checked=true; EXP.pages=$('pngDlg').querySelector('input[name=pngOut]:checked').value==='pages'; EXP.page=$('pngPage').value; pngOutUI(); }
   pngPreview(); });
+function pngOutUI(){ $('pngPageHint').hidden=!EXP.pages; $('pngGo').textContent=EXP.pages?'Download pages':'Download PNG'; }
 $('pngAll').onclick=()=>{ const [lo,hi]=frameExtent(viewWells()); pngSetRange(lo,hi); $('pngT0').value=''; $('pngT1').value=''; pngPreview(); };
 $('pngScreen').onclick=()=>{ const [a,b]=onScreenRange(); pngSetRange(a,b); $('pngT0').value=''; $('pngT1').value=''; pngPreview(); };
 $('pngCancel').onclick=()=>{ $('pngDlg').hidden=true; EXP.token++; };
 $('pngGo').onclick=async()=>{ const b=$('pngGo'); b.disabled=true; b.textContent='Rendering…'; EXP.token++; await EXP.busy;
-  try{ const cv=await withExportState(()=>exportPNG({z0:EXP.z0,z1:EXP.z1,headers:EXP.headers,res:EXP.res})); const blob=await canvasBlob(cv), w=pngW0(), u=dispU();
-    const name=`${($('vbWell').textContent||'panel').replace(/[^\w-]+/g,'_')}_${Math.round(toDisp(EXP.z0,w))}-${Math.round(toDisp(EXP.z1,w))}${u}.png`;
+  try{ const w=pngW0(), u=dispU(), stem=`${($('vbWell').textContent||'panel').replace(/[^\w-]+/g,'_')}_${Math.round(toDisp(EXP.z0,w))}-${Math.round(toDisp(EXP.z1,w))}${u}`;
+    if(EXP.pages){ const files=await withExportState(()=>renderPages(b)); if(!files.length) throw new Error('the headers are taller than the page');
+      const name=files.length>1?`${stem}_${EXP.page}_pages.zip`:`${stem}_${EXP.page}.png`;
+      downloadBlob(name,files.length>1?new Blob([WellerZip.zip(files)],{type:'application/zip'}):new Blob([files[0].data],{type:'image/png'}));
+      $('pngDlg').hidden=true; $('stNote').textContent=`Exported ${name} (${files.length} page${files.length>1?'s':''} of ${WV.PAGES[EXP.page].label})`; return; }
+    const cv=await withExportState(()=>exportPNG({z0:EXP.z0,z1:EXP.z1,headers:EXP.headers,res:EXP.res})); const blob=await canvasBlob(cv), name=stem+'.png';
     downloadBlob(name,blob); $('pngDlg').hidden=true; $('stNote').textContent=`Exported ${name} (${cv.width.toLocaleString()} × ${cv.height.toLocaleString()} px)`; }
   catch(err){ $('stNote').textContent='PNG export failed: '+err.message; }
-  finally{ b.disabled=false; b.textContent='Download PNG'; } };
+  finally{ b.disabled=false; pngOutUI(); } };
+/* One PNG per page: the page's depth window with headers on top, on a sheet of the page's printable height (so every
+   page prints at the same scale), and a footer naming the well or section, the depth window, the scale and the page. */
+async function renderPages(btn){ const G=pngPages(); if(!G) return []; const w=pngW0(), u=dispU(), res=EXP.res, n=G.ranges.length, out=[];
+  const what=$('vbWell').textContent||(S.mode==='corr'?'Section':w.name), ratio=Math.round(ratioOf(w)), mono='"IBM Plex Mono",monospace';
+  for(let k=0;k<n;k++){ const [z0,z1]=G.ranges[k]; btn.textContent=`Page ${k+1} of ${n}…`;
+    const strip=await exportPNG({z0,z1,headers:EXP.headers,res,maxW:16000,maxH:16000}), s=strip.width/G.panelW;
+    const cv=document.createElement('canvas'); cv.width=strip.width; cv.height=Math.round(G.pageH*s); const ctx=cv.getContext('2d');
+    ctx.fillStyle=cssVar('--paper'); ctx.fillRect(0,0,cv.width,cv.height); ctx.drawImage(strip,0,0);
+    ctx.scale(s,s); const fy=G.pageH-7, W=G.panelW; ctx.fillStyle=cssVar('--muted'); ctx.font=`10px ${mono}`; ctx.textBaseline='alphabetic';
+    ctx.textAlign='left'; ctx.fillText(`${what} · ${frameLabel()} ${fmtD(z0,w)}–${fmtD(z1,w)} ${u} · 1:${ratio.toLocaleString()}`,6,fy);
+    ctx.textAlign='right'; ctx.fillText(`Page ${k+1} of ${n}`,W-6,fy);
+    out.push({name:`page_${String(k+1).padStart(2,'0')}.png`,data:new Uint8Array(await (await canvasBlob(cv)).arrayBuffer())}); }
+  return out; }
+
+/* ---------- Right-click menu on the logs: copy readings, put a top at the depth clicked, delete or flatten on a top,
+   section and export shortcuts. Shift + right-click keeps the browser's own menu. ---------- */
+const ctxMenu=document.createElement('div'); ctxMenu.id='ctxMenu'; ctxMenu.className='pop menu ctxmenu'; ctxMenu.setAttribute('role','menu'); ctxMenu.hidden=true; document.body.appendChild(ctxMenu);
+let CTX=null;
+function ctxReadings(w,md){ const dep=depthOf(w), i=Math.min(dep.length-1,Math.max(0,d3.bisectCenter(dep,md))), seen=new Set(), out=[];
+  for(const t of S.tracks){ if(t.type) continue; for(const cfg of t.curves){ const c=resolveCurve(w,cfg); if(!c||c.events||seen.has(c.mnemonic)) continue; seen.add(c.mnemonic);
+    const v=c.sparse?(k=>k<0?NaN:c.data[k])(nearestPoint(c,md,0.5)):c.data[i]; if(Number.isFinite(v)) out.push(`${c.mnemonic} ${+v.toPrecision(5)}${c.unit?' '+c.unit:''}`); } }
+  return out; }
+function openCtxMenu(e){ const node=e.target.closest('.tracks svg'), col=node?.closest('.column'), c=col&&S._ctx?.cols.find(c=>c.el===col);
+  const row=e.target.closest('[data-cedit]');
+  if(!c&&!row) return false;
+  const items=[];
+  if(row) items.push(`<button type="button" role="menuitem" data-ctx="curve">Edit ${esc(row.textContent.trim().split(/\s+/)[0]||'curve')}…<span>line, scale, fill</span></button>`);
+  if(c){ const r=node.getBoundingClientRect(), yy=e.clientY-r.top, w=c.w, md=snapMD(mdAtZ(w,c.F,S._ctx.y.invert(yy)));
+    const near=[...w.tops].map(t=>({t,d:Math.abs(S._ctx.y(c.F.z(t.md))-yy)})).filter(x=>x.d<7).sort((a,b)=>a.d-b.d)[0]?.t;
+    CTX={w,md,top:near?.name,row};
+    items.push(`<div class="cmhead"><b>${esc(w.name)}</b><span>${esc(depthText(w,md))}</span></div>`,
+      `<button type="button" role="menuitem" data-ctx="copy">Copy depth and readings</button>`);
+    if(near){ const flat=S.datum===near.name;
+      items.push('<hr>',`<div class="cmhead"><b>Top ${esc(near.name)}</b><span>${esc(depthText(w,near.md))}</span></div>`,
+        `<button type="button" role="menuitem" data-ctx="pick">Pick ${esc(near.name)} in other wells</button>`,
+        S.mode==='corr'?`<button type="button" role="menuitem" data-ctx="flat">${flat?'Hang on measured depth':`Flatten section on ${esc(near.name)}`}</button>`:'',
+        `<button type="button" role="menuitem" data-ctx="deltop" class="danger">Delete ${esc(near.name)} in ${esc(w.name)}</button>`); }
+    const names=topNames().filter(n=>n!==near?.name).slice(0,8);
+    items.push('<hr>',`<div class="cmhead"><b>Top at ${esc(fmtD(md,w,1))} ${dispU()}</b></div>`,
+      ...names.map(n=>`<button type="button" role="menuitem" data-ctx="settop" data-name="${esc(n)}">Put ${esc(n)} here${w.tops.some(t=>t.name===n)?'<span>moves it</span>':''}</button>`),
+      `<div class="cmnew"><input type="text" id="ctxNewTop" placeholder="New top name, Enter" aria-label="New top at this depth" spellcheck="false"></div>`,'<hr>');
+    if(S.mode==='corr') items.push(`<button type="button" role="menuitem" data-ctx="logs">Open ${esc(w.name)} in Logs</button>`,`<button type="button" role="menuitem" data-ctx="unsec">Remove ${esc(w.name)} from section</button>`);
+    else if(!S.panel.includes(w.id)) items.push(`<button type="button" role="menuitem" data-ctx="sec">Add ${esc(w.name)} to section</button>`);
+    items.push(`<button type="button" role="menuitem" data-ctx="measure">${S.measuring?'Stop measuring':'Measure an interval'}<span>M</span></button>`,
+      `<button type="button" role="menuitem" data-ctx="fit">Fit to screen</button>`,'<hr>',
+      `<button type="button" role="menuitem" data-ctx="pngscreen">Export PNG of what's on screen…</button>`,
+      `<button type="button" role="menuitem" data-ctx="png">Export PNG…<span>whole ${S.mode==='corr'?'section':'log'}, depth range or print pages</span></button>`); }
+  else CTX={row};
+  items.push('<p class="hint cmfoot">Shift + right-click for the browser menu</p>');
+  setHTML(ctxMenu,items.join('')); hideTip(); ctxMenu.hidden=false;
+  const pw=ctxMenu.offsetWidth, ph=ctxMenu.offsetHeight; ctxMenu.style.left=Math.max(8,Math.min(innerWidth-pw-8,e.clientX))+'px'; ctxMenu.style.top=Math.max(8,Math.min(innerHeight-ph-8,e.clientY))+'px';
+  ctxMenu.querySelector('button')?.focus({preventScroll:true}); return true; }
+$('logPanel').addEventListener('contextmenu',e=>{ if(e.shiftKey||(S.mode!=='single'&&S.mode!=='corr')) return; if(openCtxMenu(e)) e.preventDefault(); });
+const closeCtx=()=>{ ctxMenu.hidden=true; };
+$('logScroll').addEventListener('scroll',closeCtx,{passive:true});
+function ctxSetTop(name){ const {w,md}=CTX; setTopMD(w,name,md); S.selected=w.id; refreshTops(name); $('stNote').textContent=`${name} at ${depthText(w,md)} in ${w.name} · Cmd/Ctrl+Z undoes`; }
+ctxMenu.addEventListener('click',async e=>{ e.stopPropagation(); const b=e.target.closest('button[data-ctx]'); if(!b||!CTX) return; const k=b.dataset.ctx, {w,md,top}=CTX; closeCtx();
+  if(k==='curve'&&CTX.row) return openCurvePop(CTX.row);
+  if(k==='copy'){ const txt=[w.name,depthText(w,md),...ctxReadings(w,md)].join('\t'); try{ await navigator.clipboard.writeText(txt); $('stNote').textContent='Copied: '+txt.replace(/\t/g,' · '); }catch(err){ $('stNote').textContent=txt.replace(/\t/g,' · '); } return; }
+  if(k==='settop') return ctxSetTop(b.dataset.name);
+  if(k==='pick'){ setPicking(true,top); return; }
+  if(k==='deltop'){ w.tops=w.tops.filter(t=>t.name!==top); (S._topsDirty||(S._topsDirty=new Set())).add(w.id); refreshTops(top); $('stNote').textContent=`Deleted ${top} in ${w.name} · Cmd/Ctrl+Z undoes`; return; }
+  if(k==='flat'){ S.datum=S.datum===top?'MD':top; return fitView(); }
+  if(k==='logs'){ S.selected=w.id; return setMode('single'); }
+  if(k==='unsec') return toggleSection(w.id);
+  if(k==='sec'){ S.panel.push(w.id); S.selected=w.id; render(); $('stNote').textContent=`${w.name} added to the section (Correlation tab)`; return; }
+  if(k==='measure') return setMeasuring(!S.measuring);
+  if(k==='fit') return fitView();
+  if(k==='png') return openPngDlg();
+  if(k==='pngscreen'){ openPngDlg(); const [a,b2]=onScreenRange(); pngSetRange(a,b2); pngPreview(); } });
+ctxMenu.addEventListener('keydown',e=>{ if(e.target.id==='ctxNewTop'&&e.key==='Enter'){ e.preventDefault(); const v=e.target.value.trim(); if(!v||!CTX?.w) return; closeCtx(); ctxSetTop(v); return; }
+  if(e.key==='ArrowDown'||e.key==='ArrowUp'){ e.preventDefault(); const L=[...ctxMenu.querySelectorAll('button,input')], i=L.indexOf(document.activeElement); L[(i+(e.key==='ArrowDown'?1:-1)+L.length)%L.length]?.focus(); } });
