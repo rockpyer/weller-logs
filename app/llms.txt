@@ -1,7 +1,7 @@
 # Weller Logs
 
 > A free well-log viewer for quick correlation and zone petrophysics, in the browser. Built by Ryan Weller
-> (https://ryweller.com). Your files stay on your machine: everything runs client-side and nothing is uploaded.
+> ([ryweller.com](https://ryweller.com)). Your files stay on your machine: everything runs client-side and nothing is uploaded.
 
 ## What it does
 
@@ -13,13 +13,15 @@
 
 ## How to use it
 
-Open https://logs.ryweller.com. Example Niobrara wells load on first visit. Load your own LAS files to replace them.
-Methods, equations and assumptions: https://logs.ryweller.com/methods (Markdown: https://logs.ryweller.com/methods.md)
+Open [logs.ryweller.com](https://logs.ryweller.com/). Example Niobrara wells load on first visit. Load your own LAS files to replace them.
+
+- [Methods, equations and assumptions](https://logs.ryweller.com/methods): how each computed curve is derived
+- [Methods as Markdown](https://logs.ryweller.com/methods.md): the same page, plain text
 
 ## Contact
 
-Feedback, feature requests and demos: https://ryweller.com/services/#contact
-Custom subsurface tools, AI workflows and analysis: https://ryweller.com/services
+- [Contact](https://ryweller.com/services/#contact): feedback, feature requests and demos
+- [Services](https://ryweller.com/services): custom subsurface tools, AI workflows and analysis
 
 ## Terms for automated agents
 
