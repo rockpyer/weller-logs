@@ -150,7 +150,9 @@ Methods, equations, defaults and limits: [docs/PETROPHYSICS.md](docs/PETROPHYSIC
   The project holds the LAS files (gzip), mudlog images, tops, shifts and edits, point data, tracks (order, curves,
   colors, scales), interpretation parameters, hang, zoom, section order, units, depth labels and header height, so
   it opens complete on another machine. Projects saved by older versions still open; they ask for the LAS files.
-- **Export PNG** (Cmd+E) renders the log view, or the crossplot on the stats tab. **Export LAS** writes the selected well.
+- **Export** menu: the current view as PNG (Cmd+E; the log, section, crossplot or mudlog), the selected well or all wells
+  as LAS, tops or zone stats as CSV, or a full project bundle (.zip with the project file, every well as LAS, tops and
+  stats CSV, and a section PNG).
 - **Undo / redo**: Cmd+Z and Shift+Cmd+Z (Ctrl on Windows and Linux) step through edits to tops, tracks, parameters and the section.
 - **Esc** closes any dialog or popover without applying it. New curves in a track get their own range and a color that
   reads in both themes.
@@ -167,7 +169,8 @@ Methods, equations, defaults and limits: [docs/PETROPHYSICS.md](docs/PETROPHYSIC
   class at that depth, the values behind it and MD / TVDSS; hover their header swatches for the full legend.
 - **Load example data** in the Wells panel switches between the Niobrara set and a synthetic LA Basin set. The app
   opens on the Niobrara set.
-- Reopening the app offers to resume the last session; opened LAS files are cached in the browser.
+- On load, a welcome dialog offers: resume the last session, explore the example, start a new project, or open files.
+  Opened LAS files are cached in the browser.
 - In Brave or Chrome, the address-bar *Install* icon adds it to the Dock and it works offline.
 
 ## Publication figures with petroplots
@@ -200,6 +203,7 @@ app/js/petro.js      petrophysics equations (browser and Node)
 app/js/interp.js     interpretation workflow and its panel
 app/js/core.js       state, tracks, depth frames, correlation, files, project
 app/js/stats.js      zone summations, box plots, crossplots, CSV exports
+app/js/zip.js        stored ZIP writer for multi-file exports
 app/js/map.js        Leaflet map, basemaps, NAD27 to WGS84, well paths, isopach and structure maps
 app/js/survey.js     directional survey files: column finding, units, wells, minimum curvature (browser and Node)
 app/js/grid.js       thin-plate spline gridding inside the wells' hull (browser and Node)
