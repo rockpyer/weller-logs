@@ -1551,7 +1551,11 @@ $('exampleSel').onchange=async e=>{ const v=e.target.value; e.target.value=''; i
 S.stats=statsDefaults();
 let saved=null; try{ saved=JSON.parse(localStorage.getItem('weller.session')||'null'); }catch(e){}
 if('serviceWorker' in navigator&&/^https?:/.test(location.protocol)&&!/claude\.ai|claudeusercontent/.test(location.host)) navigator.serviceWorker.register('sw.js').catch(()=>{});
-const booted=(async()=>{ if(!(await loadExample('niobrara',true))) fitView(); undoProject=null; HIST.undo=[]; HIST.redo=[]; HIST.last=editSnapshot(); })();
+// The workspace stays hidden ("booting", set in index.html) until this first render, and until the fonts it uses
+// have loaded (at most a second more), so it shows once instead of shifting as panels and fonts fill in.
+const reveal=()=>document.documentElement.classList.remove('booting');
+const booted=(async()=>{ try{ if(!(await loadExample('niobrara',true))) fitView(); undoProject=null; HIST.undo=[]; HIST.redo=[]; HIST.last=editSnapshot(); }
+  finally{ await Promise.race([document.fonts?.ready,new Promise(r=>setTimeout(r,1000))]); reveal(); } })();
 { const has=!!(saved&&saved.savedAt&&saved.wells?.length);
   if(has){ const n=saved.wells.length, d=new Date(saved.savedAt);
     $('wcResumeWhen').textContent=`${n} well${n===1?'':'s'} · saved ${d.toLocaleString([],{dateStyle:'medium',timeStyle:'short'})}`; } else $('wcResume').disabled=true;

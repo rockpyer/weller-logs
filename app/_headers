@@ -1,0 +1,9 @@
+# Cloudflare Workers static-asset headers (https://developers.cloudflare.com/workers/static-assets/headers/).
+# .las has no registered MIME type, so it was served with no Content-Type and Cloudflare sent it uncompressed:
+# ~3 MB for the example wells. As text/plain it is brotli-compressed at the edge (~5x smaller).
+/data/*
+  Content-Type: text/plain; charset=utf-8
+
+# Font files keep their name only while their content is unchanged, so browsers may keep them for a year.
+/fonts/*
+  Cache-Control: public, max-age=31536000, immutable
