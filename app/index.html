@@ -343,15 +343,15 @@ button.link{border:0;background:none;padding:2px 4px;color:var(--muted)}button.l
 .about .asks b{display:block;font:600 14px "IBM Plex Sans Condensed",sans-serif;margin-bottom:2px}
 .about .asks span{display:block;font-size:12.5px;color:var(--muted);line-height:1.35}
 .about .asks a.hire{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}.about .asks a.hire span{color:inherit;opacity:.88}
-.about .meta{display:flex;flex-wrap:wrap;gap:4px 14px;align-items:baseline;border-top:1px solid var(--line);padding-top:10px}
-.about details{font-size:11.5px;color:var(--muted)}.about details summary{cursor:pointer}.about details ul{margin:4px 0 0;padding-left:16px}
-.about .fine{flex-basis:100%;margin:6px 0 0;font-size:11px;color:var(--muted)}
-/* Phones: a bottom sheet. The page has no viewport meta, so phones lay it out ~980px wide; .sheet (set in core.js) zooms
-   the sheet back to the phone's real width with --z. Narrow desktop windows get the same sheet from the media query. */
-.about.sheet{zoom:var(--z,1);-webkit-text-size-adjust:none;text-size-adjust:none;left:0!important;top:auto!important;bottom:0;transform:none;width:calc(100vw / var(--z,1));max-height:calc(88dvh / var(--z,1));border-radius:12px 12px 0 0;padding:18px 16px calc(14px + env(safe-area-inset-bottom))}
+.about .meta{border-top:1px solid var(--line);padding-top:10px}
+.about .credits{margin:0;font-size:11px;line-height:1.45;color:var(--muted)}.about .credits a{color:inherit;text-decoration:underline;text-decoration-color:var(--line)}
+.about .fine{margin:6px 0 0;font-size:11px;color:var(--muted)}
+/* Phones: a bottom sheet. The page has no viewport meta, so phones lay it out ~980px wide; .sheet (set in core.js) scales
+   the sheet back up to the phone's real width by --z. Narrow desktop windows get the same sheet from the media query. */
+.about.sheet{-webkit-text-size-adjust:none;text-size-adjust:none;left:0!important;top:auto!important;bottom:0;transform:scale(var(--z,1));transform-origin:0 100%;width:calc(100vw / var(--z,1));max-height:calc(100dvh / var(--z,1) - 24px);border-radius:12px 12px 0 0;padding:18px 16px calc(14px + env(safe-area-inset-bottom))}
 .about.sheet .asks{grid-template-columns:1fr;gap:6px}
 @media (max-width:600px){
-  .about{left:0!important;top:auto!important;bottom:0;transform:none;width:100vw;max-height:88dvh;border-radius:12px 12px 0 0;padding:18px 16px calc(14px + env(safe-area-inset-bottom))}
+  .about{left:0!important;top:auto!important;bottom:0;transform:none;width:100vw;max-height:calc(100dvh - 24px);border-radius:12px 12px 0 0;padding:18px 16px calc(14px + env(safe-area-inset-bottom))}
   .about .asks{grid-template-columns:1fr;gap:6px}
 }
 .notesbtn{margin-top:6px}
@@ -487,11 +487,7 @@ i.sw{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:5p
     </div>
     <p><button class="small" id="btnMethods">Methods, curve mapping and assumptions</button></p>
     <div class="meta">
-      <details><summary>Built with</summary><ul>
-        <li>D3 and Leaflet; USGS National Map basemaps</li>
-        <li>Curve conventions from <a href="https://github.com/andymcdgeo/petroplots" target="_blank" rel="noopener">petroplots</a></li>
-        <li>Example logs: WOGCC public records via <a href="https://github.com/jessepisel/5minutesofpython" target="_blank" rel="noopener">5minutesofpython</a>; Rw from <a href="https://doi.org/10.5066/P14CRSQQ" target="_blank" rel="noopener">USGS produced-water data</a></li>
-      </ul></details>
+      <p class="credits">Built with <a href="https://d3js.org" target="_blank" rel="noopener">D3</a>, <a href="https://leafletjs.com" target="_blank" rel="noopener">Leaflet</a>, <a href="https://mozilla.github.io/pdf.js/" target="_blank" rel="noopener">pdf.js</a>, UTIF.js and pako; curve conventions from <a href="https://github.com/andymcdgeo/petroplots" target="_blank" rel="noopener">petroplots</a>. Basemaps: USGS The National Map. Example logs: WOGCC public records via <a href="https://github.com/jessepisel/5minutesofpython" target="_blank" rel="noopener">5minutesofpython</a>. Rw: <a href="https://doi.org/10.5066/P14CRSQQ" target="_blank" rel="noopener">USGS produced-water data</a>. <a href="vendor/LICENSES.txt" target="_blank" rel="noopener">Licenses</a></p>
       <p class="fine">© 2026 Ryan Weller. All rights reserved. Provided as is, without warranty. Results are screening estimates, not professional advice.</p>
     </div>
   </div>
