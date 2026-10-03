@@ -1047,7 +1047,9 @@ $('showEmpty').onchange=e=>{ S.showEmpty=e.target.checked; render(); };
 /* Fit: the whole log fits the screen height. A section flattened on a top fits the interval around that top and
    scrolls there; the rest of the logs stay a scroll away. */
 function fitView(){ if(S.mode==='stats'||S.mode==='mud'||S.mode==='map') return render(); const wells=viewWells();
-  render(); let [lo,hi]=frameExtent(wells);
+  // This first pass only measures the track headers, which do not depend on scale. At the smallest scale the curves
+  // thin to a few points per pixel, so it costs a fraction of the real draw below.
+  S.view.pxPerFt=0.01; render(); let [lo,hi]=frameExtent(wells);
   if(S.mode==='corr'&&!DEPTH_DATUMS.includes(S.datum)&&wells.length){ const k=wells[0].depthUnit==='m'?0.3048:1; lo=Math.max(lo,-400*k); hi=Math.min(hi,1200*k); }
   const sc=$('logScroll'), svg=$('logPanel').querySelector('.tracks svg'), hdr=svg?svg.getBoundingClientRect().top-$('logPanel').getBoundingClientRect().top:120;
   const vh=Math.max(120,sc.clientHeight-hdr-24); S.view.pxPerFt=Math.min(20,Math.max(0.01,vh/Math.max(1,hi-lo))); S.view.fitted=true;
@@ -1303,7 +1305,8 @@ function curveWhere(w,c){ const d=depthOf(w); let a=-1,b=-1; for(let i=0;i<d.len
   return `${c.mnemonic}${c.unit?' ('+c.unit+')':''} ${a<0?'no data':fmtD(d[a],w)+'–'+fmtD(d[b],w)+' '+dispU()}${c.cased?', cased hole':''}${src?', '+src:''}`; }
 // Files the user chose to read with zeros as data although ~Well says NULL. 0 (saved with the project).
 const nullOpts=name=>(S.keepZeros||[]).includes(name)?{nullv:-999.25}:{};
-function addLASFiles(files){ const report=[], touched=[], fresh=new Set(), auto=lsGet('weller.autoMerge',true);
+// lazy: leave the interpretation and the redraw to the caller (the example load does them after the first draw).
+function addLASFiles(files,{lazy=false}={}){ const report=[], touched=[], fresh=new Set(), auto=lsGet('weller.autoMerge',true);
   for(const f of files){ const r={file:f.name,problems:[]}; report.push(r);
     try{ const dx=WellerLAS.diagnoseLAS(f.text,f.name,f.bytes,nullOpts(f.name)); r.problems=dx.problems; if(dx.problems.some(p=>p.level==='error')){ r.status='failed'; continue; }
       const part=normalizeWell(dx.parsed,f.name); if(f.demo) part.demo=f.demo; if(!f.demo) lasCache.put(f.name,f.text);
@@ -1323,7 +1326,7 @@ function addLASFiles(files){ const report=[], touched=[], fresh=new Set(), auto=
           if(sib){ const kb=apiOf(sib).bore; if(sib.name===w.name&&key.bore!=='00'&&!/\bST\s*\d|SIDETRACK/i.test(w.name)) w.name+=' ST'+key.bore;
             r.problems.push({level:'info',cat:'Merge',title:`Kept apart from ${sib.name}: wellbore ${key.bore} vs ${kb}`,detail:`Same well (API ${key.well}), different borehole code, so a sidetrack or re-drill${key.explicitBore?'':'; a 10-digit API counts as the original hole (00)'}.`,fix:'Same hole after all? Select both in Manage wells and Merge.'}); }
           else if(!key) r.problems.push({level:'info',cat:'Header',title:'No API or UWI in ~Well: files of this well are matched by name only',fix:'Set the API in well settings, or merge by hand in Manage wells.'}); } }
-      touched.push(w.id); r.well=w.name; r.wid=w.id; computeInterp(w);
+      touched.push(w.id); r.well=w.name; r.wid=w.id; if(!lazy) computeInterp(w);
       if(!Number.isFinite(w.location.lat)) r.problems.push({level:'info',cat:'Header',title:'No location in header, not on map'});
       if(w.elevation.kb===undefined) r.problems.push({level:'info',cat:'Header',title:'No KB elevation, TVDSS unavailable'});
       const conv=part.curves.filter(c=>c.note).map(c=>c.mnemonic+' '+c.note); if(conv.length) r.problems.push({level:'info',cat:'Parsing',title:conv.join(', ')});
@@ -1334,7 +1337,7 @@ function addLASFiles(files){ const report=[], touched=[], fresh=new Set(), auto=
   const added=S.wells.filter(w=>fresh.has(w.id));
   if(added.length){ const sorted=sortWestEast(added); S.wells=[...S.wells.filter(w=>!fresh.has(w.id)),...sorted]; }
   const first=touched.map(wellById).find(Boolean);
-  if(first){ S.selected=first.id; if(S.mode==='corr'&&!S.panel.includes(first.id)) S.panel.push(first.id); if(S.mode!=='stats') fitView(); }
+  if(first){ S.selected=first.id; if(S.mode==='corr'&&!S.panel.includes(first.id)) S.panel.push(first.id); if(S.mode!=='stats'&&!lazy) fitView(); }
   return report; }
 
 /* ---------- Import report: per file, what loaded, what merged, and why anything failed ---------- */
@@ -1497,6 +1500,8 @@ document.addEventListener('keydown',e=>{ if(!(e.metaKey||e.ctrlKey)) return; con
 
 /* ---------- Example dataset: real DJ Basin Niobrara logs ---------- */
 const NIOBRARA_FILES=['2120933C.las','2121045D.las','2121046D.las','2121038B.las','2121035D.las','2121034E.las','2121022A.las','400709586.las'];
+// Ends the current task so the browser can paint and answer input; long work split this way does not freeze the page.
+const nextTask=()=>window.scheduler?.yield?scheduler.yield():new Promise(r=>setTimeout(r,0));
 async function fetchText(url){ try{ const r=await fetch(url); return r.ok?await r.text():null; }catch(e){ return null; } }
 let undoProject=null;
 async function loadExample(name,quiet){
@@ -1509,10 +1514,11 @@ async function loadExample(name,quiet){
   // (USGS data release doi:10.5066/P14CRSQQ); late-time samples approach formation water, giving Rw 0.16 ohm.m at 77 F.
   S.interp={...interpDefaults(),matrix:'auto',swPhi:'total',rw:0.16,rwTemp:77,
     source:'Example Rw 0.16 Ω·m at 77 °F, from Weld County Niobrara produced water (USGS doi:10.5066/P14CRSQQ)', sourceSw:'Sw on total porosity, usual for chalk-marl source rocks'};
-  const rep=addLASFiles(NIOBRARA_FILES.map((f,i)=>({name:f,text:texts[i],demo:'niobrara/'+f}))); lastReport=rep;
+  // One well per task, then draw the section from the logs alone; the computed curves follow in the background.
+  const rep=[]; for(let i=0;i<NIOBRARA_FILES.length;i++){ rep.push(...addLASFiles([{name:NIOBRARA_FILES[i],text:texts[i],demo:'niobrara/'+NIOBRARA_FILES[i]}],{lazy:true})); await nextTask(); }
+  lastReport=rep;
   const notes=rep.filter(r=>r.status==='failed').map(r=>`${r.file}: ${r.problems[0]?.title}`);
-  const tops=await fetchText('data/niobrara/tops.csv'); if(tops) importTopsCSV(tops);
-  computeAllInterp();
+  const tops=await fetchText('data/niobrara/tops.csv'); if(tops) importTopsCSV(tops); await nextTask();
   // Verticals west to east through the pad, then the Weld County horizontal, which lies ~30 mi south.
   const horiz=S.wells.find(w=>w.survey), vert=sortWestEast(S.wells.filter(w=>w!==horiz));
   S.wells=[...vert,horiz].filter(Boolean);
@@ -1520,7 +1526,17 @@ async function loadExample(name,quiet){
   S.datum='Niobrara'; S.stats={...statsDefaults(),curve:'PHI',x:'NPHI',y:'RHOB',type:'nd'}; S.mode='corr'; setMode('corr');
   if(!quiet) toast('Example dataset loaded: DJ Basin Niobrara');
   exampleNote('DJ Basin Niobrara: 7 Laramie County, WY verticals (WOGCC) and 1 Weld County, CO horizontal. Tops are rule-based picks.'+(notes.length?' · '+notes.join(' · '):''));
+  interpLater(S.wells);
   return true; }
+/* Interpretation (Vshale, porosity, Sw, net pay, TOC) for wells already drawn: one well per task, section wells first,
+   then one redraw. Stops if the wells change meanwhile (another project, new files); whatever replaced them computes
+   its own. A parameter change before it finishes recomputes every well anyway. */
+let interpJob=0;
+async function interpLater(wells){ const job=++interpJob, set=S.wells;
+  const order=[...wells].sort((a,b)=>S.panel.includes(b.id)-S.panel.includes(a.id));
+  for(const w of order){ await nextTask(); if(job!==interpJob||S.wells!==set) return; try{ computeInterp(w); }catch(e){ console.error(e); } }
+  // The section redraw writes its tops warning to the status bar; keep the note already showing (the example's).
+  const note=$('stNote').innerHTML; render(); $('stNote').innerHTML=note; }
 // In-page confirm: window.confirm() is blocked in embedded previews and returns false without showing anything.
 function ask({title,body,ok='OK',option}){ return new Promise(res=>{ $('askTitle').textContent=title; $('askBody').textContent=body||''; $('askOk').textContent=ok;
   $('askOptWrap').hidden=!option; $('askOpt').checked=false; $('askOptText').textContent=option||'';
