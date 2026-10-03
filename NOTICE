@@ -1,10 +1,7 @@
 Weller Logs
 Copyright 2026 Ryan Weller
 
-Licensed under the Apache License, Version 2.0 (LICENSE). Provided "AS IS", without warranties or conditions of any
-kind. Interpretations, tops, net pay, statistics and exports are screening estimates computed from the data you load.
-They are not professional advice and must be checked independently before any technical, commercial, regulatory or
-safety decision. You use the software and its results at your own risk.
+Proprietary; all rights reserved (see LICENSE).
 
 Third-party code in app/vendor keeps its own licenses: d3 (ISC), Leaflet (BSD-2-Clause), pdf.js (Apache-2.0),
 UTIF.js and pako (MIT).

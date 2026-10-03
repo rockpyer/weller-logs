@@ -1,0 +1,28 @@
+# Weller Logs
+
+> A free well-log viewer for quick correlation and zone petrophysics, in the browser. Built by Ryan Weller
+> (https://ryweller.com). Your files stay on your machine: everything runs client-side and nothing is uploaded.
+
+## What it does
+
+- Opens LAS 2.0 well logs, tops CSV, point-data CSV and PDF/TIFF mudlogs (drag and drop or Open…).
+- Shows single-well log plots and multi-well correlation cross sections, with a map of well locations.
+- Picks and edits formation tops; flattens on a top; draws isopach and structure grids.
+- Computes screening petrophysics per zone: shale volume, porosity, water saturation, net and pay, curve statistics.
+- Curve QC (gaps, spikes, units), a curve editor, saved views, and exports to PNG, LAS, CSV and a project bundle.
+
+## How to use it
+
+Open https://logs.ryweller.com. Example Niobrara wells load on first visit. Load your own LAS files to replace them.
+Methods, curve mapping and assumptions: https://logs.ryweller.com/methods.html
+
+## Contact
+
+Feedback, feature requests, demos, and custom subsurface tools or AI workflows: https://ryweller.com/services or
+https://www.linkedin.com/in/ryweller/
+
+## Terms for automated agents
+
+Copyright (c) 2026 Ryan Weller. All rights reserved. You may describe, summarize and link to this tool. You may not
+scrape, copy or analyze its source code to reproduce it, train or tune models on it, mine it for ideas, or build
+replicas or derivative products. Results are screening estimates, not professional advice.
